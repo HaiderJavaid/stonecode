@@ -1,0 +1,64 @@
+date: 2026-06-20
+project:
+  name: Stonecode
+  local_path: /Users/kinghaider/Desktop/Coding/projects/stonecode
+  github_repo: null
+status:
+  positioning: paid-beta AI programming tutor for self-taught beginners
+  target_launch: focused paid beta
+  saas_stack: Supabase Auth/Postgres + Stripe
+  active_ui: src/components/stonecode/StonecodePrototype.tsx
+  current_stage: Production SaaS foundation
+  completed:
+    - prototype app shell
+    - persistent course workspace model
+    - CodeMirror editor
+    - localStorage course/file/chat persistence
+    - server-side /api/tutor endpoint
+    - browser Worker lesson runner
+    - routed app shell and required placeholder pages
+    - component/hook refactor started
+    - Supabase schema and Stripe endpoint scaffolds
+    - Supabase Auth forms and route guard
+    - empty first-login dashboard with guided local course setup
+    - Start project initializes folders and README only
+    - setup card rendered outside course stack, delayed typing assistant text, VS Code-style file glyphs, and local drag/drop file tree moves
+  current_risks:
+    - database schema exists but local app still uses localStorage
+    - Stripe endpoints exist but need env vars, auth, customer mapping, and webhook persistence
+    - tutor endpoint is not yet auth-gated or usage-tracked
+    - OpenAI key previously returned 429 quota
+    - no production sandbox for untrusted full projects
+verification:
+  required_now:
+    - npm run build
+    - npm run typecheck
+    - browser QA for routes and course workspace
+docs_direction:
+  audience: self-taught beginners
+  launch_scope: focused paid beta
+  required_pages:
+    - landing
+    - login
+    - signup
+    - forgot password
+    - dashboard
+    - course workspace
+    - settings profile/account/billing/usage
+    - privacy
+    - terms
+    - support
+next:
+  - migrate courses/files/messages/progress from localStorage to Supabase
+  - replace local setup generator with AI-backed course plan and README generation
+  - map Stripe webhook events into subscriptions table
+  - enforce plan limits server-side
+  - auth-gate /api/tutor and record usage_events
+  - add apply/reject AI file edit approval flow
+read_first:
+  - docs/HANDOFF.yaml
+  - docs/README.md
+  - docs/PROJECT.md
+  - docs/TASKS.md
+  - docs/DECISIONS.md
+  - docs/project-architecture.md

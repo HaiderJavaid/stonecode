@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stone Shadow Terminal</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="scene" aria-label="Stone shadow UI recreation">
+      <div class="wall-grain" aria-hidden="true"></div>
+      <div class="light light-a" aria-hidden="true"></div>
+      <div class="light light-b" aria-hidden="true"></div>
+      <aside class="file-panel" aria-label="Stonecode files" aria-hidden="true">
+        <div class="file-panel-head">
+          <span>Files</span>
+          <strong id="file-topic">Rendering</strong>
+        </div>
+        <div class="file-tree" id="file-tree"></div>
+      </aside>
+      <section class="terminal" aria-label="Stone IDE simulator">
+        <pre><code id="code-output"><span class="muted">01</span> <span class="kw">const</span> surface = <span class="fn">createStoneIDE</span>({
+<span class="muted">02</span>   theme: <span class="str">"basement-shadow"</span>,
+<span class="muted">03</span>   texture: <span class="str">"grainy basalt wall"</span>,
+<span class="muted">04</span>   lighting: <span class="fn">staticLowKey</span>({ angle: <span class="num">-18</span>, spread: <span class="str">"soft"</span> }),
+<span class="muted">05</span>   surface: <span class="str">"engraved basalt"</span>
+<span class="muted">06</span> });
+<span class="muted">07</span>
+<span class="muted">08</span> <span class="kw">function</span> <span class="fn">renderFrame</span>(time) {
+<span class="muted">09</span>   <span class="kw">const</span> light = <span class="fn">trackAmbientSource</span>(time);
+<span class="muted">10</span>   surface.<span class="fn">shade</span>(light).<span class="fn">engraveGlyphs</span>();
+<span class="muted">11</span>   <span class="kw">return</span> <span class="fn">requestAnimationFrame</span>(renderFrame);
+<span class="muted">12</span> }</code></pre>
+      </section>
+
+      <aside class="side-note" aria-label="Figma order note">
+        <span>FIGMA STYLE MUST BE IN THIS ORDER</span>
+        <i class="dot red"></i>
+        <i class="dot blue"></i>
+        <i class="dot green"></i>
+        <i class="dot purple"></i>
+      </aside>
+
+      <section class="cards" aria-label="Programming topics">
+        <article class="shadow-card" data-topic="rendering" tabindex="0" role="button" aria-expanded="false">
+          <div class="card-top"><h2>Rendering Pipeline</h2><button class="card-back" type="button">Back</button></div>
+          <div class="rule"></div>
+          <p>Static stone layers, low-key light, clean render path.</p>
+          <div class="progress"><i style="width: 92%"></i></div>
+          <span class="percent">92%</span>
+          <div class="card-detail">
+            <div class="actions">
+              <button type="button">Resume learning</button>
+              <button type="button">Details</button>
+              <button type="button">Progress</button>
+            </div>
+            <div class="mini-chat">
+              <span>AI chat</span>
+              <p>Ask about render loops, shadows, or texture cost.</p>
+            </div>
+          </div>
+        </article>
+        <article class="shadow-card" data-topic="structures" tabindex="0" role="button" aria-expanded="false">
+          <div class="card-top"><h2>Data Structures</h2><button class="card-back" type="button">Back</button></div>
+          <div class="rule"></div>
+          <p>Maps, sets, tries, queues, graphs, and caches.</p>
+          <div class="progress"><i style="width: 78%"></i></div>
+          <span class="percent">78%</span>
+          <div class="card-detail">
+            <div class="actions">
+              <button type="button">Resume learning</button>
+              <button type="button">Details</button>
+              <button type="button">Progress</button>
+            </div>
+            <div class="mini-chat">
+              <span>AI chat</span>
+              <p>Ask which structure fits the current problem.</p>
+            </div>
+          </div>
+        </article>
+        <article class="shadow-card" data-topic="async" tabindex="0" role="button" aria-expanded="false">
+          <div class="card-top"><h2>Async Runtime</h2><button class="card-back" type="button">Back</button></div>
+          <div class="rule"></div>
+          <p>Frame throttling, pointer smoothing, resize guards.</p>
+          <div class="progress"><i style="width: 84%"></i></div>
+          <span class="percent">84%</span>
+          <div class="card-detail">
+            <div class="actions">
+              <button type="button">Resume learning</button>
+              <button type="button">Details</button>
+              <button type="button">Progress</button>
+            </div>
+            <div class="mini-chat">
+              <span>AI chat</span>
+              <p>Ask about promises, workers, and frame budget.</p>
+            </div>
+          </div>
+        </article>
+        <article class="shadow-card" data-topic="design" tabindex="0" role="button" aria-expanded="false">
+          <div class="card-top"><h2>Design Systems</h2><button class="card-back" type="button">Back</button></div>
+          <div class="rule"></div>
+          <p>Stone tokens, engraved type, dramatic contrast.</p>
+          <div class="progress"><i style="width: 71%"></i></div>
+          <span class="percent">71%</span>
+          <div class="card-detail">
+            <div class="actions">
+              <button type="button">Resume learning</button>
+              <button type="button">Details</button>
+              <button type="button">Progress</button>
+            </div>
+            <div class="mini-chat">
+              <span>AI chat</span>
+              <p>Ask how tokens map into production UI.</p>
+            </div>
+          </div>
+        </article>
+        <article class="shadow-card" data-topic="algorithms" tabindex="0" role="button" aria-expanded="false">
+          <div class="card-top"><h2>Algorithms</h2><button class="card-back" type="button">Back</button></div>
+          <div class="rule"></div>
+          <p>Search, sorting, memoization, and pathfinding.</p>
+          <div class="progress"><i style="width: 66%"></i></div>
+          <span class="percent">66%</span>
+          <div class="card-detail">
+            <div class="actions">
+              <button type="button">Resume learning</button>
+              <button type="button">Details</button>
+              <button type="button">Progress</button>
+            </div>
+            <div class="mini-chat">
+              <span>AI chat</span>
+              <p>Ask for complexity hints or dry-run examples.</p>
+            </div>
+          </div>
+        </article>
+        <article class="shadow-card" data-topic="systems" tabindex="0" role="button" aria-expanded="false">
+          <div class="card-top"><h2>Systems Thinking</h2><button class="card-back" type="button">Back</button></div>
+          <div class="rule"></div>
+          <p>Ready to become a stone-surface IDE shell.</p>
+          <div class="progress"><i style="width: 88%"></i></div>
+          <span class="percent">88%</span>
+          <div class="card-detail">
+            <div class="actions">
+              <button type="button">Resume learning</button>
+              <button type="button">Details</button>
+              <button type="button">Progress</button>
+            </div>
+            <div class="mini-chat">
+              <span>AI chat</span>
+              <p>Ask how modules, state, and IO connect.</p>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <p class="caption">stonecode</p>
+    </main>
+    <script src="./script.js"></script>
+  </body>
+</html>

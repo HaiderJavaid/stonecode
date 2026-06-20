@@ -1,0 +1,255 @@
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { lessonSteps } from "@/components/stonecode/lessonData";
+import { renderMarkdown } from "@/components/stonecode/markdown";
+import { CourseCardProps, CardView } from "@/components/stonecode/types";
+
+export function CourseCard({
+  active,
+  hidden,
+  hiddenDirection,
+  course,
+  cardIndex,
+  chatMessages,
+  fileCount,
+  lessonIndex,
+  view,
+  onOpen,
+  onBack,
+  onChat,
+  onLessonIndexChange,
+  onViewChange,
+  onStartProject,
+  onKeyDown,
+  onTypingComplete,
+  typingMessageId
+}: CourseCardProps) {
+  const lesson = lessonSteps[lessonIndex];
+  const canvasMessages = chatMessages.filter((message) => message.lessonIndex === lessonIndex);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [typedContent, setTypedContent] = useState("");
+  const [typedLessonContent, setTypedLessonContent] = useState("");
+  const typingMessage = canvasMessages.find((message) => message.id === typingMessageId && message.role === "assistant");
+  const isProjectStarted = fileCount > 0;
+
+  useEffect(() => {
+    setTypedLessonContent("");
+    let index = 0;
+    let interval = 0;
+    const delay = window.setTimeout(() => {
+      const step = Math.max(2, Math.ceil(lesson.tutor.length / 180));
+      interval = window.setInterval(() => {
+        index = Math.min(index + step, lesson.tutor.length);
+        setTypedLessonContent(lesson.tutor.slice(0, index));
+        if (index >= lesson.tutor.length) window.clearInterval(interval);
+      }, 18);
+    }, 520);
+
+    return () => {
+      window.clearTimeout(delay);
+      window.clearInterval(interval);
+    };
+  }, [lesson.tutor]);
+
+  useEffect(() => {
+    if (!typingMessage) {
+      setTypedContent("");
+      return;
+    }
+
+    setTypedContent("");
+    let index = 0;
+    let interval = 0;
+    const delay = window.setTimeout(() => {
+      const step = Math.max(2, Math.ceil(typingMessage.content.length / 180));
+      interval = window.setInterval(() => {
+        index = Math.min(index + step, typingMessage.content.length);
+        setTypedContent(typingMessage.content.slice(0, index));
+        if (index >= typingMessage.content.length) {
+          window.clearInterval(interval);
+          onTypingComplete();
+        }
+      }, 18);
+    }, 520);
+
+    return () => {
+      window.clearTimeout(delay);
+      window.clearInterval(interval);
+    };
+  }, [onTypingComplete, typingMessage]);
+
+  useEffect(() => {
+    const scrollElement = chatScrollRef.current;
+    if (!scrollElement) return;
+    scrollElement.scrollTop = scrollElement.scrollHeight;
+  }, [canvasMessages, typedContent]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const message = String(formData.get("message") ?? "").trim();
+    if (!message) return;
+    onChat(message, lessonIndex);
+    form.reset();
+  }
+
+  function sendSuggestion(message: string) {
+    onChat(message, lessonIndex);
+  }
+
+  function moveLesson(direction: -1 | 1) {
+    onLessonIndexChange(Math.min(Math.max(lessonIndex + direction, 0), lessonSteps.length - 1));
+  }
+
+  const cardClassName = [
+    "shadow-card",
+    active ? "is-active" : "",
+    active && view === "resume" ? "has-chat-canvas" : "",
+    hidden ? "is-hidden" : "",
+    hidden ? `is-${hiddenDirection}` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <article
+      aria-expanded={active}
+      className={cardClassName}
+      data-course-id={course.id}
+      style={{ "--card-y": `${cardIndex * 166}px` } as React.CSSProperties}
+      onClick={() => {
+        if (!active) onOpen();
+      }}
+      onKeyDown={onKeyDown}
+      role={active ? "region" : "button"}
+      tabIndex={hidden ? -1 : 0}
+    >
+      <div className="card-top">
+        <h2>{course.title}</h2>
+        <button
+          className="card-back"
+          onClick={(event) => {
+            event.stopPropagation();
+            onBack();
+          }}
+          type="button"
+        >
+          Back
+        </button>
+      </div>
+      <div className="rule" />
+      <div className="card-summary">
+        <p>{course.description}</p>
+        <div className="progress">
+          <i style={{ width: `${course.progress}%` }} />
+        </div>
+        <span className="percent">{course.progress}%</span>
+      </div>
+      <div className="card-detail">
+        <div className="course-meta">
+          <span>{course.mode}</span>
+          <span>{course.checkpoint}</span>
+          <span>{course.updatedAt}</span>
+        </div>
+        <div className="actions">
+          {[
+            ["resume", isProjectStarted ? "Resume learning" : "Start project"],
+            ["details", "Course details"],
+            ["progress", "Progress"]
+          ].map(([value, label]) => (
+            <button
+              key={label}
+              className={view === value ? "is-selected" : ""}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (value === "resume" && !isProjectStarted) {
+                  onStartProject(course);
+                  return;
+                }
+                onViewChange(value as CardView);
+              }}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {active && view && (
+        <div className={`selection-panel${view === "resume" ? " is-chat-canvas" : ""}`} onClick={(event) => event.stopPropagation()}>
+          <button className="selection-back" onClick={() => onViewChange(null)} type="button">
+            Back
+          </button>
+          {view === "resume" && (
+            <div className="lesson-panel ai-chat-panel">
+              <div className="chat-canvas-head">
+                <span>{lesson.label}</span>
+                <strong>{lesson.title}</strong>
+              </div>
+              <div className="ai-chat-scroll" aria-label={`${lesson.label} conversation`} ref={chatScrollRef}>
+                <div className="ai-message assistant-message ai-response">
+                  {renderMarkdown(typedLessonContent)}
+                  {typedLessonContent.length < lesson.tutor.length && <span className="typing-caret" />}
+                </div>
+                {canvasMessages.map((message) => (
+                  <div className={`ai-message ${message.role === "assistant" ? "assistant-message ai-response" : "user-message"}`} key={message.id}>
+                    {message.role === "assistant" ? (
+                      <>
+                        {renderMarkdown(message.id === typingMessageId ? typedContent : message.content)}
+                        {message.id === typingMessageId && <span className="typing-caret" />}
+                      </>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="chat-dock">
+                <div className="reply-suggestions" aria-label="Suggested replies">
+                  {lesson.suggestions.map((suggestion) => (
+                    <button key={suggestion} onClick={() => sendSuggestion(suggestion)} type="button">
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+                <form className="chat-compose" onSubmit={handleSubmit}>
+                  <input aria-label="Chat message" name="message" placeholder="Type next, check, explain..." type="text" />
+                  <button type="submit">Send</button>
+                </form>
+                <div className="lesson-controls">
+                  <button disabled={lessonIndex === 0} onClick={() => moveLesson(-1)} type="button">Prev</button>
+                  <button disabled={lessonIndex === lessonSteps.length - 1} onClick={() => moveLesson(1)} type="button">
+                    {lessonIndex === lessonSteps.length - 1 ? "Next topic" : "Next section"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {view === "details" && (
+            <div className="info-panel">
+              <span>Course details</span>
+              <p>{course.description}</p>
+              <dl>
+                <div><dt>Mode</dt><dd>{course.mode}</dd></div>
+                <div><dt>Checkpoint</dt><dd>{course.checkpoint}</dd></div>
+                <div><dt>Files</dt><dd>{fileCount}</dd></div>
+              </dl>
+            </div>
+          )}
+          {view === "progress" && (
+            <div className="progress-panel">
+              <span>Progress path</span>
+              <ul>
+                <li className="is-complete">Intro passed</li>
+                <li className="is-complete">Current file reviewed</li>
+                <li className="is-current">Checkpoint in progress</li>
+                <li className="is-locked">Practice review locked</li>
+                <li className="is-locked">Final exercise locked</li>
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}

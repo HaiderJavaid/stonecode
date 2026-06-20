@@ -1,0 +1,37 @@
+{
+  "name": "stonecode",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server/stonecode-server.mjs --dev",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "node server/stonecode-server.mjs",
+    "start": "node server/stonecode-server.mjs",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.43.1",
+    "@lezer/highlight": "^1.2.3",
+    "@supabase/supabase-js": "^2.108.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "^6.30.4",
+    "stripe": "^22.2.2",
+    "vite": "5.4.14"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react": "4.3.4",
+    "eslint": "9.17.0",
+    "typescript": "5.7.2"
+  }
+}

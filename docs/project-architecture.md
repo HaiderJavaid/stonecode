@@ -1,0 +1,80 @@
+# Project Architecture
+
+## Current Stack
+
+- Vite
+- React
+- TypeScript
+- React Router
+- CodeMirror 6
+- Node HTTP app server
+- Supabase client/schema scaffold
+- Stripe server endpoint scaffold
+
+## Current Entry Points
+
+- `src/main.tsx` mounts `App`.
+- `src/App.tsx` owns routes.
+- `src/components/stonecode/StonecodePrototype.tsx` is the routed workspace shell.
+- `server/stonecode-server.mjs` serves the app and API routes.
+
+## Active Product Routes
+
+- `/`
+- `/login`
+- `/signup`
+- `/forgot-password`
+- `/dashboard`
+- `/courses/:courseId`
+- `/settings/profile`
+- `/settings/account`
+- `/settings/billing`
+- `/settings/usage`
+- `/privacy`
+- `/terms`
+- `/support`
+
+## Workspace Source Map
+
+- `CourseWorkspace`: file panel + IDE + terminal surface.
+- `DashboardPage`: course launcher/cards.
+- `CourseCard`: course details/progress/tutor panel.
+- `FilePanel` and `WorkspaceFileTree`: workspace navigation.
+- `RunTerminal`: browser Worker run output.
+- `useCourseWorkspace`: active course, files, folders, local persistence.
+- `useTutorChat`: tutor requests, chat messages, lesson panel state.
+- `useTerminalRunner`: code execution state.
+
+## Current Data Flow
+
+```txt
+mock courses
+-> useCourseWorkspace
+-> localStorage
+-> CodeMirror editor
+-> browser Worker terminal
+-> useTutorChat
+-> /api/tutor
+-> OpenAI Responses API
+```
+
+## Target Data Flow
+
+```txt
+Supabase Auth
+-> authenticated routes
+-> Supabase courses/files/chat/progress
+-> server-side plan limit checks
+-> authenticated /api/tutor
+-> usage_events
+-> Stripe subscriptions
+```
+
+## API Routes
+
+- `POST /api/tutor`
+- `POST /api/billing/checkout`
+- `POST /api/billing/portal`
+- `POST /api/stripe/webhook`
+
+Billing routes are scaffolded and require env vars before live use.
