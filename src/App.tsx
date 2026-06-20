@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { RequireAuth } from "@/auth/RequireAuth";
 import { useAuth } from "@/auth/AuthProvider";
@@ -49,9 +49,22 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const title = mode === "login" ? "Log in" : mode === "signup" ? "Create account" : "Reset password";
-  const helper = mode === "forgot" ? "Send a password recovery link." : "Use your Stonecode beta account.";
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionTimerRef = useRef<number | null>(null);
+  const title = mode === "login" ? "Enter workspace" : mode === "signup" ? "Start the beta" : "Recover access";
+  const helper =
+    mode === "login"
+      ? "Your learning workspace is already staged behind this gate."
+      : mode === "signup"
+        ? "Create your Stonecode beta account and keep every course workspace persistent."
+        : "Send a recovery link and return to the same workspace.";
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/dashboard";
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current) window.clearTimeout(transitionTimerRef.current);
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -77,7 +90,12 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
     try {
       if (mode === "login") {
         await auth.signIn(email, password);
-        navigate(from, { replace: true });
+        setIsTransitioning(true);
+        form.reset();
+        transitionTimerRef.current = window.setTimeout(() => {
+          navigate(from, { replace: true });
+        }, 860);
+        return;
       } else if (mode === "signup") {
         await auth.signUp(email, password);
         setStatus("Check your email to confirm your account, then log in.");
@@ -94,15 +112,19 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
   }
 
   return (
-    <main className="plain-page">
-      <section className="plain-panel narrow">
-        <span className="plain-eyebrow">Account</span>
+    <main className={`auth-stage auth-${mode}${isTransitioning ? " is-transitioning" : ""}`}>
+      <AuthWorkspacePreview />
+      <section className="auth-card" aria-label={title}>
+        <div className="auth-brand">
+          <span>stonecode</span>
+          <i />
+        </div>
         <h1>{title}</h1>
         <p>{helper}</p>
         {!auth.isConfigured && <p className="plain-error">Supabase env vars are missing.</p>}
         {status && <p className="plain-success">{status}</p>}
         {error && <p className="plain-error">{error}</p>}
-        <form className="plain-form" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit}>
           <label>
             Email
             <input autoComplete="email" name="email" type="email" />
@@ -114,16 +136,53 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
             </label>
           )}
           <button disabled={isSubmitting || !auth.isConfigured} type="submit">
-            {isSubmitting ? "Working..." : mode === "forgot" ? "Send reset link" : title}
+            {isSubmitting ? "Working..." : mode === "forgot" ? "Send reset link" : mode === "signup" ? "Create account" : "Open dashboard"}
           </button>
         </form>
-        <nav className="plain-links" aria-label="Account links">
-          <Link to="/login">Login</Link>
-          <Link to="/signup">Signup</Link>
+        <nav className="auth-links" aria-label="Account links">
+          <Link to="/login">Log in</Link>
+          <Link to="/signup">Sign up</Link>
           <Link to="/forgot-password">Forgot password</Link>
         </nav>
       </section>
     </main>
+  );
+}
+
+function AuthWorkspacePreview() {
+  return (
+    <div className="auth-preview" aria-hidden="true">
+      <div className="auth-wall-grain" />
+      <div className="auth-preview-light light-one" />
+      <div className="auth-preview-light light-two" />
+      <div className="auth-preview-terminal">
+        <div className="auth-terminal-head">
+          <span />
+          <span />
+          <span />
+        </div>
+        <pre>{`01 const path = "beginner-safe";
+02 const workspace = await stonecode.resume();
+03
+04 tutor.keepContext(course.id);
+05 files.restore("README.md");
+06 progress.sync();
+07
+08 // dashboard opens after auth`}</pre>
+      </div>
+      <div className="auth-preview-panel panel-left">
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className="auth-preview-panel panel-right">
+        <strong />
+        <span />
+        <span />
+      </div>
+      <p className="auth-preview-caption">dashboard staged</p>
+    </div>
   );
 }
 
