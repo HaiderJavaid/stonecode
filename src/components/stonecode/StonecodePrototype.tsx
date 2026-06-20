@@ -24,7 +24,7 @@ export function StonecodePrototype({
 
   useEffect(() => {
     if (!authRevealActive) return;
-    const timer = window.setTimeout(() => onAuthRevealComplete?.(), 1040);
+    const timer = window.setTimeout(() => onAuthRevealComplete?.(), 1520);
     return () => window.clearTimeout(timer);
   }, [authRevealActive, onAuthRevealComplete]);
 

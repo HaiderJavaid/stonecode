@@ -5,39 +5,45 @@ import { useAuth } from "@/auth/AuthProvider";
 import { StonecodePrototype } from "@/components/stonecode/StonecodePrototype";
 
 export function App() {
+  const auth = useAuth();
+  const location = useLocation();
   const [authRevealActive, setAuthRevealActive] = useState(false);
+  const isAuthRoute = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/forgot-password";
 
   return (
-    <Routes>
-      <Route element={<LandingPage />} path="/" />
-      <Route element={<AuthPage mode="login" onAuthReveal={() => setAuthRevealActive(true)} />} path="/login" />
-      <Route element={<AuthPage mode="signup" onAuthReveal={() => setAuthRevealActive(true)} />} path="/signup" />
-      <Route element={<AuthPage mode="forgot" onAuthReveal={() => setAuthRevealActive(true)} />} path="/forgot-password" />
-      <Route
-        element={
-          <RequireAuth>
-            <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
-          </RequireAuth>
-        }
-        path="/dashboard"
-      />
-      <Route
-        element={
-          <RequireAuth>
-            <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
-          </RequireAuth>
-        }
-        path="/courses/:courseId"
-      />
-      <Route element={<RequireAuth><SettingsPage section="profile" /></RequireAuth>} path="/settings/profile" />
-      <Route element={<RequireAuth><SettingsPage section="account" /></RequireAuth>} path="/settings/account" />
-      <Route element={<RequireAuth><SettingsPage section="billing" /></RequireAuth>} path="/settings/billing" />
-      <Route element={<RequireAuth><SettingsPage section="usage" /></RequireAuth>} path="/settings/usage" />
-      <Route element={<TextPage title="Privacy" />} path="/privacy" />
-      <Route element={<TextPage title="Terms" />} path="/terms" />
-      <Route element={<TextPage title="Support" />} path="/support" />
-      <Route element={<Navigate replace to="/dashboard" />} path="*" />
-    </Routes>
+    <>
+      <AuthTransitionSurface isAuthRoute={isAuthRoute} isRevealing={authRevealActive} userEmail={auth.user?.email ?? null} />
+      <Routes>
+        <Route element={<LandingPage />} path="/" />
+        <Route element={<AuthPage mode="login" onAuthReveal={() => setAuthRevealActive(true)} />} path="/login" />
+        <Route element={<AuthPage mode="signup" onAuthReveal={() => setAuthRevealActive(true)} />} path="/signup" />
+        <Route element={<AuthPage mode="forgot" onAuthReveal={() => setAuthRevealActive(true)} />} path="/forgot-password" />
+        <Route
+          element={
+            <RequireAuth>
+              <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
+            </RequireAuth>
+          }
+          path="/dashboard"
+        />
+        <Route
+          element={
+            <RequireAuth>
+              <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
+            </RequireAuth>
+          }
+          path="/courses/:courseId"
+        />
+        <Route element={<RequireAuth><SettingsPage section="profile" /></RequireAuth>} path="/settings/profile" />
+        <Route element={<RequireAuth><SettingsPage section="account" /></RequireAuth>} path="/settings/account" />
+        <Route element={<RequireAuth><SettingsPage section="billing" /></RequireAuth>} path="/settings/billing" />
+        <Route element={<RequireAuth><SettingsPage section="usage" /></RequireAuth>} path="/settings/usage" />
+        <Route element={<TextPage title="Privacy" />} path="/privacy" />
+        <Route element={<TextPage title="Terms" />} path="/terms" />
+        <Route element={<TextPage title="Support" />} path="/support" />
+        <Route element={<Navigate replace to="/dashboard" />} path="*" />
+      </Routes>
+    </>
   );
 }
 
@@ -130,7 +136,6 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
 
   return (
     <main className={`auth-stage auth-${mode}${isTransitioning ? " is-transitioning" : ""}`}>
-      <AuthWorkspacePreview />
       <section className="auth-card" aria-label={title}>
         <div className="auth-brand">
           <span>stonecode</span>
@@ -166,26 +171,44 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
   );
 }
 
-function AuthWorkspacePreview() {
+function AuthTransitionSurface({
+  isAuthRoute,
+  isRevealing,
+  userEmail
+}: {
+  isAuthRoute: boolean;
+  isRevealing: boolean;
+  userEmail: string | null;
+}) {
+  if (!isAuthRoute && !isRevealing) return null;
+  const owner = userEmail?.split("@")[0] || "learner";
+
   return (
-    <div className="auth-preview" aria-hidden="true">
+    <div className={`auth-transition-surface${isRevealing ? " is-revealing" : ""}`} aria-hidden="true">
       <div className="auth-wall-grain" />
       <div className="auth-preview-light light-one" />
       <div className="auth-preview-light light-two" />
-      <div className="auth-preview-terminal">
+      <div className="auth-global-terminal">
         <div className="auth-terminal-head">
           <span />
           <span />
           <span />
         </div>
-        <pre>{`01 const path = "beginner-safe";
-02 const workspace = await stonecode.resume();
+        <pre>{isRevealing ? `01 loading "${owner}" workspace
+02 courses.fetch({ owner });
+03 files.restore();
+04 tutor.context.sync();
+05
+06 dashboard.panels.queue();
+07 right_panel.reveal.after(text);
+08 stonecode.ready();` : `01 const path = "beginner-safe";
+02 workspace.stage("dashboard");
 03
 04 tutor.keepContext(course.id);
 05 files.restore("README.md");
 06 progress.sync();
 07
-08 // dashboard opens after auth`}</pre>
+08 // login opens this block`}</pre>
       </div>
       <div className="auth-preview-panel panel-left">
         <span />

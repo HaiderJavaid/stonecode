@@ -1576,17 +1576,14 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 
 .auth-stage {
   position: relative;
+  z-index: 9;
   width: 100vw;
   min-height: 100vh;
   overflow: hidden;
   display: grid;
   place-items: center end;
   padding: 28px clamp(28px, 18vw, 390px) 28px 28px;
-  background:
-    radial-gradient(circle at 51% 39%, rgba(168, 170, 164, 0.18) 0 8%, rgba(119, 122, 117, 0.13) 23%, transparent 47%),
-    radial-gradient(circle at 67% 27%, rgba(154, 156, 150, 0.17), transparent 31%),
-    linear-gradient(120deg, rgba(0, 0, 0, 0.54), rgba(0, 0, 0, 0.03) 44%, rgba(0, 0, 0, 0.4)),
-    var(--wall);
+  background: transparent;
   color: rgba(230, 230, 225, 0.72);
   isolation: isolate;
 }
@@ -1603,20 +1600,28 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   transition: opacity 780ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
-.auth-preview {
+.auth-transition-surface {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 51% 39%, rgba(168, 170, 164, 0.18) 0 8%, rgba(119, 122, 117, 0.13) 23%, transparent 47%),
+    radial-gradient(circle at 67% 27%, rgba(154, 156, 150, 0.17), transparent 31%),
+    linear-gradient(120deg, rgba(0, 0, 0, 0.54), rgba(0, 0, 0, 0.03) 44%, rgba(0, 0, 0, 0.4)),
+    var(--wall);
+}
+
+.auth-transition-surface::after {
   position: absolute;
   inset: 0;
-  z-index: 1;
-  overflow: hidden;
-  transform: scale(0.96) translate3d(0, 0, 0);
-  transform-origin: center;
-  filter: blur(2.6px) saturate(0.76) brightness(0.62);
-  opacity: 0.74;
-  will-change: transform, filter, opacity;
-  transition:
-    transform 860ms cubic-bezier(0.16, 0.92, 0.18, 1),
-    filter 860ms cubic-bezier(0.16, 0.92, 0.18, 1),
-    opacity 620ms ease;
+  z-index: 2;
+  content: "";
+  background:
+    radial-gradient(circle at 50% 54%, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.42) 68%, rgba(0, 0, 0, 0.74)),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.32), transparent 40%, rgba(0, 0, 0, 0.28));
+  transition: opacity 780ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
 .auth-wall-grain {
@@ -1655,8 +1660,9 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   background: radial-gradient(circle, rgba(130, 170, 190, 0.14), transparent 68%);
 }
 
-.auth-preview-terminal {
+.auth-global-terminal {
   position: absolute;
+  z-index: 3;
   left: 34%;
   top: 50%;
   width: min(520px, 30vw);
@@ -1671,10 +1677,22 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
     0 0 0 1px rgba(165, 165, 165, 0.05),
     -22px 26px 55px rgba(0, 0, 0, 0.28),
     -120px 130px 160px rgba(0, 0, 0, 0.42);
-  transform: translate3d(-50%, -50%, 0);
+  filter: blur(2.6px) saturate(0.76) brightness(0.62);
+  opacity: 0.74;
+  transform: translate3d(-50%, -50%, 0) scale(0.96);
+  transform-origin: center;
+  will-change: transform, filter, opacity, left, top, width, height;
+  transition:
+    left 920ms cubic-bezier(0.16, 0.92, 0.18, 1),
+    top 920ms cubic-bezier(0.16, 0.92, 0.18, 1),
+    width 920ms cubic-bezier(0.16, 0.92, 0.18, 1),
+    height 920ms cubic-bezier(0.16, 0.92, 0.18, 1),
+    transform 920ms cubic-bezier(0.16, 0.92, 0.18, 1),
+    filter 920ms cubic-bezier(0.16, 0.92, 0.18, 1),
+    opacity 320ms ease 900ms;
 }
 
-.auth-preview-terminal::before {
+.auth-global-terminal::before {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -1701,7 +1719,7 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   background: rgba(230, 230, 220, 0.22);
 }
 
-.auth-preview-terminal pre {
+.auth-global-terminal pre {
   position: relative;
   z-index: 1;
   margin: 0;
@@ -1712,6 +1730,53 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   text-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04),
     0 -1px 1px rgba(0, 0, 0, 0.96);
+  opacity: 0;
+  animation: auth-terminal-text-in 620ms ease 260ms both;
+}
+
+.auth-transition-surface.is-revealing .auth-global-terminal {
+  left: 13.8%;
+  top: 19.5%;
+  width: 50.9%;
+  height: 58.4%;
+  opacity: 0;
+  filter: blur(0) saturate(1) brightness(1);
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.auth-transition-surface.is-revealing .auth-global-terminal pre {
+  color: rgba(218, 218, 212, 0.46);
+  font-size: clamp(7px, 0.68vw, 10px);
+  line-height: 1.95;
+  opacity: 1;
+  animation: auth-terminal-text-swap 740ms ease both;
+}
+
+.auth-transition-surface.is-revealing::after {
+  opacity: 0;
+}
+
+@keyframes auth-terminal-text-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 7px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes auth-terminal-text-swap {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  36%,
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }
 
 .auth-preview-panel {
@@ -1976,16 +2041,6 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   color: rgba(230, 230, 220, 0.74);
 }
 
-.auth-stage.is-transitioning::after {
-  opacity: 0.16;
-}
-
-.auth-stage.is-transitioning .auth-preview {
-  opacity: 1;
-  filter: blur(0) saturate(0.95) brightness(0.98);
-  transform: scale(1.42) translate3d(13vw, 0, 0);
-}
-
 .auth-stage.is-transitioning .auth-card {
   opacity: 0;
   transform: translate3d(30vw, 0, 0) scale(0.98);
@@ -1997,29 +2052,22 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 }
 
 .scene.auth-reveal-active .terminal {
-  animation: auth-dashboard-terminal-in 1040ms cubic-bezier(0.16, 0.92, 0.18, 1) both;
+  opacity: 0;
+  animation: auth-dashboard-terminal-real-in 360ms ease 940ms both;
 }
 
 .scene.auth-reveal-active .cards,
 .scene.auth-reveal-active .side-note,
 .scene.auth-reveal-active .caption {
-  animation: auth-dashboard-chrome-in 760ms cubic-bezier(0.18, 0.86, 0.22, 1) 180ms both;
+  animation: auth-dashboard-chrome-in 760ms cubic-bezier(0.18, 0.86, 0.22, 1) 920ms both;
 }
 
-@keyframes auth-dashboard-terminal-in {
-  0% {
-    opacity: 0.8;
-    filter: blur(6px) saturate(0.78) brightness(0.7);
-    transform: translate3d(-10.5vw, 0, 0) scale(0.58);
+@keyframes auth-dashboard-terminal-real-in {
+  from {
+    opacity: 0;
   }
-  62% {
+  to {
     opacity: 1;
-    filter: blur(0.6px) saturate(0.92) brightness(0.92);
-  }
-  100% {
-    opacity: 1;
-    filter: blur(0) saturate(1) brightness(1);
-    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
@@ -2119,19 +2167,16 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
     place-items: center;
   }
 
-  .auth-preview {
-    transform: scale(0.95);
-    filter: blur(1px) saturate(0.78) brightness(0.64);
-  }
-
-  .auth-preview-terminal {
+  .auth-global-terminal {
     left: 50%;
     top: 42%;
     width: 86vw;
     height: 42vh;
+    filter: blur(1px) saturate(0.78) brightness(0.64);
+    transform: translate3d(-50%, -50%, 0) scale(0.95);
   }
 
-  .auth-preview-terminal pre {
+  .auth-global-terminal pre {
     padding: 24px;
     font-size: 9px;
   }

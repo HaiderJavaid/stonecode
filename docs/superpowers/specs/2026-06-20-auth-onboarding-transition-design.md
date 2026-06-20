@@ -12,7 +12,9 @@ Use a lightweight dashboard preview behind the auth form.
 - The auth form sits on the right as a compact stone/glass terminal card.
 - On successful login, the foreground auth layer exits while the preview terminal scales forward.
 - Navigation then lands on `/dashboard`, where the real workspace loads normally.
-- A route-level reveal flag keeps the transition alive across the auth-to-dashboard navigation so the cut is masked.
+- The black terminal is a route-independent global transition element. It stays mounted across auth and dashboard routes; only its text, position, blur, and opacity change.
+- The real dashboard terminal fades in underneath the global terminal after the global element has moved into the dashboard position.
+- Dashboard right-side chrome waits until the terminal text swap has run, then reveals.
 
 This avoids rendering protected dashboard data behind auth, keeps the login page fast, and still creates a seamless visual bridge.
 
