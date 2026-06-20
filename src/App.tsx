@@ -5,14 +5,30 @@ import { useAuth } from "@/auth/AuthProvider";
 import { StonecodePrototype } from "@/components/stonecode/StonecodePrototype";
 
 export function App() {
+  const [authRevealActive, setAuthRevealActive] = useState(false);
+
   return (
     <Routes>
       <Route element={<LandingPage />} path="/" />
-      <Route element={<AuthPage mode="login" />} path="/login" />
-      <Route element={<AuthPage mode="signup" />} path="/signup" />
-      <Route element={<AuthPage mode="forgot" />} path="/forgot-password" />
-      <Route element={<RequireAuth><StonecodePrototype /></RequireAuth>} path="/dashboard" />
-      <Route element={<RequireAuth><StonecodePrototype /></RequireAuth>} path="/courses/:courseId" />
+      <Route element={<AuthPage mode="login" onAuthReveal={() => setAuthRevealActive(true)} />} path="/login" />
+      <Route element={<AuthPage mode="signup" onAuthReveal={() => setAuthRevealActive(true)} />} path="/signup" />
+      <Route element={<AuthPage mode="forgot" onAuthReveal={() => setAuthRevealActive(true)} />} path="/forgot-password" />
+      <Route
+        element={
+          <RequireAuth>
+            <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
+          </RequireAuth>
+        }
+        path="/dashboard"
+      />
+      <Route
+        element={
+          <RequireAuth>
+            <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
+          </RequireAuth>
+        }
+        path="/courses/:courseId"
+      />
       <Route element={<RequireAuth><SettingsPage section="profile" /></RequireAuth>} path="/settings/profile" />
       <Route element={<RequireAuth><SettingsPage section="account" /></RequireAuth>} path="/settings/account" />
       <Route element={<RequireAuth><SettingsPage section="billing" /></RequireAuth>} path="/settings/billing" />
@@ -42,7 +58,7 @@ function LandingPage() {
   );
 }
 
-function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
+function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot"; onAuthReveal: () => void }) {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -54,10 +70,10 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
   const title = mode === "login" ? "Enter workspace" : mode === "signup" ? "Start the beta" : "Recover access";
   const helper =
     mode === "login"
-      ? "Your learning workspace is already staged behind this gate."
+      ? "Where ideas are carved in code."
       : mode === "signup"
-        ? "Create your Stonecode beta account and keep every course workspace persistent."
-        : "Send a recovery link and return to the same workspace.";
+        ? "Create your beta workspace and keep every course persistent."
+        : "Send a recovery link and return to your workspace.";
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/dashboard";
 
   useEffect(() => {
@@ -90,11 +106,12 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
     try {
       if (mode === "login") {
         await auth.signIn(email, password);
+        onAuthReveal();
         setIsTransitioning(true);
         form.reset();
         transitionTimerRef.current = window.setTimeout(() => {
           navigate(from, { replace: true });
-        }, 860);
+        }, 620);
         return;
       } else if (mode === "signup") {
         await auth.signUp(email, password);
@@ -136,7 +153,7 @@ function AuthPage({ mode }: { mode: "login" | "signup" | "forgot" }) {
             </label>
           )}
           <button disabled={isSubmitting || !auth.isConfigured} type="submit">
-            {isSubmitting ? "Working..." : mode === "forgot" ? "Send reset link" : mode === "signup" ? "Create account" : "Open dashboard"}
+            {isSubmitting ? "Working..." : mode === "forgot" ? "Send reset link" : mode === "signup" ? "Create account" : "Log in ->"}
           </button>
         </form>
         <nav className="auth-links" aria-label="Account links">

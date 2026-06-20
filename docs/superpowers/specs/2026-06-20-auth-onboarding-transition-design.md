@@ -8,10 +8,11 @@ Make login, signup, and password reset feel like the same stone workspace, not a
 
 Use a lightweight dashboard preview behind the auth form.
 
-- The preview reuses the stone wall, distant terminal block, and faint dashboard rails.
-- The auth form sits in the foreground as a compact stone/glass terminal card.
+- The preview reuses the stone wall and a blurred distant terminal block positioned left of center.
+- The auth form sits on the right as a compact stone/glass terminal card.
 - On successful login, the foreground auth layer exits while the preview terminal scales forward.
 - Navigation then lands on `/dashboard`, where the real workspace loads normally.
+- A route-level reveal flag keeps the transition alive across the auth-to-dashboard navigation so the cut is masked.
 
 This avoids rendering protected dashboard data behind auth, keeps the login page fast, and still creates a seamless visual bridge.
 

@@ -4,9 +4,15 @@ import { DashboardPage } from "@/components/stonecode/DashboardPage";
 import { useCourseWorkspace } from "@/hooks/useCourseWorkspace";
 import { useTerminalRunner } from "@/hooks/useTerminalRunner";
 import { useTutorChat } from "@/hooks/useTutorChat";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-export function StonecodePrototype() {
+export function StonecodePrototype({
+  authRevealActive = false,
+  onAuthRevealComplete
+}: {
+  authRevealActive?: boolean;
+  onAuthRevealComplete?: () => void;
+}) {
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const workspace = useCourseWorkspace();
   const terminal = useTerminalRunner(workspace.selectedFile);
@@ -16,9 +22,15 @@ export function StonecodePrototype() {
     setStoredState: workspace.setStoredState
   });
 
+  useEffect(() => {
+    if (!authRevealActive) return;
+    const timer = window.setTimeout(() => onAuthRevealComplete?.(), 1040);
+    return () => window.clearTimeout(timer);
+  }, [authRevealActive, onAuthRevealComplete]);
+
   return (
     <main
-      className={`scene${workspace.active ? " has-panel" : ""}`}
+      className={`scene${workspace.active ? " has-panel" : ""}${authRevealActive ? " auth-reveal-active" : ""}`}
       aria-label="Stonecode programming tutor workspace"
       style={{ "--code-light": workspace.activeCourse?.light ?? 1 } as React.CSSProperties}
     >
