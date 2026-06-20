@@ -1,10 +1,12 @@
 import { Dispatch, SetStateAction, useCallback, useState } from "react";
 import { requestTutorReply } from "@/ai/tutorClient";
+import { useAuth } from "@/auth/AuthProvider";
 import { Course } from "@/data/courses";
 import {
   createStoredMessage,
   StoredCourseState
 } from "@/services/courseStorage";
+import { createSupabaseChatMessage } from "@/services/supabaseCourseStorage";
 import { ActiveState, CardView } from "@/components/stonecode/types";
 
 export function useTutorChat({
@@ -16,8 +18,10 @@ export function useTutorChat({
   storedState: StoredCourseState;
   setStoredState: Dispatch<SetStateAction<StoredCourseState>>;
 }) {
+  const { isConfigured, user } = useAuth();
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
   const finishTyping = useCallback(() => setTypingMessageId(null), []);
+  const isSupabaseBacked = isConfigured && Boolean(user);
 
   async function updateCourseChat(course: Course, message: string, lessonIndex: number) {
     const userMessage = createStoredMessage("user", message, lessonIndex);
@@ -33,6 +37,7 @@ export function useTutorChat({
         ]
       }
     }));
+    persistChatMessage(course.id, "user", message, lessonIndex);
 
     let reply: string;
     try {
@@ -63,7 +68,15 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
         ]
       }
     }));
+    persistChatMessage(course.id, "assistant", reply, lessonIndex);
     setTypingMessageId(assistantMessage.id);
+  }
+
+  function persistChatMessage(courseId: string, role: "user" | "assistant", content: string, lessonIndex: number) {
+    if (!isSupabaseBacked) return;
+    createSupabaseChatMessage({ courseId, role, content, lessonIndex }).catch(() => {
+      // Local UI should keep working when persistence fails; reload will expose durable state.
+    });
   }
 
   function updateLessonView(courseId: string, view: CardView | null) {

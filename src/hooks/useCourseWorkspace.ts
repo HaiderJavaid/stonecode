@@ -1,5 +1,6 @@
-import { KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "@/auth/AuthProvider";
 import { Course } from "@/data/courses";
 import {
   clearCourseState,
@@ -15,13 +16,23 @@ import {
   WorkspaceFile,
   WorkspaceFolder
 } from "@/services/workspaceFiles";
+import {
+  createSupabaseCourse,
+  loadSupabaseCourseState,
+  saveSupabaseWorkspaceState
+} from "@/services/supabaseCourseStorage";
 import { ActiveState } from "@/components/stonecode/types";
 
 export function useCourseWorkspace() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const { isConfigured, user } = useAuth();
   const [active, setActive] = useState<ActiveState | null>(null);
   const [storedState, setStoredState] = useState<StoredCourseState>(() => loadCourseState());
+  const [isRemoteLoaded, setIsRemoteLoaded] = useState(false);
+  const syncTimerRef = useRef<number | null>(null);
+  const syncErrorRef = useRef<string | null>(null);
+  const isSupabaseBacked = isConfigured && Boolean(user);
   const userCourses = useMemo(
     () => storedState.courseOrder.map((id) => storedState.coursesById[id]).filter(Boolean),
     [storedState.courseOrder, storedState.coursesById]
@@ -83,7 +94,32 @@ export function useCourseWorkspace() {
   }
 
   useEffect(() => {
-    const course = courseId ? storedState.coursesById[courseId] : null;
+    if (!isSupabaseBacked || !user) {
+      setIsRemoteLoaded(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setIsRemoteLoaded(false);
+
+    loadSupabaseCourseState(user)
+      .then((remoteState) => {
+        if (isCancelled) return;
+        setStoredState(remoteState);
+        setIsRemoteLoaded(true);
+      })
+      .catch((error) => {
+        syncErrorRef.current = error instanceof Error ? error.message : "Failed to load Supabase course state.";
+        setIsRemoteLoaded(true);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isSupabaseBacked, user]);
+
+  useEffect(() => {
+    const course = isRemoteLoaded || !isSupabaseBacked ? (courseId ? storedState.coursesById[courseId] : null) : null;
     if (course) {
       const files = storedState.workspaceFilesByCourse[course.id] ?? [];
       const fileIndex = Math.min(storedState.selectedFilesByCourse[course.id] ?? 0, Math.max(files.length - 1, 0));
@@ -108,11 +144,34 @@ export function useCourseWorkspace() {
             activeCourseId: null
           }
     );
-  }, [courseId, storedState.coursesById, storedState.selectedFilesByCourse, storedState.workspaceFilesByCourse]);
+  }, [
+    courseId,
+    isRemoteLoaded,
+    isSupabaseBacked,
+    storedState.coursesById,
+    storedState.selectedFilesByCourse,
+    storedState.workspaceFilesByCourse
+  ]);
 
   useEffect(() => {
+    if (isSupabaseBacked) return;
     saveCourseState(storedState);
-  }, [storedState]);
+  }, [isSupabaseBacked, storedState]);
+
+  useEffect(() => {
+    if (!isSupabaseBacked || !isRemoteLoaded) return;
+    if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
+
+    syncTimerRef.current = window.setTimeout(() => {
+      saveSupabaseWorkspaceState(storedState).catch((error) => {
+        syncErrorRef.current = error instanceof Error ? error.message : "Failed to sync Supabase course state.";
+      });
+    }, 600);
+
+    return () => {
+      if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
+    };
+  }, [isRemoteLoaded, isSupabaseBacked, storedState]);
 
   function openCourse(course: Course) {
     const files = getCourseFiles(course);
@@ -129,21 +188,22 @@ export function useCourseWorkspace() {
     }));
   }
 
-  function addLearningCourse(course: Course) {
+  async function addLearningCourse(course: Course) {
+    const nextCourse = isSupabaseBacked && user ? await createSupabaseCourse(user, course) : course;
     setStoredState((current) => ({
       ...current,
       coursesById: {
         ...current.coursesById,
-        [course.id]: course
+        [nextCourse.id]: nextCourse
       },
-      courseOrder: [...current.courseOrder.filter((id) => id !== course.id), course.id],
+      courseOrder: [...current.courseOrder.filter((id) => id !== nextCourse.id), nextCourse.id],
       selectedFilesByCourse: {
         ...current.selectedFilesByCourse,
-        [course.id]: 0
+        [nextCourse.id]: 0
       }
     }));
-    navigate(`/courses/${course.id}`);
-    setActive({ courseId: course.id, fileIndex: 0 });
+    navigate(`/courses/${nextCourse.id}`);
+    setActive({ courseId: nextCourse.id, fileIndex: 0 });
   }
 
   function startProject(course: Course) {

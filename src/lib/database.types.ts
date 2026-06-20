@@ -32,6 +32,14 @@ export type WorkspaceFileRecord = {
   updated_at: string;
 };
 
+export type WorkspaceFolderRecord = {
+  id: string;
+  course_id: string;
+  path: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ChatMessageRecord = {
   id: string;
   course_id: string;
@@ -39,6 +47,14 @@ export type ChatMessageRecord = {
   content: string;
   lesson_index: number | null;
   created_at: string;
+};
+
+export type CourseProgressRecord = {
+  course_id: string;
+  lesson_index: number;
+  lesson_view: "resume" | "details" | "progress" | null;
+  selected_file_path: string | null;
+  updated_at: string;
 };
 
 export type SubscriptionRecord = {
