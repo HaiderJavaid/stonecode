@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { RequireAuth } from "@/auth/RequireAuth";
 import { useAuth } from "@/auth/AuthProvider";
@@ -194,21 +194,31 @@ function AuthTransitionSurface({
           <span />
           <span />
         </div>
-        <pre>{isRevealing ? `01 loading "${owner}" workspace
-02 courses.fetch({ owner });
-03 files.restore();
-04 tutor.context.sync();
-05
-06 dashboard.panels.queue();
-07 right_panel.reveal.after(text);
-08 stonecode.ready();` : `01 const path = "beginner-safe";
-02 workspace.stage("dashboard");
-03
-04 tutor.keepContext(course.id);
-05 files.restore("README.md");
-06 progress.sync();
-07
-08 // login opens this block`}</pre>
+        <TerminalCode
+          lines={
+            isRevealing
+              ? [
+                  `01 loading "${owner}" workspace`,
+                  "02 courses.fetch({ owner });",
+                  "03 files.restore();",
+                  "04 tutor.context.sync();",
+                  "05",
+                  "06 dashboard.panels.queue();",
+                  "07 chrome.reveal.fromLeft();",
+                  "08 stonecode.ready();"
+                ]
+              : [
+                  '01 const path = "beginner-safe";',
+                  '02 workspace.stage("dashboard");',
+                  "03",
+                  "04 tutor.keepContext(course.id);",
+                  '05 files.restore("README.md");',
+                  "06 progress.sync();",
+                  "07",
+                  "08 // login opens this block"
+                ]
+          }
+        />
       </div>
       <div className="auth-preview-panel panel-left">
         <span />
@@ -223,6 +233,18 @@ function AuthTransitionSurface({
       </div>
       <p className="auth-preview-caption">dashboard staged</p>
     </div>
+  );
+}
+
+function TerminalCode({ lines }: { lines: string[] }) {
+  return (
+    <pre>
+      {lines.map((line, index) => (
+        <span className="auth-terminal-line" key={`${index}-${line}`} style={{ "--line-index": index } as CSSProperties}>
+          {line || " "}
+        </span>
+      ))}
+    </pre>
   );
 }
 
