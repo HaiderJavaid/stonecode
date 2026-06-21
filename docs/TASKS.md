@@ -23,14 +23,20 @@
 - Supabase schema scaffold added.
 - Stripe checkout, billing portal, and webhook endpoints scaffolded.
 - Supabase Auth provider, login/signup/reset forms, protected routes, and sign-out added.
+- Supabase-backed course/file/folder/chat/progress persistence code added with local fallback.
 - Empty dashboard and guided course setup flow added locally.
 - Start project initializes only folders and `README.md`.
+- Auth transition checkpoint branches created for comparing saved states.
+- Current WIP branch `work/auth-transition-from-06` created from checkpoint 06.
+- Login startup/load-in fade and zoom sequence accepted by product lead.
+- First dashboard animation optimization pass completed without changing the accepted login zoom.
+- Right panel reveal currently slides from fully offscreen right, but still needs stutter diagnosis after zoom.
 
 ## Current Stage: Production SaaS Foundation
 
 - [x] Connect Supabase Auth to login/signup/forgot-password pages.
 - [x] Create authenticated route guard.
-- [ ] Replace mock courses with user-owned Supabase courses.
+- [x] Replace mock courses with user-owned Supabase courses in code.
 - [x] Stop showing seed courses on first login.
 - [x] Add guided local "what do you want to learn?" course setup.
 - [x] Make finalize create a course shell without files.
@@ -41,9 +47,14 @@
 - [x] Add VS Code-style colored file glyphs.
 - [x] Add drag/drop file and folder moves with root/folder drop zones and nested visual sorting.
 - [ ] Replace local setup finalization with AI-backed course generation.
-- [ ] Persist workspace files to `workspace_files`.
-- [ ] Persist chat to `chat_messages`.
-- [ ] Persist progress to `course_progress`.
+- [x] Persist workspace files to `workspace_files` in code.
+- [x] Persist workspace folders to `workspace_folders` in code.
+- [x] Persist chat to `chat_messages` in code.
+- [x] Persist progress to `course_progress` in code.
+- [ ] Apply/verify live Supabase schema migration, including `workspace_folders`.
+- [x] Finish accepted startup/load-in fade through login zoom.
+- [ ] Diagnose right panel/add-course area reveal stutter after login zoom.
+- [ ] Continue dashboard component animation optimization and real-session QA.
 - [ ] Sync Stripe webhook events to `subscriptions`.
 - [ ] Add Stripe billing portal customer mapping.
 - [ ] Enforce Free/Basic/Pro limits server-side.
@@ -56,6 +67,7 @@
 ## Paid Beta QA
 
 - [ ] signup/login/logout.
+- [ ] seamless login-to-dashboard animation with no code-box refresh or brightness cut.
 - [ ] create course.
 - [ ] open course workspace.
 - [ ] edit file and refresh restore.

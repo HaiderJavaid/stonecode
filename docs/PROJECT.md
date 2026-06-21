@@ -47,17 +47,27 @@ Done:
 - setup renders outside the course-list stack and uses the same full-height learning chat layout as course conversations.
 - file tree supports VS Code-style colored glyphs and local drag/drop moves.
 - Stripe checkout/portal/webhook route scaffolds.
+- Supabase-backed course, workspace file/folder, chat, and progress persistence code with local fallback.
+- Auth onboarding/login-to-dashboard transition work is being manually tuned on `work/auth-transition-from-06`.
 
 Not done:
 
-- database-backed persistence.
+- live Supabase schema migration verification, especially `workspace_folders`.
 - AI-backed course setup generation for course shell and README content.
 - Stripe webhook persistence.
 - server-side plan enforcement.
 - AI usage tracking.
 - streaming tutor replies.
 - production code sandbox.
+- final rendered QA for the auth transition.
 
 ## Direction
 
 Refactor toward a SaaS product without losing the IDE-first experience. Do not replace the product with a marketing dashboard. The dashboard and course workspace remain the primary app surfaces.
+
+## Current Branch State
+
+- Active branch: `work/auth-transition-from-06`.
+- Base checkpoint: `checkpoint/06-persistent-terminal-reveal` at `9c5e457`.
+- Current auth transition changes are uncommitted by request.
+- Do not commit or push unless explicitly asked.

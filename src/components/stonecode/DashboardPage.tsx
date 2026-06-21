@@ -1,4 +1,4 @@
-import { KeyboardEvent } from "react";
+import { KeyboardEvent, useMemo } from "react";
 import { Course, currentPlan } from "@/data/courses";
 import { CourseCard } from "@/components/stonecode/CourseCard";
 import { ActiveState, CardView } from "@/components/stonecode/types";
@@ -42,6 +42,11 @@ export function DashboardPage({
   onResetDemoState: () => void;
   onOpenSetup: () => void;
 }) {
+  const activeIndex = useMemo(
+    () => (active ? courses.findIndex((item) => item.id === active.courseId) : -1),
+    [active, courses]
+  );
+
   return (
     <section className={`cards${active || isSetupOpen ? " has-open" : ""}`} aria-label="Course folders">
       {!active && !isSetupOpen && (
@@ -64,7 +69,6 @@ export function DashboardPage({
         </div>
       )}
       {courses.map((course, index) => {
-        const activeIndex = active ? courses.findIndex((item) => item.id === active.courseId) : -1;
         const hiddenDirection = isSetupOpen || activeIndex < 0 || index > activeIndex ? "after" : "before";
 
         return (

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Course, createLearningCourse } from "@/data/courses";
+import { useTypedText } from "@/hooks/useTypedText";
 
 const favoriteIdeas = [
   "JavaScript fundamentals",
@@ -31,11 +32,14 @@ export function CourseSetupCard({
     }
   ]);
   const [typingMessageIndex, setTypingMessageIndex] = useState(0);
-  const [typedContent, setTypedContent] = useState("");
   const [suggestionsReady, setSuggestionsReady] = useState(false);
   const latestUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
   const plan = useMemo(() => createDraftPlan(latestUserMessage), [latestUserMessage]);
   const typingMessage = messages[typingMessageIndex];
+  const typingText = typingMessage?.role === "assistant" ? typingMessage.content : "";
+  const { typedText: typedContent } = useTypedText(typingText, {
+    enabled: Boolean(typingText)
+  });
 
   useEffect(() => {
     const lastAssistantIndex = messages.map((message) => message.role).lastIndexOf("assistant");
@@ -43,28 +47,14 @@ export function CourseSetupCard({
   }, [messages]);
 
   useEffect(() => {
-    if (!typingMessage || typingMessage.role !== "assistant") return;
-    setTypedContent("");
     setSuggestionsReady(false);
-    let index = 0;
-    let interval = 0;
-    const delay = window.setTimeout(() => {
-      const step = Math.max(1, Math.ceil(typingMessage.content.length / 120));
-      interval = window.setInterval(() => {
-        index = Math.min(index + step, typingMessage.content.length);
-        setTypedContent(typingMessage.content.slice(0, index));
-        if (index >= typingMessage.content.length) {
-          window.clearInterval(interval);
-          window.setTimeout(() => setSuggestionsReady(true), 360);
-        }
-      }, 18);
-    }, 520);
-
-    return () => {
-      window.clearTimeout(delay);
-      window.clearInterval(interval);
-    };
   }, [typingMessage]);
+
+  useEffect(() => {
+    if (!typingText || typedContent.length < typingText.length) return;
+    const timer = window.setTimeout(() => setSuggestionsReady(true), 360);
+    return () => window.clearTimeout(timer);
+  }, [typedContent.length, typingText]);
 
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -19,7 +19,9 @@ Stonecode is moving from prototype to focused paid beta:
 - SaaS stack: Supabase + Stripe.
 - core UX: persistent course workspace.
 - required app pages now have routes.
-- database/billing are scaffolded but not connected live.
+- Supabase-backed workspace persistence code exists with local fallback.
+- billing is scaffolded but not connected live.
+- auth transition polish is in progress on `work/auth-transition-from-06`.
 
 ## Commands
 
