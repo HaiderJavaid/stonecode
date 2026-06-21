@@ -1,60 +1,82 @@
-date: 2026-06-20
+date: 2026-06-21
 project:
   name: Stonecode
   local_path: /Users/kinghaider/Desktop/Coding/projects/stonecode
-  github_repo: null
+  release_clone_path: null
+  github_repo: https://github.com/HaiderJavaid/stonecode.git
 status:
-  positioning: paid-beta AI programming tutor for self-taught beginners
-  target_launch: focused paid beta
-  saas_stack: Supabase Auth/Postgres + Stripe
   active_ui: src/components/stonecode/StonecodePrototype.tsx
-  current_stage: Production SaaS foundation
-  completed:
-    - prototype app shell
-    - persistent course workspace model
-    - CodeMirror editor
-    - localStorage course/file/chat persistence
-    - server-side /api/tutor endpoint
-    - browser Worker lesson runner
-    - routed app shell and required placeholder pages
-    - component/hook refactor started
-    - Supabase schema and Stripe endpoint scaffolds
-    - Supabase Auth forms and route guard
-    - empty first-login dashboard with guided local course setup
-    - Start project initializes folders and README only
-    - setup card rendered outside course stack, delayed typing assistant text, VS Code-style file glyphs, and local drag/drop file tree moves
+  positioning: paid-beta AI programming tutor for self-taught beginners
+  current_stage: auth/dashboard animation optimization on top of production SaaS foundation
+  current_branch: work/auth-transition-from-06
+  base_checkpoint: checkpoint/06-persistent-terminal-reveal
+  uncommitted_work:
+    - src/App.tsx
+    - src/app/globals.css
+    - src/hooks/useTypedText.ts
+    - src/components/stonecode/CourseCard.tsx
+    - src/components/stonecode/CourseSetupCard.tsx
+    - src/components/stonecode/DashboardPage.tsx
+    - src/components/stonecode/StonecodePrototype.tsx
   current_risks:
-    - database schema exists but local app still uses localStorage
+    - right dashboard panel still looks fade-like/stuttery during login reveal; latest two-frame trigger experiment was reverted at user request
+    - broader dashboard component animations still need more manual flow testing after the first optimization pass
+    - in-app Browser fails with sandboxCwd metadata error, so rendered checks used Playwright CLI fallback
+    - live Supabase DB may still be missing workspace_folders migration, causing workspace persistence requests to fail until schema is applied
     - Stripe endpoints exist but need env vars, auth, customer mapping, and webhook persistence
     - tutor endpoint is not yet auth-gated or usage-tracked
-    - OpenAI key previously returned 429 quota
-    - no production sandbox for untrusted full projects
+deployment:
+  host_target: unknown
+  branch: work/auth-transition-from-06
+  latest_commit: 9c5e457
+  config_file: null
+  pushed: false
+  pr_url: null
+git:
+  main: 9c5e457
+  origin_main: 9c5e457
+  checkpoint_branches:
+    - checkpoint/00-initial-stonecode
+    - checkpoint/01-supabase-persistence
+    - checkpoint/02-auth-transition-docs
+    - checkpoint/03-auth-onboarding-transition
+    - checkpoint/04-smooth-auth-dashboard
+    - checkpoint/05-global-auth-terminal
+    - checkpoint/06-persistent-terminal-reveal
+  stash:
+    - "stash@{0}: wip auth transition experiments 2026-06-21"
+done:
+  - Supabase Auth forms and route guard
+  - Supabase-backed courses/files/folders/progress/chat persistence code with local fallback
+  - empty first-login dashboard with guided local course setup
+  - Start project initializes folders and README only
+  - auth transition checkpoint branches created for visual comparison
+  - current WIP branch created from checkpoint 06
+  - login-to-dashboard transition now keeps matching dashboard code in the auth terminal and includes logout button
+  - accepted startup/login intro through zoom as visually correct
+  - restored delayed startup fade using a cheap overlay plus opacity-only card fade
+  - optimized dashboard animation pass without changing login zoom
+  - moved typing work to rAF throttling and stopped inactive course cards from running typewriter updates
+  - reduced dashboard animation paint cost by removing large dashboard blur/filter/blend hotspots
+  - right panel reveal currently uses full offscreen CSS slide from the right with 120ms delay and 620ms duration
+  - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
 verification:
-  required_now:
-    - npm run build
+  latest_commands:
     - npm run typecheck
-    - browser QA for routes and course workspace
-docs_direction:
-  audience: self-taught beginners
-  launch_scope: focused paid beta
-  required_pages:
-    - landing
-    - login
-    - signup
-    - forgot password
-    - dashboard
-    - course workspace
-    - settings profile/account/billing/usage
-    - privacy
-    - terms
-    - support
+    - npm run build
+    - git diff --check
+    - Playwright CLI screenshots on auth-bypassed local dashboard at desktop and mobile sizes
+  latest_result: passed after wrap-up docs update on 2026-06-21
+  not_verified:
+    - authenticated Supabase login credentials were not available for full real-session dashboard interaction QA
 next:
-  - migrate courses/files/messages/progress from localStorage to Supabase
+  - diagnose right-panel reveal stutter after zoom without changing accepted intro/login zoom
+  - continue optimizing remaining dashboard component animations while preserving current intro and login zoom
+  - apply Supabase schema migration to live project, especially workspace_folders
   - replace local setup generator with AI-backed course plan and README generation
   - map Stripe webhook events into subscriptions table
   - enforce plan limits server-side
   - auth-gate /api/tutor and record usage_events
-  - add apply/reject AI file edit approval flow
 read_first:
   - docs/HANDOFF.yaml
   - docs/README.md

@@ -1,10 +1,12 @@
 import { CourseWorkspace } from "@/components/stonecode/CourseWorkspace";
 import { CourseSetupCard } from "@/components/stonecode/CourseSetupCard";
 import { DashboardPage } from "@/components/stonecode/DashboardPage";
+import { useAuth } from "@/auth/AuthProvider";
 import { useCourseWorkspace } from "@/hooks/useCourseWorkspace";
 import { useTerminalRunner } from "@/hooks/useTerminalRunner";
 import { useTutorChat } from "@/hooks/useTutorChat";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export function StonecodePrototype({
   authRevealActive = false,
@@ -13,7 +15,10 @@ export function StonecodePrototype({
   authRevealActive?: boolean;
   onAuthRevealComplete?: () => void;
 }) {
+  const auth = useAuth();
+  const navigate = useNavigate();
   const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [isBooting, setIsBooting] = useState(true);
   const workspace = useCourseWorkspace();
   const terminal = useTerminalRunner(workspace.selectedFile);
   const tutor = useTutorChat({
@@ -24,13 +29,23 @@ export function StonecodePrototype({
 
   useEffect(() => {
     if (!authRevealActive) return;
-    const timer = window.setTimeout(() => onAuthRevealComplete?.(), 1520);
+    const timer = window.setTimeout(() => onAuthRevealComplete?.(), 3400);
     return () => window.clearTimeout(timer);
   }, [authRevealActive, onAuthRevealComplete]);
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setIsBooting(false));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  async function handleSignOut() {
+    await auth.signOut();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <main
-      className={`scene${workspace.active ? " has-panel" : ""}${authRevealActive ? " auth-reveal-active" : ""}`}
+      className={`scene${workspace.active ? " has-panel" : ""}${authRevealActive ? " auth-reveal-active" : ""}${isBooting ? " is-booting" : ""}`}
       aria-label="Stonecode programming tutor workspace"
       style={{ "--code-light": workspace.activeCourse?.light ?? 1 } as React.CSSProperties}
     >
@@ -65,6 +80,10 @@ export function StonecodePrototype({
         <i className="dot green" />
         <i className="dot purple" />
       </aside>
+
+      <button className="session-logout" onClick={handleSignOut} type="button">
+        Log out
+      </button>
 
       <DashboardPage
         active={workspace.active}

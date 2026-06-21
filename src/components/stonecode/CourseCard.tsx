@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef } from "react";
 import { lessonSteps } from "@/components/stonecode/lessonData";
 import { renderMarkdown } from "@/components/stonecode/markdown";
 import { CourseCardProps, CardView } from "@/components/stonecode/types";
+import { useTypedText } from "@/hooks/useTypedText";
 
 export function CourseCard({
   active,
@@ -24,58 +25,33 @@ export function CourseCard({
   typingMessageId
 }: CourseCardProps) {
   const lesson = lessonSteps[lessonIndex];
-  const canvasMessages = chatMessages.filter((message) => message.lessonIndex === lessonIndex);
+  const canvasMessages = useMemo(
+    () => chatMessages.filter((message) => message.lessonIndex === lessonIndex),
+    [chatMessages, lessonIndex]
+  );
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const [typedContent, setTypedContent] = useState("");
-  const [typedLessonContent, setTypedLessonContent] = useState("");
-  const typingMessage = canvasMessages.find((message) => message.id === typingMessageId && message.role === "assistant");
+  const typingMessage = useMemo(
+    () => canvasMessages.find((message) => message.id === typingMessageId && message.role === "assistant"),
+    [canvasMessages, typingMessageId]
+  );
   const isProjectStarted = fileCount > 0;
-
-  useEffect(() => {
-    setTypedLessonContent("");
-    let index = 0;
-    let interval = 0;
-    const delay = window.setTimeout(() => {
-      const step = Math.max(2, Math.ceil(lesson.tutor.length / 180));
-      interval = window.setInterval(() => {
-        index = Math.min(index + step, lesson.tutor.length);
-        setTypedLessonContent(lesson.tutor.slice(0, index));
-        if (index >= lesson.tutor.length) window.clearInterval(interval);
-      }, 18);
-    }, 520);
-
-    return () => {
-      window.clearTimeout(delay);
-      window.clearInterval(interval);
-    };
-  }, [lesson.tutor]);
-
-  useEffect(() => {
-    if (!typingMessage) {
-      setTypedContent("");
-      return;
-    }
-
-    setTypedContent("");
-    let index = 0;
-    let interval = 0;
-    const delay = window.setTimeout(() => {
-      const step = Math.max(2, Math.ceil(typingMessage.content.length / 180));
-      interval = window.setInterval(() => {
-        index = Math.min(index + step, typingMessage.content.length);
-        setTypedContent(typingMessage.content.slice(0, index));
-        if (index >= typingMessage.content.length) {
-          window.clearInterval(interval);
-          onTypingComplete();
-        }
-      }, 18);
-    }, 520);
-
-    return () => {
-      window.clearTimeout(delay);
-      window.clearInterval(interval);
-    };
-  }, [onTypingComplete, typingMessage]);
+  const shouldAnimateLesson = active && view === "resume";
+  const { typedText: typedLessonContent } = useTypedText(lesson.tutor, {
+    enabled: shouldAnimateLesson
+  });
+  const { typedText: typedContent } = useTypedText(typingMessage?.content ?? "", {
+    enabled: Boolean(typingMessage),
+    onComplete: onTypingComplete
+  });
+  const typedLessonMarkup = useMemo(() => renderMarkdown(typedLessonContent), [typedLessonContent]);
+  const typedMessageMarkup = useMemo(() => renderMarkdown(typedContent), [typedContent]);
+  const renderedAssistantMessages = useMemo(() => {
+    return new Map(
+      canvasMessages
+        .filter((message) => message.role === "assistant" && message.id !== typingMessageId)
+        .map((message) => [message.id, renderMarkdown(message.content)])
+    );
+  }, [canvasMessages, typingMessageId]);
 
   useEffect(() => {
     const scrollElement = chatScrollRef.current;
@@ -188,14 +164,14 @@ export function CourseCard({
               </div>
               <div className="ai-chat-scroll" aria-label={`${lesson.label} conversation`} ref={chatScrollRef}>
                 <div className="ai-message assistant-message ai-response">
-                  {renderMarkdown(typedLessonContent)}
+                  {typedLessonMarkup}
                   {typedLessonContent.length < lesson.tutor.length && <span className="typing-caret" />}
                 </div>
                 {canvasMessages.map((message) => (
                   <div className={`ai-message ${message.role === "assistant" ? "assistant-message ai-response" : "user-message"}`} key={message.id}>
                     {message.role === "assistant" ? (
                       <>
-                        {renderMarkdown(message.id === typingMessageId ? typedContent : message.content)}
+                        {message.id === typingMessageId ? typedMessageMarkup : renderedAssistantMessages.get(message.id)}
                         {message.id === typingMessageId && <span className="typing-caret" />}
                       </>
                     ) : (

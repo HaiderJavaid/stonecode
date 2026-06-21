@@ -1,27 +1,52 @@
-import { CSSProperties, FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { RequireAuth } from "@/auth/RequireAuth";
 import { useAuth } from "@/auth/AuthProvider";
 import { StonecodePrototype } from "@/components/stonecode/StonecodePrototype";
+import { defaultCourseCodeHtml } from "@/data/courses";
+
+type AuthRevealPhase = "idle" | "holding" | "revealing";
+
+const AUTH_HOLD_MS = 1300;
+const AUTH_ZOOM_MS = 1120;
+const AUTH_BRIGHTEN_MS = 780;
+const AUTH_BRIGHTEN_DELAY_MS = AUTH_HOLD_MS + AUTH_ZOOM_MS;
+const AUTH_ROUTE_DELAY_MS = AUTH_BRIGHTEN_DELAY_MS + AUTH_BRIGHTEN_MS + 80;
 
 export function App() {
   const auth = useAuth();
   const location = useLocation();
-  const [authRevealActive, setAuthRevealActive] = useState(false);
+  const [authRevealPhase, setAuthRevealPhase] = useState<AuthRevealPhase>("idle");
+  const revealTimerRef = useRef<number | null>(null);
   const isAuthRoute = location.pathname === "/login" || location.pathname === "/signup" || location.pathname === "/forgot-password";
+  const authRevealActive = authRevealPhase !== "idle";
+
+  useEffect(() => {
+    return () => {
+      if (revealTimerRef.current) window.clearTimeout(revealTimerRef.current);
+    };
+  }, []);
+
+  function startAuthReveal() {
+    if (revealTimerRef.current) window.clearTimeout(revealTimerRef.current);
+    setAuthRevealPhase("holding");
+    revealTimerRef.current = window.setTimeout(() => {
+      setAuthRevealPhase("revealing");
+    }, AUTH_HOLD_MS);
+  }
 
   return (
     <>
-      <AuthTransitionSurface isAuthRoute={isAuthRoute} isRevealing={authRevealActive} userEmail={auth.user?.email ?? null} />
+      <AuthTransitionSurface isAuthRoute={isAuthRoute} phase={authRevealPhase} userEmail={auth.user?.email ?? null} />
       <Routes>
         <Route element={<LandingPage />} path="/" />
-        <Route element={<AuthPage mode="login" onAuthReveal={() => setAuthRevealActive(true)} />} path="/login" />
-        <Route element={<AuthPage mode="signup" onAuthReveal={() => setAuthRevealActive(true)} />} path="/signup" />
-        <Route element={<AuthPage mode="forgot" onAuthReveal={() => setAuthRevealActive(true)} />} path="/forgot-password" />
+        <Route element={<AuthPage mode="login" onAuthReveal={startAuthReveal} />} path="/login" />
+        <Route element={<AuthPage mode="signup" onAuthReveal={startAuthReveal} />} path="/signup" />
+        <Route element={<AuthPage mode="forgot" onAuthReveal={startAuthReveal} />} path="/forgot-password" />
         <Route
           element={
             <RequireAuth>
-              <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
+              <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealPhase("idle")} />
             </RequireAuth>
           }
           path="/dashboard"
@@ -29,7 +54,7 @@ export function App() {
         <Route
           element={
             <RequireAuth>
-              <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealActive(false)} />
+              <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={() => setAuthRevealPhase("idle")} />
             </RequireAuth>
           }
           path="/courses/:courseId"
@@ -72,7 +97,9 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isBrightening, setIsBrightening] = useState(false);
   const transitionTimerRef = useRef<number | null>(null);
+  const brightenTimerRef = useRef<number | null>(null);
   const title = mode === "login" ? "Enter workspace" : mode === "signup" ? "Start the beta" : "Recover access";
   const helper =
     mode === "login"
@@ -85,6 +112,7 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
   useEffect(() => {
     return () => {
       if (transitionTimerRef.current) window.clearTimeout(transitionTimerRef.current);
+      if (brightenTimerRef.current) window.clearTimeout(brightenTimerRef.current);
     };
   }, []);
 
@@ -115,9 +143,12 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
         onAuthReveal();
         setIsTransitioning(true);
         form.reset();
+        brightenTimerRef.current = window.setTimeout(() => {
+          setIsBrightening(true);
+        }, AUTH_BRIGHTEN_DELAY_MS);
         transitionTimerRef.current = window.setTimeout(() => {
           navigate(from, { replace: true });
-        }, 620);
+        }, AUTH_ROUTE_DELAY_MS);
         return;
       } else if (mode === "signup") {
         await auth.signUp(email, password);
@@ -135,7 +166,7 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
   }
 
   return (
-    <main className={`auth-stage auth-${mode}${isTransitioning ? " is-transitioning" : ""}`}>
+    <main className={`auth-stage auth-${mode}${isTransitioning ? " is-transitioning" : ""}${isBrightening ? " is-brightening" : ""}`}>
       <section className="auth-card" aria-label={title}>
         <div className="auth-brand">
           <span>stonecode</span>
@@ -173,52 +204,30 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
 
 function AuthTransitionSurface({
   isAuthRoute,
-  isRevealing,
+  phase,
   userEmail
 }: {
   isAuthRoute: boolean;
-  isRevealing: boolean;
+  phase: AuthRevealPhase;
   userEmail: string | null;
 }) {
-  if (!isAuthRoute && !isRevealing) return null;
-  const owner = userEmail?.split("@")[0] || "learner";
+  if (!isAuthRoute && phase === "idle") return null;
+  void userEmail;
+  const isRevealing = phase === "revealing";
+  const isActive = phase !== "idle";
 
   return (
-    <div className={`auth-transition-surface${isRevealing ? " is-revealing" : ""}`} aria-hidden="true">
+    <div
+      className={`auth-transition-surface${isAuthRoute ? " is-auth-route" : ""}${isActive ? " is-active" : ""}${phase === "holding" ? " is-holding" : ""}${isRevealing ? " is-revealing" : ""}`}
+      aria-hidden="true"
+    >
       <div className="auth-wall-grain" />
       <div className="auth-preview-light light-one" />
       <div className="auth-preview-light light-two" />
       <div className="auth-global-terminal">
-        <div className="auth-terminal-head">
-          <span />
-          <span />
-          <span />
-        </div>
-        <TerminalCode
-          lines={
-            isRevealing
-              ? [
-                  `01 loading "${owner}" workspace`,
-                  "02 courses.fetch({ owner });",
-                  "03 files.restore();",
-                  "04 tutor.context.sync();",
-                  "05",
-                  "06 dashboard.panels.queue();",
-                  "07 chrome.reveal.fromLeft();",
-                  "08 stonecode.ready();"
-                ]
-              : [
-                  '01 const path = "beginner-safe";',
-                  '02 workspace.stage("dashboard");',
-                  "03",
-                  "04 tutor.keepContext(course.id);",
-                  '05 files.restore("README.md");',
-                  "06 progress.sync();",
-                  "07",
-                  "08 // login opens this block"
-                ]
-          }
-        />
+        <pre>
+          <code dangerouslySetInnerHTML={{ __html: defaultCourseCodeHtml }} />
+        </pre>
       </div>
       <div className="auth-preview-panel panel-left">
         <span />
@@ -233,18 +242,6 @@ function AuthTransitionSurface({
       </div>
       <p className="auth-preview-caption">dashboard staged</p>
     </div>
-  );
-}
-
-function TerminalCode({ lines }: { lines: string[] }) {
-  return (
-    <pre>
-      {lines.map((line, index) => (
-        <span className="auth-terminal-line" key={`${index}-${line}`} style={{ "--line-index": index } as CSSProperties}>
-          {line || " "}
-        </span>
-      ))}
-    </pre>
   );
 }
 
