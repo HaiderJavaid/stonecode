@@ -10,11 +10,14 @@ status:
   current_stage: auth/dashboard animation optimization on top of production SaaS foundation
   current_branch: main
   base_checkpoint: checkpoint/06-persistent-terminal-reveal
-  uncommitted_work: []
+  uncommitted_work:
+    - auth/dashboard reveal preload gap and readiness gate
+    - deferred course panel content/typewriter work until panel shell animation settles
+    - docs updated for latest animation optimization
   current_risks:
-    - right dashboard panel still looks fade-like/stuttery during login reveal; latest two-frame trigger experiment was reverted at user request
-    - broader dashboard component animations still need more manual flow testing after the first optimization pass
-    - in-app Browser fails with sandboxCwd metadata error, so rendered checks used Playwright CLI fallback
+    - real Supabase login credentials were not available for true authenticated login-to-dashboard timing QA
+    - broader dashboard component animations still need more manual flow testing after the latest optimization pass
+    - in-app Browser fails with sandboxCwd metadata error, so rendered checks used headless Chrome CDP fallback
     - live Supabase DB may still be missing workspace_folders migration, causing workspace persistence requests to fail until schema is applied
     - Stripe endpoints exist but need env vars, auth, customer mapping, and webhook persistence
     - tutor endpoint is not yet auth-gated or usage-tracked
@@ -52,19 +55,24 @@ done:
   - moved typing work to rAF throttling and stopped inactive course cards from running typewriter updates
   - reduced dashboard animation paint cost by removing large dashboard blur/filter/blend hotspots
   - right panel reveal currently uses full offscreen CSS slide from the right with 120ms delay and 620ms duration
+  - dashboard route now mounts 520ms earlier after auth zoom so the workspace can preload behind the transition surface
+  - right dashboard panel reveal is gated on workspace readiness plus a short paint-prep delay before CSS animation starts
+  - course selection panel defers chat/Markdown/typewriter content until the panel shell animation settles
   - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
   - merged work/auth-transition-from-06 into local main at d6bc39e
 verification:
   latest_commands:
+    - static regression check for dashboardRevealReady, panelContentReady, and AUTH_DASHBOARD_PRELOAD_MS
     - npm run typecheck
     - npm run build
     - git diff --check
-    - Playwright CLI screenshots on auth-bypassed local dashboard at desktop and mobile sizes
-  latest_result: passed after wrap-up docs update on 2026-06-21
+    - headless Chrome CDP screenshots on fake-session local dashboard at desktop and mobile sizes
+    - headless Chrome CDP Add learning course interaction check
+  latest_result: passed on 2026-06-21, with real Supabase login timing still unverified
   not_verified:
     - authenticated Supabase login credentials were not available for full real-session dashboard interaction QA
 next:
-  - diagnose right-panel reveal stutter after zoom without changing accepted intro/login zoom
+  - manually test real login-to-dashboard timing with valid Supabase credentials
   - continue optimizing remaining dashboard component animations while preserving current intro and login zoom
   - apply Supabase schema migration to live project, especially workspace_folders
   - replace local setup generator with AI-backed course plan and README generation

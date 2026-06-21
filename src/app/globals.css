@@ -2126,7 +2126,14 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   opacity: 1;
 }
 
-.scene.auth-reveal-active .cards {
+.scene.auth-reveal-active:not(.auth-dashboard-ready) .cards {
+  overflow: clip;
+  opacity: 0;
+  transform: translate3d(calc(100% + 36px), 0, 0);
+  will-change: opacity, transform;
+}
+
+.scene.auth-reveal-active.auth-dashboard-ready .cards {
   overflow: clip;
   animation: auth-right-panel-in 620ms cubic-bezier(0.18, 0.86, 0.22, 1) 120ms both;
   will-change: opacity, transform;

@@ -19,6 +19,7 @@ export function StonecodePrototype({
   const navigate = useNavigate();
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
+  const [dashboardRevealReady, setDashboardRevealReady] = useState(!authRevealActive);
   const workspace = useCourseWorkspace();
   const terminal = useTerminalRunner(workspace.selectedFile);
   const tutor = useTutorChat({
@@ -34,6 +35,26 @@ export function StonecodePrototype({
   }, [authRevealActive, onAuthRevealComplete]);
 
   useEffect(() => {
+    if (!authRevealActive) {
+      setDashboardRevealReady(true);
+      return;
+    }
+
+    setDashboardRevealReady(false);
+    if (!workspace.isWorkspaceReady) return;
+
+    let frame = 0;
+    const timer = window.setTimeout(() => {
+      frame = window.requestAnimationFrame(() => setDashboardRevealReady(true));
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [authRevealActive, workspace.isWorkspaceReady]);
+
+  useEffect(() => {
     const frame = window.requestAnimationFrame(() => setIsBooting(false));
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -45,7 +66,7 @@ export function StonecodePrototype({
 
   return (
     <main
-      className={`scene${workspace.active ? " has-panel" : ""}${authRevealActive ? " auth-reveal-active" : ""}${isBooting ? " is-booting" : ""}`}
+      className={`scene${workspace.active ? " has-panel" : ""}${authRevealActive ? " auth-reveal-active" : ""}${dashboardRevealReady ? " auth-dashboard-ready" : ""}${isBooting ? " is-booting" : ""}`}
       aria-label="Stonecode programming tutor workspace"
       style={{ "--code-light": workspace.activeCourse?.light ?? 1 } as React.CSSProperties}
     >

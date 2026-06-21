@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { lessonSteps } from "@/components/stonecode/lessonData";
 import { renderMarkdown } from "@/components/stonecode/markdown";
 import { CourseCardProps, CardView } from "@/components/stonecode/types";
@@ -25,6 +25,7 @@ export function CourseCard({
   typingMessageId
 }: CourseCardProps) {
   const lesson = lessonSteps[lessonIndex];
+  const [panelContentReady, setPanelContentReady] = useState(false);
   const canvasMessages = useMemo(
     () => chatMessages.filter((message) => message.lessonIndex === lessonIndex),
     [chatMessages, lessonIndex]
@@ -35,29 +36,38 @@ export function CourseCard({
     [canvasMessages, typingMessageId]
   );
   const isProjectStarted = fileCount > 0;
-  const shouldAnimateLesson = active && view === "resume";
-  const { typedText: typedLessonContent } = useTypedText(lesson.tutor, {
+  const shouldAnimateLesson = active && view === "resume" && panelContentReady;
+  const { typedText: typedLessonContent } = useTypedText(panelContentReady ? lesson.tutor : "", {
     enabled: shouldAnimateLesson
   });
-  const { typedText: typedContent } = useTypedText(typingMessage?.content ?? "", {
-    enabled: Boolean(typingMessage),
+  const { typedText: typedContent } = useTypedText(panelContentReady ? typingMessage?.content ?? "" : "", {
+    enabled: panelContentReady && Boolean(typingMessage),
     onComplete: onTypingComplete
   });
   const typedLessonMarkup = useMemo(() => renderMarkdown(typedLessonContent), [typedLessonContent]);
   const typedMessageMarkup = useMemo(() => renderMarkdown(typedContent), [typedContent]);
   const renderedAssistantMessages = useMemo(() => {
+    if (!panelContentReady) return new Map();
     return new Map(
       canvasMessages
         .filter((message) => message.role === "assistant" && message.id !== typingMessageId)
         .map((message) => [message.id, renderMarkdown(message.content)])
     );
-  }, [canvasMessages, typingMessageId]);
+  }, [canvasMessages, panelContentReady, typingMessageId]);
 
   useEffect(() => {
     const scrollElement = chatScrollRef.current;
     if (!scrollElement) return;
     scrollElement.scrollTop = scrollElement.scrollHeight;
   }, [canvasMessages, typedContent]);
+
+  useEffect(() => {
+    setPanelContentReady(false);
+    if (!active || !view) return;
+
+    const timer = window.setTimeout(() => setPanelContentReady(true), 460);
+    return () => window.clearTimeout(timer);
+  }, [active, course.id, view]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -152,11 +162,11 @@ export function CourseCard({
         </div>
       </div>
       {active && view && (
-        <div className={`selection-panel${view === "resume" ? " is-chat-canvas" : ""}`} onClick={(event) => event.stopPropagation()}>
+        <div className={`selection-panel${view === "resume" ? " is-chat-canvas" : ""}${panelContentReady ? " is-content-ready" : ""}`} onClick={(event) => event.stopPropagation()}>
           <button className="selection-back" onClick={() => onViewChange(null)} type="button">
             Back
           </button>
-          {view === "resume" && (
+          {panelContentReady && view === "resume" && (
             <div className="lesson-panel ai-chat-panel">
               <div className="chat-canvas-head">
                 <span>{lesson.label}</span>
@@ -201,7 +211,7 @@ export function CourseCard({
               </div>
             </div>
           )}
-          {view === "details" && (
+          {panelContentReady && view === "details" && (
             <div className="info-panel">
               <span>Course details</span>
               <p>{course.description}</p>
@@ -212,7 +222,7 @@ export function CourseCard({
               </dl>
             </div>
           )}
-          {view === "progress" && (
+          {panelContentReady && view === "progress" && (
             <div className="progress-panel">
               <span>Progress path</span>
               <ul>

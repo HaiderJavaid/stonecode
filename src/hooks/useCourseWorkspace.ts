@@ -387,6 +387,7 @@ export function useCourseWorkspace() {
     activeFolders,
     selectedFile,
     activeCourseCount,
+    isWorkspaceReady: !isSupabaseBacked || isRemoteLoaded,
     storedState,
     setStoredState,
     getCourseFiles,

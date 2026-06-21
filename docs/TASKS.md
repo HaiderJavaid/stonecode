@@ -30,7 +30,8 @@
 - Current WIP branch `work/auth-transition-from-06` created from checkpoint 06.
 - Login startup/load-in fade and zoom sequence accepted by product lead.
 - First dashboard animation optimization pass completed without changing the accepted login zoom.
-- Right panel reveal currently slides from fully offscreen right, but still needs stutter diagnosis after zoom.
+- Right panel/add-course reveal now mounts after auth zoom with a preload gap, waits for workspace readiness, then animates from the right.
+- Course selection panel defers heavier chat/Markdown/typewriter content until the panel shell animation finishes.
 
 ## Current Stage: Production SaaS Foundation
 
@@ -53,7 +54,7 @@
 - [x] Persist progress to `course_progress` in code.
 - [ ] Apply/verify live Supabase schema migration, including `workspace_folders`.
 - [x] Finish accepted startup/load-in fade through login zoom.
-- [ ] Diagnose right panel/add-course area reveal stutter after login zoom.
+- [x] Diagnose right panel/add-course area reveal stutter after login zoom.
 - [ ] Continue dashboard component animation optimization and real-session QA.
 - [ ] Sync Stripe webhook events to `subscriptions`.
 - [ ] Add Stripe billing portal customer mapping.
