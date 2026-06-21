@@ -12,11 +12,11 @@ Current UI focus: keep the accepted auth intro/login zoom while optimizing dashb
 
 ## Branch State
 
-- Current branch: `work/auth-transition-from-06`.
+- Current branch: `main`.
 - Base checkpoint: `checkpoint/06-persistent-terminal-reveal`.
 - Latest committed base: `9c5e457 Keep auth terminal persistent through reveal`.
-- Current working tree has uncommitted auth and dashboard animation optimization edits.
-- User explicitly requested no git commit/push during this wrap-up.
+- Auth and dashboard animation optimization edits were committed on `work/auth-transition-from-06` and merged into local `main`.
+- User requested local merge to main; no push was requested.
 - Existing stash: `stash@{0}: wip auth transition experiments 2026-06-21`.
 
 ## Checkpoint Branches
@@ -66,6 +66,7 @@ Latest code verification during wrap-up:
 - Static animation guards passed.
 - Playwright CLI screenshots captured desktop and mobile dashboard states through a temporary local auth bypass that was removed.
 - Latest wrap-up verification on 2026-06-21 reran `npm run typecheck`, `npm run build`, and `git diff --check`; all passed.
+- Post-merge verification on `main` reran `npm run typecheck`, `npm run build`, and `git diff --check`; all passed.
 
 No commit or push.
 

@@ -8,16 +8,9 @@ status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
   current_stage: auth/dashboard animation optimization on top of production SaaS foundation
-  current_branch: work/auth-transition-from-06
+  current_branch: main
   base_checkpoint: checkpoint/06-persistent-terminal-reveal
-  uncommitted_work:
-    - src/App.tsx
-    - src/app/globals.css
-    - src/hooks/useTypedText.ts
-    - src/components/stonecode/CourseCard.tsx
-    - src/components/stonecode/CourseSetupCard.tsx
-    - src/components/stonecode/DashboardPage.tsx
-    - src/components/stonecode/StonecodePrototype.tsx
+  uncommitted_work: []
   current_risks:
     - right dashboard panel still looks fade-like/stuttery during login reveal; latest two-frame trigger experiment was reverted at user request
     - broader dashboard component animations still need more manual flow testing after the first optimization pass
@@ -27,13 +20,13 @@ status:
     - tutor endpoint is not yet auth-gated or usage-tracked
 deployment:
   host_target: unknown
-  branch: work/auth-transition-from-06
-  latest_commit: 9c5e457
+  branch: main
+  latest_commit: d6bc39e
   config_file: null
   pushed: false
   pr_url: null
 git:
-  main: 9c5e457
+  main: d6bc39e
   origin_main: 9c5e457
   checkpoint_branches:
     - checkpoint/00-initial-stonecode
@@ -60,6 +53,7 @@ done:
   - reduced dashboard animation paint cost by removing large dashboard blur/filter/blend hotspots
   - right panel reveal currently uses full offscreen CSS slide from the right with 120ms delay and 620ms duration
   - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
+  - merged work/auth-transition-from-06 into local main at d6bc39e
 verification:
   latest_commands:
     - npm run typecheck
