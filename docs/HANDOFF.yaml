@@ -27,12 +27,12 @@ status:
 deployment:
   host_target: unknown
   branch: main
-  latest_commit: pending
+  latest_commit: 0f8191a
   config_file: null
   pushed: false
   pr_url: null
 git:
-  main: pending
+  main: 0f8191a
   origin_main: ac85eb9
   checkpoint_branches:
     - checkpoint/00-initial-stonecode
