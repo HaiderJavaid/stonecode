@@ -4,6 +4,14 @@ import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canCreateActiveCourse, normalizePlanTier, resolvePlanLimit } from "./plan-limits.mjs";
 import { formatSubscriptionState } from "./subscription-state.mjs";
+import { createSseEventParser } from "./response-stream.mjs";
+import {
+  extractTutorStreamDelta,
+  isTutorStreamDone,
+  isTutorStreamFailed,
+  requestTutorStream,
+  resolveTutorProviderConfig
+} from "./llm-providers.mjs";
 import {
   buildCheckoutMetadata,
   extractCheckoutSessionState,
@@ -11,6 +19,7 @@ import {
   patchCheckoutSessionState,
   upsertSubscriptionState
 } from "./stripe-subscriptions.mjs";
+import { formatUsageSummary } from "./usage-events.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const isDev = process.argv.includes("--dev") || process.env.NODE_ENV !== "production";
@@ -64,6 +73,11 @@ const server = createHttpServer(async (request, response) => {
       return;
     }
 
+    if (request.url?.startsWith("/api/usage")) {
+      await handleUsageRequest(request, response);
+      return;
+    }
+
     if (request.url?.startsWith("/api/billing/checkout")) {
       await handleCheckoutRequest(request, response);
       return;
@@ -102,11 +116,9 @@ async function handleTutorRequest(request, response) {
     return;
   }
 
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.OPEN_AI_API_KEY;
-  if (!apiKey) {
-    sendJson(response, 503, { error: "OPENAI_API_KEY is not configured on the server." });
-    return;
-  }
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
 
   const body = await readJsonBody(request);
   const context = body?.context;
@@ -115,47 +127,103 @@ async function handleTutorRequest(request, response) {
     return;
   }
 
-  const upstreamResponse = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
-      instructions: tutorInstructions,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: JSON.stringify(context)
-            }
-          ]
-        }
-      ],
-      max_output_tokens: 700
-    })
+  const providerConfig = resolveTutorProviderConfig(process.env);
+  const profileError = await upsertServerProfile(admin, user);
+  if (profileError) {
+    sendJson(response, 500, { error: profileError.message });
+    return;
+  }
+
+  if (providerConfig.error) {
+    await recordUsageEvent(admin, {
+      userId: user.id,
+      courseId: context.courseId,
+      model: providerConfig.model,
+      status: "blocked"
+    });
+    sendJson(response, 503, { error: providerConfig.error });
+    return;
+  }
+
+  const upstreamResponse = await requestTutorStream({
+    config: providerConfig,
+    context,
+    instructions: tutorInstructions
   });
 
-  const upstreamJson = await upstreamResponse.json().catch(() => null);
   if (!upstreamResponse.ok) {
+    const upstreamJson = await upstreamResponse.json().catch(() => null);
+    await recordUsageEvent(admin, {
+      userId: user.id,
+      courseId: context.courseId,
+      model: providerConfig.model,
+      status: "failed"
+    });
     sendJson(response, upstreamResponse.status, {
-      error: upstreamJson?.error?.message ?? "OpenAI request failed."
+      error: upstreamJson?.error?.message ?? `${providerConfig.provider} request failed.`
     });
     return;
   }
 
-  const reply = extractOutputText(upstreamJson);
-  if (!reply) {
-    sendJson(response, 502, { error: "OpenAI response did not include text output." });
+  if (!upstreamResponse.body) {
+    await recordUsageEvent(admin, {
+      userId: user.id,
+      courseId: context.courseId,
+      model: providerConfig.model,
+      status: "failed"
+    });
+    sendJson(response, 502, { error: `${providerConfig.provider} response stream was empty.` });
     return;
   }
 
-  sendJson(response, 200, { reply });
-}
+  response.writeHead(200, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
 
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let streamStatus = "failed";
+  let hasReplyText = false;
+  const parser = createSseEventParser((event) => {
+    const delta = extractTutorStreamDelta(providerConfig.provider, event);
+    if (delta) {
+      hasReplyText = true;
+      response.write(encoder.encode(delta));
+      return;
+    }
+
+    if (isTutorStreamDone(providerConfig.provider, event)) {
+      streamStatus = hasReplyText ? "success" : "failed";
+      return;
+    }
+
+    if (isTutorStreamFailed(providerConfig.provider, event)) {
+      streamStatus = "failed";
+    }
+  });
+
+  try {
+    for await (const chunk of upstreamResponse.body) {
+      const decodedChunk = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+      parser.push(decodedChunk);
+    }
+
+    const tail = decoder.decode();
+    if (tail) parser.push(tail);
+    if (hasReplyText) streamStatus = "success";
+  } catch {
+    streamStatus = "failed";
+  } finally {
+    await recordUsageEvent(admin, {
+      userId: user.id,
+      courseId: context.courseId,
+      model: providerConfig.model,
+      status: streamStatus
+    });
+    response.end();
+  }
+}
 async function handleCourseRequest(request, response) {
   if (request.method === "POST") {
     await handleCreateCourseRequest(request, response);
@@ -192,6 +260,31 @@ async function handleSubscriptionRequest(request, response) {
   }
 
   sendJson(response, 200, { subscription: formatSubscriptionState(data) });
+}
+
+async function handleUsageRequest(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+
+  const { data, error } = await admin
+    .from("usage_events")
+    .select("status,created_at")
+    .eq("user_id", user.id)
+    .eq("event_type", "tutor_message")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    sendJson(response, 500, { error: error.message });
+    return;
+  }
+
+  sendJson(response, 200, { usage: formatUsageSummary(data ?? []) });
 }
 
 async function handleCreateCourseRequest(request, response) {
@@ -523,21 +616,26 @@ async function readUserPlan(client, userId) {
   return normalizePlanTier(data.plan);
 }
 
-function extractOutputText(payload) {
-  if (typeof payload?.output_text === "string") return payload.output_text;
-  if (!Array.isArray(payload?.output)) return "";
+async function recordUsageEvent(admin, { userId, courseId, model, status }) {
+  const { error } = await admin.from("usage_events").insert({
+    user_id: userId,
+    course_id: typeof courseId === "string" && courseId ? courseId : null,
+    event_type: "tutor_message",
+    model: typeof model === "string" ? model : null,
+    input_tokens: null,
+    output_tokens: null,
+    status
+  });
 
-  return payload.output
-    .flatMap((item) => (Array.isArray(item?.content) ? item.content : []))
-    .filter((content) => content?.type === "output_text" && typeof content.text === "string")
-    .map((content) => content.text)
-    .join("\n")
-    .trim();
+  if (error) {
+    console.error("Failed to record usage event", error.message);
+  }
 }
 
 function isTutorContext(context) {
   return Boolean(
     context &&
+      (typeof context.courseId === "string" || context.courseId === null) &&
       typeof context.courseTitle === "string" &&
       typeof context.courseSubject === "string" &&
       typeof context.checkpoint === "string" &&

@@ -38,13 +38,13 @@ The core UX:
 
 ## Current Stage
 
-Production SaaS foundation is active, with verified Supabase persistence and server-side Free plan course limits.
+Production SaaS foundation is active, with verified Supabase persistence, server-side Free plan course limits, Stripe subscription sync, and authenticated tutor streaming.
 
 Supabase Auth is connected. Supabase-backed course/file/folder/chat/progress persistence is verified against the live project, including `workspace_folders`.
 
 Current branch: `main`.
 
-Next product priority: load real subscription state in the dashboard, then continue Stripe subscription sync and AI usage tracking without enabling live AI calls until approved.
+Next product priority: add direct AI file editing and terminal tool execution inside the IDE, with workspace scoping, undo/history, and safe command limits.
 
 ## Verification
 
@@ -52,5 +52,6 @@ Before marking a stage done:
 
 - Run `npm run build`.
 - Run `npm run typecheck`.
+- Run relevant verifier scripts such as `npm run verify:response-stream` and `npm run verify:usage-summary` after tutor changes.
 - Run the local app.
 - Verify the main flow: login -> empty dashboard -> add learning course -> finalize -> Start project -> folders/README appear -> learning chat opens -> file tree drag/drop works.

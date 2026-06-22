@@ -46,9 +46,15 @@ Reason: the accepted intro and dashboard motion should stay cinematic while the 
 
 ### AI Orchestration
 
-Use direct OpenAI SDK/API calls for MVP.
+Use direct provider adapters for MVP instead of LangChain or LangGraph.
 
-Reason: simpler streaming, tool approval, cost control, and traceability.
+Reason: simpler streaming, tool execution, cost control, and traceability. Keep app logic provider-agnostic enough to route through OpenAI or OpenRouter.
+
+### Dev AI Provider
+
+Use OpenRouter free models for local tutor testing when OpenAI quota is unavailable.
+
+Reason: keeps the tutor path testable without spending OpenAI credits while preserving the OpenAI path for later paid/prod use.
 
 ### Code Execution
 
@@ -63,4 +69,11 @@ Reason: full untrusted project execution needs a backend/container sandbox later
 - Supabase project.
 - Backend/container sandbox provider.
 - RAG ingestion format.
+- Final production AI provider/model.
+- Direct AI file-edit control model, including scope, undo/history, and terminal command limits.
 - Final exact timing/easing for remaining dashboard component animations.
+- Final app navigation model for dashboard/workspace/settings/support/legal routes.
+- XP formula and badge taxonomy.
+- Which unlockables are earned by progression versus subscription tier.
+- Whether shared/published courses belong in paid beta or post-beta.
+- Monetization model for future freemium path: subscription-only, usage credits, microtransactions, creator marketplace, or hybrid.

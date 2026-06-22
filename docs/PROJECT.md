@@ -14,6 +14,8 @@ The core value is a persistent course workspace:
 - course opens into file tree, IDE, terminal, and tutor panel.
 - files, chat, progress, and tutor context restore per course.
 - beginner-safe guidance over generic chatbot answers.
+- progression should eventually feel game-like: course/task completions grant XP, badges, levels, and unlockable learning help.
+- later, completed courses may become reusable artifacts: users can publish, star/favorite, and replicate courses made by themselves or others.
 
 ## Paid Beta Target
 
@@ -26,6 +28,7 @@ Required before selling:
 - Stripe checkout, billing portal, subscription sync, and plan limits.
 - authenticated tutor endpoint with usage tracking.
 - apply/reject approval before AI file edits.
+- clear in-app navigation between dashboard, workspace, profile/account/billing/usage, and support/legal pages.
 - basic support, privacy, and terms pages.
 
 ## Current State
@@ -39,7 +42,7 @@ Done:
 - localStorage persistence.
 - CodeMirror editor.
 - browser Worker lesson runner.
-- server-side OpenAI tutor endpoint.
+- server-side provider-backed tutor endpoint.
 - Supabase schema scaffold.
 - Supabase login/signup/password reset and route guard.
 - empty dashboard plus local guided course setup flow.
@@ -55,13 +58,17 @@ Done:
 - Server-side `/api/subscription` loads authenticated Free/Basic/Pro plan state for dashboard/settings UI.
 - Setup finalize now shows server errors instead of silently closing on failed course creation.
 - Auth onboarding/login-to-dashboard transition polish is committed on `main`.
+- Real Stripe checkout, portal, and webhook smoke QA passed; product lead manually verified Pro checkout.
+- Authenticated tutor calls, usage event tracking, streaming transport, and OpenRouter dev/test provider routing.
 
 Not done:
 
+- Proper app-wide navigation and route linking. Account/settings/support/legal routes exist but are not yet designed as a connected user flow.
 - AI-backed course setup generation for course shell and README content.
-- Real Stripe dashboard/CLI live QA for checkout, portal, and webhook events.
-- AI usage tracking.
-- streaming tutor replies.
+- XP, level, badge, and unlockable hint/exercise progression system.
+- Course publishing/replication marketplace or community library.
+- Freemium and microtransaction model decisions: possible paid actions include extra hints, course generation, premium course replication, or advanced exercises.
+- direct AI file-edit and terminal tool execution inside the IDE.
 - production code sandbox.
 - final rendered QA for the auth transition.
 

@@ -5,6 +5,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { StonecodePrototype } from "@/components/stonecode/StonecodePrototype";
 import { defaultCourseCodeHtml } from "@/data/courses";
 import { useSubscriptionState } from "@/hooks/useSubscriptionState";
+import { useUsageSummary } from "@/hooks/useUsageSummary";
 
 type AuthRevealPhase = "idle" | "holding" | "revealing";
 
@@ -251,6 +252,7 @@ function SettingsPage({ section }: { section: "profile" | "account" | "billing" 
   const auth = useAuth();
   const navigate = useNavigate();
   const { subscription, isLoading, error } = useSubscriptionState();
+  const { usage, isLoading: isUsageLoading, error: usageError } = useUsageSummary(section === "usage");
   const [billingError, setBillingError] = useState<string | null>(null);
   const [isBillingActionPending, setIsBillingActionPending] = useState(false);
 
@@ -312,6 +314,14 @@ function SettingsPage({ section }: { section: "profile" | "account" | "billing" 
             Plan: {subscription.planName} ({subscription.status})
             {isLoading ? " loading" : ""}. Courses: {subscription.activeCourseLimit}. AI messages: {subscription.aiMessagesPerMonth}/month.
             {error ? ` Subscription sync issue: ${error}` : ""}
+          </p>
+        )}
+        {section === "usage" && (
+          <p className="plain-muted">
+            Tutor messages: {usage.totalTutorMessages}
+            {isUsageLoading ? " loading" : ""}. Success: {usage.statusCounts.success}. Failed: {usage.statusCounts.failed}. Blocked: {usage.statusCounts.blocked}.
+            {usage.latestEventAt ? ` Last event: ${new Date(usage.latestEventAt).toLocaleString()}.` : ""}
+            {usageError ? ` Usage sync issue: ${usageError}` : ""}
           </p>
         )}
         {section === "billing" && (

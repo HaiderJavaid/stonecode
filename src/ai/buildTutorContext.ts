@@ -11,6 +11,7 @@ export type TutorContextInput = {
 };
 
 export type TutorContext = {
+  courseId: string;
   courseTitle: string;
   courseSubject: string;
   checkpoint: string;
@@ -26,6 +27,7 @@ export type TutorContext = {
 
 export function buildTutorContext(input: TutorContextInput): TutorContext {
   return {
+    courseId: input.course.id,
     courseTitle: input.course.title,
     courseSubject: input.course.subject,
     checkpoint: input.course.checkpoint,
@@ -39,4 +41,3 @@ export function buildTutorContext(input: TutorContextInput): TutorContext {
     userMessage: input.userMessage
   };
 }
-

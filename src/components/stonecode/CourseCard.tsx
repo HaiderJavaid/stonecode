@@ -40,12 +40,11 @@ export function CourseCard({
   const { typedText: typedLessonContent } = useTypedText(panelContentReady ? lesson.tutor : "", {
     enabled: shouldAnimateLesson
   });
-  const { typedText: typedContent } = useTypedText(panelContentReady ? typingMessage?.content ?? "" : "", {
-    enabled: panelContentReady && Boolean(typingMessage),
-    onComplete: onTypingComplete
-  });
   const typedLessonMarkup = useMemo(() => renderMarkdown(typedLessonContent), [typedLessonContent]);
-  const typedMessageMarkup = useMemo(() => renderMarkdown(typedContent), [typedContent]);
+  const typingMessageMarkup = useMemo(
+    () => (panelContentReady && typingMessage ? renderMarkdown(typingMessage.content) : null),
+    [panelContentReady, typingMessage]
+  );
   const renderedAssistantMessages = useMemo(() => {
     if (!panelContentReady) return new Map();
     return new Map(
@@ -59,7 +58,11 @@ export function CourseCard({
     const scrollElement = chatScrollRef.current;
     if (!scrollElement) return;
     scrollElement.scrollTop = scrollElement.scrollHeight;
-  }, [canvasMessages, typedContent]);
+  }, [canvasMessages, typingMessage?.content]);
+
+  useEffect(() => {
+    if (!typingMessageId) onTypingComplete();
+  }, [onTypingComplete, typingMessageId]);
 
   useEffect(() => {
     setPanelContentReady(false);
@@ -181,7 +184,7 @@ export function CourseCard({
                   <div className={`ai-message ${message.role === "assistant" ? "assistant-message ai-response" : "user-message"}`} key={message.id}>
                     {message.role === "assistant" ? (
                       <>
-                        {message.id === typingMessageId ? typedMessageMarkup : renderedAssistantMessages.get(message.id)}
+                        {message.id === typingMessageId ? typingMessageMarkup : renderedAssistantMessages.get(message.id)}
                         {message.id === typingMessageId && <span className="typing-caret" />}
                       </>
                     ) : (

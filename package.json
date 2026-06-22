@@ -13,6 +13,8 @@
     "verify:plan-limits": "node scripts/verify-plan-limits.mjs",
     "verify:stripe-subscription-sync": "node scripts/verify-stripe-subscription-sync.mjs",
     "verify:subscription-state": "node scripts/verify-subscription-state.mjs",
+    "verify:response-stream": "node scripts/verify-response-stream.mjs",
+    "verify:usage-summary": "node scripts/verify-usage-summary.mjs",
     "verify:supabase": "node scripts/verify-supabase-persistence.mjs"
   },
   "dependencies": {

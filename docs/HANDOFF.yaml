@@ -1,4 +1,4 @@
-date: 2026-06-22
+date: 2026-06-23
 project:
   name: Stonecode
   local_path: /Users/kinghaider/Desktop/Coding/projects/stonecode
@@ -7,7 +7,7 @@ project:
 status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
-  current_stage: verified Supabase persistence, server-side plan limits, subscription-state UI, and Stripe checkout/webhook sync on top of production SaaS foundation
+  current_stage: verified Supabase persistence, server-side plan limits, subscription-state UI, Stripe sync, and provider-backed tutor streaming on top of production SaaS foundation
   current_branch: main
   base_checkpoint: checkpoint/06-persistent-terminal-reveal
   checkpoint_work:
@@ -21,21 +21,24 @@ status:
     - authenticated Stripe checkout and portal customer mapping
     - Billing settings actions for Basic checkout, Pro checkout, and billing portal
     - Stripe webhook event mapping into subscriptions
+    - authenticated streaming tutor endpoint with usage tracking
+    - OpenRouter provider adapter for free-model dev/test
     - docs updated for live Supabase verification and server-side plan limit work
   current_risks:
+    - existing settings/support/legal/profile routes are not yet linked or designed as a coherent navigation flow
     - real user login-to-dashboard timing is still not verified with actual credentials
     - broader dashboard component animations still need more manual flow testing after the latest optimization pass
-    - tutor endpoint is not yet auth-gated or usage-tracked
+    - direct AI file edits and terminal tool execution are not implemented yet
 deployment:
   host_target: unknown
   branch: main
   latest_commit: see git HEAD
   config_file: null
-  pushed: true
+  pushed: pending
   pr_url: null
 git:
   main: see git HEAD
-  origin_main: see git HEAD
+  origin_main: pending push
   checkpoint_branches:
     - checkpoint/00-initial-stonecode
     - checkpoint/01-supabase-persistence
@@ -90,7 +93,10 @@ done:
   - verified authenticated checkout and portal endpoints return Stripe URLs with live test Stripe keys
   - verified Stripe CLI webhook trigger forwards events to local `/api/stripe/webhook` with 200 responses
   - product lead manually verified browser Stripe checkout by upgrading to Pro and seeing the paid plan work
+  - captured future direction for course publishing/replication, stars/favorites, and possible freemium microtransactions
   - OpenAI/API tutor work intentionally not touched to avoid AI credit usage
+  - authenticated `/api/tutor` now records `usage_events` and streams replies
+  - tutor provider routing supports `LLM_PROVIDER=openai|openrouter`; local ignored `.env` uses OpenRouter `openai/gpt-oss-20b:free` for dev testing
   - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
   - merged work/auth-transition-from-06 into local main at d6bc39e
 verification:
@@ -100,19 +106,25 @@ verification:
     - npm run verify:plan-limits
     - npm run verify:subscription-state
     - npm run verify:stripe-subscription-sync
+    - npm run verify:usage-summary
+    - npm run verify:response-stream
     - npm run typecheck
     - npm run build
+    - local /api/tutor OpenRouter temp-user smoke check
     - local /api/courses live Supabase temp-user check
     - local /api/subscription live Supabase temp-user Free and Basic checks
     - local /api/billing/checkout live Stripe temp-user check
     - local /api/billing/portal live Stripe temp-user check
     - stripe trigger checkout.session.completed
     - Chrome CDP production render check for /login and protected settings redirect
-  latest_result: subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, manual Pro checkout, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
+  latest_result: OpenRouter provider-backed tutor smoke, streaming parser checks, usage summary checks, subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, manual Pro checkout, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
   not_verified:
     - authenticated Supabase login credentials were not available for full real-session dashboard interaction QA
 next:
-  - auth-gate /api/tutor and record usage_events
+  - add direct AI file-edit and terminal tool execution inside the IDE
+  - design and implement app-wide navigation between dashboard, workspace, profile/account/billing/usage, support, privacy, and terms
+  - design progression system for AI-estimated XP, levels, badges, and unlockable hints/exercises
+  - later, evaluate course publishing/replication marketplace and freemium/microtransaction model
   - manually test real login-to-dashboard timing with valid Supabase credentials
   - continue optimizing remaining dashboard component animations while preserving current intro and login zoom
   - replace local setup generator with AI-backed course plan and README generation

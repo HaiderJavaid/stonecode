@@ -38,28 +38,52 @@ Status: done.
 
 ## Stage 5: Billing + Limits
 
-Status: active.
+Status: done.
 
 - Stripe checkout.
 - billing portal.
 - webhook subscription sync.
-- server-side plan limits. Free course creation/reset is done; paid subscription loading remains.
+- server-side plan limits.
+- subscription state loading in dashboard/settings.
 
 ## Stage 6: AI Production Safety
 
-Status: planned.
+Status: active.
 
-- authenticated tutor endpoint.
-- usage tracking.
-- streaming.
-- apply/reject AI edits.
+- authenticated tutor endpoint. Done.
+- usage tracking. Done.
+- streaming. Done.
+- provider routing for OpenAI/OpenRouter. Done.
+- direct AI file edits and terminal tool execution. Next.
+- undo/history and safe command limits.
 - evals and observability.
 
-## Stage 7: Paid Beta Launch
+## Stage 7: Progression + Retention
+
+Status: planned.
+
+- completion tracking for tasks, lessons, and courses.
+- AI-estimated XP based on difficulty, level, and demonstrated completion.
+- collectible AI-generated badges tied to skills, streaks, projects, and milestones.
+- learner levels that unlock more hints, exercises, review prompts, and guided challenges.
+- visible profile/progress surfaces that make the subscription feel valuable beyond raw chat access.
+
+## Stage 8: Course Library + Marketplace
+
+Status: future option.
+
+- let users publish finished courses as reusable course templates.
+- allow other users to star, favorite, and replicate published courses into their own workspace.
+- support both AI-generated courses and user-authored/shared courses.
+- explore trust/safety and quality signals before public publishing: moderation, visibility controls, course previews, ratings, and report flow.
+- evaluate monetization options after beta learning behavior is clearer: freemium limits, per-course generation credits, paid hint packs, premium replicated courses, or creator rewards.
+
+## Stage 9: Paid Beta Launch
 
 Status: planned.
 
 - support/legal polish.
+- app-wide navigation polish for dashboard, workspace, profile, billing, usage, support, privacy, and terms.
 - mobile/responsive QA.
 - deployment pipeline.
 - production sandbox decision.

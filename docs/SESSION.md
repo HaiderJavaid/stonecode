@@ -2,41 +2,35 @@
 
 ## Date
 
-2026-06-22
+2026-06-23
 
 ## Latest Direction
 
 Stonecode remains a focused paid-beta SaaS for self-taught beginners with a persistent IDE-style learning workspace.
 
-Current focus: production SaaS foundation and billing validation without enabling live AI API usage yet.
+Current focus: provider-backed tutor streaming is live for dev/test; next product priority is direct AI file editing and terminal tool execution inside the IDE.
 
 ## Branch State
 
 - Current branch: `main`.
-- Latest pushed commit before this checkpoint: `ac85eb9 Smooth auth dashboard reveal`.
+- Latest local commit before push: see `git HEAD`.
 - Local checkpoint branch exists: `checkpoint/07-supabase-persistence-verifier` at `80f53b7`.
 - Existing stash: `stash@{0}: wip auth transition experiments 2026-06-21`.
 
 ## Latest Work
 
-- Added authenticated `GET /api/subscription` and dashboard/settings subscription-state UI.
-- Added `npm run verify:subscription-state`.
-- Added authenticated Stripe checkout customer reuse/creation with user and plan metadata.
-- Added authenticated billing portal lookup from saved `stripe_customer_id`.
-- Added Stripe webhook sync mapping for checkout/session and subscription lifecycle events into `subscriptions`.
-- Added Billing settings buttons for Basic checkout, Pro checkout, and Billing portal.
-- Added `npm run verify:stripe-subscription-sync`.
-- Added `docs/STRIPE_SETUP.md`.
-- Stripe CLI was installed and authenticated to the StoneCode sandbox.
-- Stripe listener was run against `http://127.0.0.1:5174/api/stripe/webhook`.
-- Local `.env` was updated with the real Stripe CLI webhook secret; `.env` remains uncommitted.
-- Live Stripe smoke checks passed: checkout endpoint returns a Stripe Checkout URL, portal endpoint returns a Stripe Billing URL, and CLI-triggered webhook events return 200.
-- Product lead manually verified browser Stripe checkout by upgrading to Pro and seeing the paid plan work.
+- Auth-gated `/api/tutor`, added usage event tracking, and exposed usage summary in settings.
+- Added streaming tutor transport and fixed client stream reading so successful streams are not locked by JSON parsing.
+- Added provider adapter for `LLM_PROVIDER=openai|openrouter`.
+- Local dev/test now uses OpenRouter with `OPENROUTER_MODEL=openai/gpt-oss-20b:free` in ignored `.env`.
+- Added `npm run verify:usage-summary` and `npm run verify:response-stream`.
+- Updated project docs and handoff for current tutor state.
 
 ## Current Risks
 
-- `/api/tutor` is not auth-gated or usage-tracked yet.
-- AI-backed setup generation remains intentionally untouched to save AI credits.
+- Direct AI file edits and terminal tool execution are not implemented yet.
+- OpenRouter free models can rate-limit or change availability; switch `OPENROUTER_MODEL` to another `:free` model if needed.
+- Existing settings/support/legal/profile routes are still not a coherent app-wide navigation flow.
 
 ## Verification
 
@@ -47,13 +41,14 @@ Latest verification:
 - `npm run verify:plan-limits` passed.
 - `npm run verify:subscription-state` passed.
 - `npm run verify:stripe-subscription-sync` passed.
+- `npm run verify:usage-summary` passed.
+- `npm run verify:response-stream` passed.
 - `npm run typecheck` passed.
 - `npm run build` passed.
-- Unauthenticated checkout/portal requests return 401.
-- Authenticated checkout/portal live Stripe endpoint smoke checks passed.
-- Stripe CLI webhook trigger forwards to the app and returns 200.
+- Authenticated `/api/tutor` temp-user smoke returned a streamed OpenRouter response on `http://127.0.0.1:5174`.
 
 ## Next Work
 
-1. Auth-gate `/api/tutor` and record `usage_events`, without enabling live AI calls until approved.
-2. Continue manual login-to-dashboard animation QA.
+1. Add direct AI file editing and terminal tool execution inside the IDE.
+2. Design undo/history and command safety limits for AI actions.
+3. Continue app-wide navigation and real-session dashboard QA.

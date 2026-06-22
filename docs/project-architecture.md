@@ -10,6 +10,7 @@
 - Node HTTP app server
 - Supabase client/schema scaffold
 - Stripe server endpoint scaffold
+- LLM provider adapters for OpenAI/OpenRouter tutor streaming
 
 ## Current Entry Points
 
@@ -56,7 +57,9 @@ Supabase Auth
 -> browser Worker terminal
 -> useTutorChat
 -> /api/tutor
--> OpenAI Responses API
+-> LLM provider adapter
+-> OpenAI Responses API or OpenRouter Chat Completions
+-> usage_events
 ```
 
 ## Target Data Flow
@@ -69,6 +72,7 @@ Supabase Auth
 -> authenticated /api/tutor
 -> usage_events
 -> Stripe subscriptions
+-> future direct file/terminal tools scoped to the workspace
 ```
 
 ## API Routes
@@ -80,4 +84,4 @@ Supabase Auth
 - `POST /api/billing/portal`
 - `POST /api/stripe/webhook`
 
-Billing routes are scaffolded and require env vars before live use.
+Billing and tutor provider routes require env vars before live use. Tutor provider routing is selected with `LLM_PROVIDER=openai|openrouter`.

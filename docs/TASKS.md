@@ -63,10 +63,19 @@
 - [x] Add Stripe billing portal customer mapping.
 - [x] Enforce Free active-course limit server-side.
 - [x] Load Basic/Pro subscription state into dashboard and enforce paid plan limits end to end.
-- [ ] Record AI usage in `usage_events`.
-- [ ] Block unauthenticated `/api/tutor` calls.
-- [ ] Add streaming tutor response transport.
+- [x] Record AI usage in `usage_events`.
+- [x] Block unauthenticated `/api/tutor` calls.
+- [x] Add streaming tutor response transport.
+- [x] Add OpenRouter provider routing for free-model dev/test.
 - [ ] Add apply/reject AI edit flow.
+- [ ] Design proper app-wide navigation and link existing routes into a coherent user flow.
+- [ ] Add profile/account entry points from dashboard/workspace.
+- [ ] Design XP, levels, badges, and unlockable hints/exercises progression system.
+- [ ] Persist user XP, badge awards, and course/task completion history.
+- [ ] Let AI estimate XP and badge eligibility from task difficulty after completion.
+- [ ] Design course publishing/replication model for user-created and AI-generated courses.
+- [ ] Add star/favorite/replicate concepts for published courses.
+- [ ] Decide whether freemium monetization should use subscriptions only, generation credits, hint packs, premium course replication, or a hybrid.
 - [ ] Add ESLint 9 config or remove lint script.
 
 ## Paid Beta QA
@@ -80,3 +89,4 @@
 - [ ] plan limit blocks extra active course.
 - [x] billing portal opens for subscribed user with real Stripe env.
 - [ ] privacy/terms/support pages exist.
+- [ ] profile/account/billing/usage routes are discoverable from main app UI.
