@@ -9,6 +9,8 @@
     "preview": "node server/stonecode-server.mjs",
     "start": "node server/stonecode-server.mjs",
     "lint": "eslint .",
+    "verify:course-reset": "node scripts/verify-course-reset.mjs",
+    "verify:plan-limits": "node scripts/verify-plan-limits.mjs",
     "verify:supabase": "node scripts/verify-supabase-persistence.mjs"
   },
   "dependencies": {

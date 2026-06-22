@@ -19,10 +19,10 @@ Stonecode is moving from prototype to focused paid beta:
 - SaaS stack: Supabase + Stripe.
 - core UX: persistent course workspace.
 - required app pages now have routes.
-- Supabase-backed workspace persistence code exists with local fallback.
-- live Supabase verification now has a repeatable script, and current failure is narrowed to missing `workspace_folders`.
+- Supabase-backed workspace persistence is verified live, including `workspace_folders`.
+- server-side Free plan course creation and reset behavior are enforced through `/api/courses`.
 - billing is scaffolded but not connected live.
-- auth transition polish is in progress on `work/auth-transition-from-06`.
+- current work is on `main`.
 
 ## Commands
 
@@ -32,6 +32,8 @@ npm run dev
 npm run build
 npm run typecheck
 npm run verify:supabase
+npm run verify:course-reset
+npm run verify:plan-limits
 ```
 
 `npm run lint` needs an ESLint 9 config before it can be required.

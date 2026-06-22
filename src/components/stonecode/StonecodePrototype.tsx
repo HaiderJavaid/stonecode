@@ -18,6 +18,8 @@ export function StonecodePrototype({
   const auth = useAuth();
   const navigate = useNavigate();
   const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [isFinalizingSetup, setIsFinalizingSetup] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
   const [dashboardRevealReady, setDashboardRevealReady] = useState(!authRevealActive);
   const workspace = useCourseWorkspace();
@@ -62,6 +64,27 @@ export function StonecodePrototype({
   async function handleSignOut() {
     await auth.signOut();
     navigate("/login", { replace: true });
+  }
+
+  async function handleResetDemoState() {
+    try {
+      await workspace.resetDemoState();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to reset courses.");
+    }
+  }
+
+  async function handleFinalizeCourse(course: Parameters<typeof workspace.addLearningCourse>[0]) {
+    setSetupError(null);
+    setIsFinalizingSetup(true);
+    try {
+      await workspace.addLearningCourse(course);
+      setIsSetupOpen(false);
+    } catch (error) {
+      setSetupError(error instanceof Error ? error.message : "Failed to create course.");
+    } finally {
+      setIsFinalizingSetup(false);
+    }
   }
 
   return (
@@ -116,9 +139,12 @@ export function StonecodePrototype({
         onChat={tutor.updateCourseChat}
         onCloseCourse={workspace.closeCourse}
         onLessonIndexChange={tutor.updateLessonStep}
-        onOpenSetup={() => setIsSetupOpen(true)}
+        onOpenSetup={() => {
+          setSetupError(null);
+          setIsSetupOpen(true);
+        }}
         onOpenCourse={workspace.openCourse}
-        onResetDemoState={workspace.resetDemoState}
+        onResetDemoState={handleResetDemoState}
         onStartProject={workspace.startProject}
         onTypingComplete={tutor.finishTyping}
         onViewChange={tutor.updateLessonView}
@@ -129,12 +155,14 @@ export function StonecodePrototype({
       {isSetupOpen && !workspace.active && (
         <div className="setup-stage" aria-label="New course setup stage">
           <CourseSetupCard
+            error={setupError}
             isOpen={isSetupOpen}
-            onCancel={() => setIsSetupOpen(false)}
-            onFinalize={(course) => {
-              workspace.addLearningCourse(course);
+            isFinalizing={isFinalizingSetup}
+            onCancel={() => {
+              setSetupError(null);
               setIsSetupOpen(false);
             }}
+            onFinalize={handleFinalizeCourse}
           />
         </div>
       )}

@@ -29,7 +29,7 @@ Status: active.
 
 ## Stage 4: Auth + Persistence
 
-Status: next.
+Status: done.
 
 - Supabase Auth.
 - Postgres-backed courses, files, chat, progress.
@@ -38,12 +38,12 @@ Status: next.
 
 ## Stage 5: Billing + Limits
 
-Status: planned.
+Status: active.
 
 - Stripe checkout.
 - billing portal.
 - webhook subscription sync.
-- server-side plan limits.
+- server-side plan limits. Free course creation/reset is done; paid subscription loading remains.
 
 ## Stage 6: AI Production Safety
 

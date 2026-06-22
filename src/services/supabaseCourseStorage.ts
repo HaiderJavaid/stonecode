@@ -86,26 +86,40 @@ export async function loadSupabaseCourseState(user: User): Promise<StoredCourseS
   return state;
 }
 
-export async function createSupabaseCourse(user: User, draft: SupabaseCourseDraft): Promise<Course> {
-  const client = requireSupabase();
-  await ensureUserProfile(user);
+export async function createSupabaseCourse(_user: User, draft: SupabaseCourseDraft): Promise<Course> {
+  const token = await readAccessToken("create a course");
 
-  const { data, error } = await client
-    .from("courses")
-    .insert({
-      user_id: user.id,
-      title: draft.title,
-      subject: draft.subject,
-      mode: draft.mode,
-      checkpoint: draft.checkpoint,
-      description: draft.description,
-      progress: draft.progress
-    })
-    .select("*")
-    .single();
+  const response = await fetch("/api/courses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ course: draft })
+  });
 
-  if (error) throw error;
-  return courseRecordToCourse(data as CourseRecord);
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Failed to create course.");
+  }
+
+  return courseRecordToCourse(payload.course as CourseRecord);
+}
+
+export async function resetSupabaseCourses(_user: User): Promise<void> {
+  const token = await readAccessToken("reset courses");
+
+  const response = await fetch("/api/courses", {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Failed to reset courses.");
+  }
 }
 
 export async function saveSupabaseWorkspaceState(state: StoredCourseState): Promise<void> {
@@ -274,4 +288,15 @@ function formatUpdatedAt(value: string): string {
 function requireSupabase() {
   if (!supabase) throw new Error("Supabase is not configured.");
   return supabase;
+}
+
+async function readAccessToken(action: string): Promise<string> {
+  const client = requireSupabase();
+  const { data: sessionData, error: sessionError } = await client.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (sessionError || !token) {
+    throw new Error(sessionError?.message ?? `Authentication is required to ${action}.`);
+  }
+
+  return token;
 }

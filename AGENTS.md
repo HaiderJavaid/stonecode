@@ -38,13 +38,13 @@ The core UX:
 
 ## Current Stage
 
-Production SaaS foundation is active, with auth transition polish in progress.
+Production SaaS foundation is active, with verified Supabase persistence and server-side Free plan course limits.
 
-Supabase Auth is connected. Supabase-backed course/file/folder/chat/progress persistence code exists with local fallback, but the live database migration still needs verification, especially `workspace_folders`.
+Supabase Auth is connected. Supabase-backed course/file/folder/chat/progress persistence is verified against the live project, including `workspace_folders`.
 
-Current UI branch: `work/auth-transition-from-06`, based on `checkpoint/06-persistent-terminal-reveal`. Current transition edits are uncommitted by request.
+Current branch: `main`.
 
-Next product priority after auth transition polish: verify Supabase persistence against the live schema, then add server-side plan limits and AI usage tracking.
+Next product priority: load real subscription state in the dashboard, then continue Stripe subscription sync and AI usage tracking without enabling live AI calls until approved.
 
 ## Verification
 

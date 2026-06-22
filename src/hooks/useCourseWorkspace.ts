@@ -19,6 +19,7 @@ import {
 import {
   createSupabaseCourse,
   loadSupabaseCourseState,
+  resetSupabaseCourses,
   saveSupabaseWorkspaceState
 } from "@/services/supabaseCourseStorage";
 import { ActiveState } from "@/components/stonecode/types";
@@ -366,7 +367,11 @@ export function useCourseWorkspace() {
     setActive({ courseId: activeCourse.id, fileIndex: selectedIndex });
   }
 
-  function resetDemoState() {
+  async function resetDemoState() {
+    if (isSupabaseBacked && user) {
+      await resetSupabaseCourses(user);
+    }
+
     clearCourseState();
     setStoredState(defaultStoredCourseState);
     navigate("/dashboard");

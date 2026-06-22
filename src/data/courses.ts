@@ -1,7 +1,7 @@
 import { topics, TopicFile } from "@/data/topics";
 
 export type Plan = {
-  name: "Basic";
+  name: "Free";
   activeCourseLimit: number;
 };
 
@@ -20,8 +20,8 @@ export type Course = {
 };
 
 export const currentPlan: Plan = {
-  name: "Basic",
-  activeCourseLimit: 2
+  name: "Free",
+  activeCourseLimit: 1
 };
 
 export const starterCourseFiles: TopicFile[] = [

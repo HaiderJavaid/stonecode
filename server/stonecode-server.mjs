@@ -2,6 +2,7 @@ import { createServer as createHttpServer } from "node:http";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { canCreateActiveCourse, normalizePlanTier, resolvePlanLimit } from "./plan-limits.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const isDev = process.argv.includes("--dev") || process.env.NODE_ENV !== "production";
@@ -42,6 +43,11 @@ const server = createHttpServer(async (request, response) => {
   try {
     if (request.url?.startsWith("/api/tutor")) {
       await handleTutorRequest(request, response);
+      return;
+    }
+
+    if (request.url?.startsWith("/api/courses")) {
+      await handleCourseRequest(request, response);
       return;
     }
 
@@ -135,6 +141,132 @@ async function handleTutorRequest(request, response) {
   }
 
   sendJson(response, 200, { reply });
+}
+
+async function handleCourseRequest(request, response) {
+  if (request.method === "POST") {
+    await handleCreateCourseRequest(request, response);
+    return;
+  }
+
+  if (request.method === "DELETE") {
+    await handleResetCoursesRequest(request, response);
+    return;
+  }
+
+  sendJson(response, 405, { error: "Method not allowed." });
+}
+
+async function handleCreateCourseRequest(request, response) {
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+
+  const body = await readJsonBody(request);
+  const draft = body?.course;
+  if (!isCourseDraft(draft)) {
+    sendJson(response, 400, { error: "Invalid course draft." });
+    return;
+  }
+
+  const profileError = await upsertServerProfile(admin, user);
+  if (profileError) {
+    sendJson(response, 500, { error: profileError.message });
+    return;
+  }
+
+  const plan = await readUserPlan(admin, user.id);
+  const { count, error: countError } = await admin
+    .from("courses")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("status", "active");
+
+  if (countError) {
+    sendJson(response, 500, { error: countError.message });
+    return;
+  }
+
+  const activeCourseCount = count ?? 0;
+  const limit = resolvePlanLimit(plan);
+  if (!canCreateActiveCourse(plan, activeCourseCount)) {
+    sendJson(response, 403, {
+      error: `Active course limit reached for ${plan} plan.`,
+      plan,
+      activeCourseCount,
+      activeCourseLimit: limit.activeCourseLimit
+    });
+    return;
+  }
+
+  const { data, error } = await admin
+    .from("courses")
+    .insert({
+      user_id: user.id,
+      title: draft.title,
+      subject: draft.subject,
+      mode: draft.mode,
+      checkpoint: draft.checkpoint,
+      description: draft.description,
+      progress: draft.progress
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    sendJson(response, 500, { error: error.message });
+    return;
+  }
+
+  sendJson(response, 200, {
+    course: data,
+    plan,
+    activeCourseCount: activeCourseCount + 1,
+    activeCourseLimit: limit.activeCourseLimit
+  });
+}
+
+async function handleResetCoursesRequest(request, response) {
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+
+  const { data, error } = await admin
+    .from("courses")
+    .update({
+      status: "archived",
+      updated_at: new Date().toISOString()
+    })
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .select("id");
+
+  if (error) {
+    sendJson(response, 500, { error: error.message });
+    return;
+  }
+
+  sendJson(response, 200, { archivedCount: data?.length ?? 0 });
+}
+
+async function readAuthenticatedUser(request, response) {
+  const authToken = readBearerToken(request);
+  if (!authToken) {
+    sendJson(response, 401, { error: "Authentication is required." });
+    return null;
+  }
+
+  const admin = await createSupabaseAdminClient(response);
+  if (!admin) return null;
+
+  const { data: userData, error: userError } = await admin.auth.getUser(authToken);
+  const user = userData?.user;
+  if (userError || !user) {
+    sendJson(response, 401, { error: userError?.message ?? "Invalid authentication token." });
+    return null;
+  }
+
+  return { admin, user };
 }
 
 async function handleCheckoutRequest(request, response) {
@@ -238,6 +370,41 @@ async function createStripeClient(response) {
   return new Stripe(stripeSecretKey);
 }
 
+async function createSupabaseAdminClient(response) {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    sendJson(response, 503, { error: "Supabase service role is not configured on the server." });
+    return null;
+  }
+
+  const { createClient } = await import("@supabase/supabase-js");
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+async function upsertServerProfile(client, user) {
+  const { error } = await client.from("profiles").upsert({
+    id: user.id,
+    email: user.email ?? "",
+    updated_at: new Date().toISOString()
+  });
+  return error;
+}
+
+async function readUserPlan(client, userId) {
+  const { data, error } = await client
+    .from("subscriptions")
+    .select("plan,status")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) return "free";
+  if (data.status !== "active" && data.status !== "trialing") return "free";
+  return normalizePlanTier(data.plan);
+}
+
 function extractOutputText(payload) {
   if (typeof payload?.output_text === "string") return payload.output_text;
   if (!Array.isArray(payload?.output)) return "";
@@ -259,6 +426,31 @@ function isTutorContext(context) {
       Array.isArray(context.fileTree) &&
       typeof context.userMessage === "string"
   );
+}
+
+function isCourseDraft(draft) {
+  return Boolean(
+    draft &&
+      typeof draft.title === "string" &&
+      draft.title.trim() &&
+      typeof draft.subject === "string" &&
+      draft.subject.trim() &&
+      (draft.mode === "fundamentals" || draft.mode === "project" || draft.mode === "leetcode" || draft.mode === "mixed") &&
+      typeof draft.checkpoint === "string" &&
+      draft.checkpoint.trim() &&
+      typeof draft.description === "string" &&
+      Number.isInteger(draft.progress) &&
+      draft.progress >= 0 &&
+      draft.progress <= 100
+  );
+}
+
+function readBearerToken(request) {
+  const header = request.headers.authorization;
+  if (typeof header !== "string") return null;
+  const [scheme, token] = header.split(" ");
+  if (scheme !== "Bearer" || !token) return null;
+  return token;
 }
 
 function readJsonBody(request) {

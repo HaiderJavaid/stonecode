@@ -48,9 +48,10 @@
 ## Current Data Flow
 
 ```txt
-mock courses
+Supabase Auth
 -> useCourseWorkspace
--> localStorage
+-> Supabase-backed course/files/folders/chat/progress storage
+-> local fallback only when Supabase is unavailable
 -> CodeMirror editor
 -> browser Worker terminal
 -> useTutorChat
@@ -73,6 +74,8 @@ Supabase Auth
 ## API Routes
 
 - `POST /api/tutor`
+- `POST /api/courses`
+- `DELETE /api/courses`
 - `POST /api/billing/checkout`
 - `POST /api/billing/portal`
 - `POST /api/stripe/webhook`

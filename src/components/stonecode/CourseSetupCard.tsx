@@ -17,13 +17,17 @@ type SetupMessage = {
 };
 
 export function CourseSetupCard({
+  error,
   isOpen,
+  isFinalizing = false,
   onCancel,
   onFinalize
 }: {
+  error?: string | null;
   isOpen: boolean;
+  isFinalizing?: boolean;
   onCancel: () => void;
-  onFinalize: (course: Course) => void;
+  onFinalize: (course: Course) => void | Promise<void>;
 }) {
   const [messages, setMessages] = useState<SetupMessage[]>([
     {
@@ -85,13 +89,13 @@ export function CourseSetupCard({
     ]);
   }
 
-  function finalizeCourse() {
+  async function finalizeCourse() {
     const course = createLearningCourse({
       title: plan.title,
       subject: plan.subject,
       description: plan.description
     });
-    onFinalize(course);
+    await onFinalize(course);
   }
 
   return (
@@ -135,8 +139,9 @@ export function CourseSetupCard({
               <button type="submit">Send</button>
             </form>
             <div className="lesson-controls setup-controls">
-              <button disabled={!latestUserMessage} onClick={finalizeCourse} type="button">
-                Finalize
+              {error && <p className="setup-error">{error}</p>}
+              <button disabled={!latestUserMessage || isFinalizing} onClick={finalizeCourse} type="button">
+                {isFinalizing ? "Finalizing..." : "Finalize"}
               </button>
             </div>
           </div>

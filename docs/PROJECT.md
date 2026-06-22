@@ -48,14 +48,17 @@ Done:
 - file tree supports VS Code-style colored glyphs and local drag/drop moves.
 - Stripe checkout/portal/webhook route scaffolds.
 - Supabase-backed course, workspace file/folder, chat, and progress persistence code with local fallback.
-- Auth onboarding/login-to-dashboard transition work is being manually tuned on `work/auth-transition-from-06`.
+- Live Supabase persistence verification passes, including `workspace_folders`.
+- Server-side `/api/courses` creates courses with authenticated Free plan limits.
+- Server-side `DELETE /api/courses` archives active user courses for Reset demo.
+- Setup finalize now shows server errors instead of silently closing on failed course creation.
+- Auth onboarding/login-to-dashboard transition polish is committed on `main`.
 
 Not done:
 
-- live Supabase schema migration verification, especially `workspace_folders`.
 - AI-backed course setup generation for course shell and README content.
 - Stripe webhook persistence.
-- server-side plan enforcement.
+- Basic/Pro subscription state loading in dashboard.
 - AI usage tracking.
 - streaming tutor replies.
 - production code sandbox.
@@ -67,7 +70,6 @@ Refactor toward a SaaS product without losing the IDE-first experience. Do not r
 
 ## Current Branch State
 
-- Active branch: `work/auth-transition-from-06`.
+- Active branch: `main`.
 - Base checkpoint: `checkpoint/06-persistent-terminal-reveal` at `9c5e457`.
-- Current auth transition changes are uncommitted by request.
 - Do not commit or push unless explicitly asked.

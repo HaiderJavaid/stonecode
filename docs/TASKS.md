@@ -33,6 +33,8 @@
 - Right panel/add-course reveal now mounts after auth zoom with a preload gap, waits for workspace readiness, then animates from the right.
 - Course selection panel defers heavier chat/Markdown/typewriter content until the panel shell animation finishes.
 - Live verifier script now proves `workspace_folders` is the only missing persistence table in the current Supabase project.
+- Course creation now goes through server-side `/api/courses`, which enforces Free active-course limits before inserting.
+- Reset demo now archives active Supabase courses through `DELETE /api/courses` instead of only clearing local state.
 
 ## Current Stage: Production SaaS Foundation
 
@@ -53,13 +55,14 @@
 - [x] Persist workspace folders to `workspace_folders` in code.
 - [x] Persist chat to `chat_messages` in code.
 - [x] Persist progress to `course_progress` in code.
-- [ ] Apply live Supabase `workspace_folders` migration and rerun verifier.
+- [x] Apply live Supabase `workspace_folders` migration and rerun verifier.
 - [x] Finish accepted startup/load-in fade through login zoom.
 - [x] Diagnose right panel/add-course area reveal stutter after login zoom.
 - [ ] Continue dashboard component animation optimization and real-session QA.
 - [ ] Sync Stripe webhook events to `subscriptions`.
 - [ ] Add Stripe billing portal customer mapping.
-- [ ] Enforce Free/Basic/Pro limits server-side.
+- [x] Enforce Free active-course limit server-side.
+- [ ] Load Basic/Pro subscription state into dashboard and enforce paid plan limits end to end.
 - [ ] Record AI usage in `usage_events`.
 - [ ] Block unauthenticated `/api/tutor` calls.
 - [ ] Add streaming tutor response transport.

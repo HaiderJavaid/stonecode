@@ -674,6 +674,12 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   grid-template-columns: 1fr;
 }
 
+.setup-error {
+  margin: 0;
+  color: #e6a08f;
+  font: 10px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
 .tree-icon {
   display: inline-grid;
   place-items: center;
