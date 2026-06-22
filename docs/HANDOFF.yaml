@@ -30,13 +30,13 @@ status:
 deployment:
   host_target: unknown
   branch: main
-  latest_commit: 5768e11
+  latest_commit: see git HEAD
   config_file: null
-  pushed: false
+  pushed: true
   pr_url: null
 git:
-  main: 5768e11
-  origin_main: ac85eb9
+  main: see git HEAD
+  origin_main: see git HEAD
   checkpoint_branches:
     - checkpoint/00-initial-stonecode
     - checkpoint/01-supabase-persistence
