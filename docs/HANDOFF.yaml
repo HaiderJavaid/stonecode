@@ -7,7 +7,7 @@ project:
 status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
-  current_stage: verified Supabase persistence, server-side plan limits, subscription-state UI, and Stripe sync wiring on top of production SaaS foundation
+  current_stage: verified Supabase persistence, server-side plan limits, subscription-state UI, and Stripe checkout/webhook sync on top of production SaaS foundation
   current_branch: main
   base_checkpoint: checkpoint/06-persistent-terminal-reveal
   checkpoint_work:
@@ -25,7 +25,6 @@ status:
   current_risks:
     - real user login-to-dashboard timing is still not verified with actual credentials
     - broader dashboard component animations still need more manual flow testing after the latest optimization pass
-    - full browser Stripe checkout with test card still needs user/manual verification
     - tutor endpoint is not yet auth-gated or usage-tracked
 deployment:
   host_target: unknown
@@ -90,6 +89,7 @@ done:
   - configured local Stripe webhook secret in untracked `.env`
   - verified authenticated checkout and portal endpoints return Stripe URLs with live test Stripe keys
   - verified Stripe CLI webhook trigger forwards events to local `/api/stripe/webhook` with 200 responses
+  - product lead manually verified browser Stripe checkout by upgrading to Pro and seeing the paid plan work
   - OpenAI/API tutor work intentionally not touched to avoid AI credit usage
   - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
   - merged work/auth-transition-from-06 into local main at d6bc39e
@@ -108,17 +108,14 @@ verification:
     - local /api/billing/portal live Stripe temp-user check
     - stripe trigger checkout.session.completed
     - Chrome CDP production render check for /login and protected settings redirect
-  latest_result: subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
+  latest_result: subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, manual Pro checkout, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
   not_verified:
     - authenticated Supabase login credentials were not available for full real-session dashboard interaction QA
-    - full browser Stripe card checkout and dashboard plan refresh after checkout
 next:
-  - user should complete Basic checkout in browser with Stripe test card 4242 4242 4242 4242 and confirm dashboard/settings show Basic
-  - after browser checkout passes, auth-gate /api/tutor and record usage_events
+  - auth-gate /api/tutor and record usage_events
   - manually test real login-to-dashboard timing with valid Supabase credentials
   - continue optimizing remaining dashboard component animations while preserving current intro and login zoom
   - replace local setup generator with AI-backed course plan and README generation
-  - record AI usage events without enabling live AI calls
 read_first:
   - docs/HANDOFF.yaml
   - docs/README.md

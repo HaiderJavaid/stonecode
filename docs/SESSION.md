@@ -31,10 +31,10 @@ Current focus: production SaaS foundation and billing validation without enablin
 - Stripe listener was run against `http://127.0.0.1:5174/api/stripe/webhook`.
 - Local `.env` was updated with the real Stripe CLI webhook secret; `.env` remains uncommitted.
 - Live Stripe smoke checks passed: checkout endpoint returns a Stripe Checkout URL, portal endpoint returns a Stripe Billing URL, and CLI-triggered webhook events return 200.
+- Product lead manually verified browser Stripe checkout by upgrading to Pro and seeing the paid plan work.
 
 ## Current Risks
 
-- Full browser checkout with test card still needs user/manual verification.
 - `/api/tutor` is not auth-gated or usage-tracked yet.
 - AI-backed setup generation remains intentionally untouched to save AI credits.
 
@@ -55,7 +55,5 @@ Latest verification:
 
 ## Next Work
 
-1. User should complete Basic checkout in browser with Stripe test card `4242 4242 4242 4242`.
-2. Verify dashboard/settings switch to Basic after checkout webhook.
-3. Auth-gate `/api/tutor` and record `usage_events`, without enabling live AI calls until approved.
-4. Continue manual login-to-dashboard animation QA.
+1. Auth-gate `/api/tutor` and record `usage_events`, without enabling live AI calls until approved.
+2. Continue manual login-to-dashboard animation QA.

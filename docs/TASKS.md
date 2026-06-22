@@ -78,5 +78,5 @@
 - [ ] edit file and refresh restore.
 - [ ] send tutor message.
 - [ ] plan limit blocks extra active course.
-- [ ] billing portal opens for subscribed user with real Stripe env.
+- [x] billing portal opens for subscribed user with real Stripe env.
 - [ ] privacy/terms/support pages exist.
