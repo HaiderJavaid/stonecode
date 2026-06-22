@@ -8,7 +8,7 @@
 
 Stonecode remains a focused paid-beta SaaS for self-taught beginners with a persistent IDE-style learning workspace.
 
-Current focus: production SaaS foundation without enabling live AI API usage yet.
+Current focus: production SaaS foundation and billing validation without enabling live AI API usage yet.
 
 ## Branch State
 
@@ -19,21 +19,22 @@ Current focus: production SaaS foundation without enabling live AI API usage yet
 
 ## Latest Work
 
-- Added live Supabase verifier: `npm run verify:supabase`.
-- Added and applied `workspace_folders` migration; live persistence now verifies for courses, files, folders, chat, and progress.
-- Added server-side plan helper and `npm run verify:plan-limits`.
-- Moved Supabase-backed course creation through authenticated `POST /api/courses`.
-- Enforced Free active-course limit server-side.
-- Added authenticated `DELETE /api/courses` to archive active courses for Reset demo.
-- Fixed Reset demo so archived remote courses do not return after refresh.
-- Fixed setup finalize to keep the panel open and show server errors instead of silently closing.
-- User manually verified Reset demo and finalize work after the dev server restart.
+- Added authenticated `GET /api/subscription` and dashboard/settings subscription-state UI.
+- Added `npm run verify:subscription-state`.
+- Added authenticated Stripe checkout customer reuse/creation with user and plan metadata.
+- Added authenticated billing portal lookup from saved `stripe_customer_id`.
+- Added Stripe webhook sync mapping for checkout/session and subscription lifecycle events into `subscriptions`.
+- Added Billing settings buttons for Basic checkout, Pro checkout, and Billing portal.
+- Added `npm run verify:stripe-subscription-sync`.
+- Added `docs/STRIPE_SETUP.md`.
+- Stripe CLI was installed and authenticated to the StoneCode sandbox.
+- Stripe listener was run against `http://127.0.0.1:5174/api/stripe/webhook`.
+- Local `.env` was updated with the real Stripe CLI webhook secret; `.env` remains uncommitted.
+- Live Stripe smoke checks passed: checkout endpoint returns a Stripe Checkout URL, portal endpoint returns a Stripe Billing URL, and CLI-triggered webhook events return 200.
 
 ## Current Risks
 
-- Dashboard still displays a temporary Free plan label until real subscription state is loaded.
-- Basic/Pro limits are implemented in server rules but not verified end to end through Stripe subscription state.
-- Stripe endpoints exist but still need env vars, auth customer mapping, and webhook persistence.
+- Full browser checkout with test card still needs user/manual verification.
 - `/api/tutor` is not auth-gated or usage-tracked yet.
 - AI-backed setup generation remains intentionally untouched to save AI credits.
 
@@ -44,15 +45,17 @@ Latest verification:
 - `npm run verify:supabase` passed.
 - `npm run verify:course-reset` passed.
 - `npm run verify:plan-limits` passed.
+- `npm run verify:subscription-state` passed.
+- `npm run verify:stripe-subscription-sync` passed.
 - `npm run typecheck` passed.
 - `npm run build` passed.
-- `git diff --check` passed.
-- User confirmed Reset demo/finalize behavior works in browser.
+- Unauthenticated checkout/portal requests return 401.
+- Authenticated checkout/portal live Stripe endpoint smoke checks passed.
+- Stripe CLI webhook trigger forwards to the app and returns 200.
 
 ## Next Work
 
-1. Load real subscription tier from `subscriptions` into dashboard state.
-2. Verify Basic/Pro course limits end to end with seeded subscription rows.
-3. Map Stripe webhook events into `subscriptions`.
-4. Auth-gate `/api/tutor` and record `usage_events`, without enabling live AI calls until approved.
-5. Continue manual login-to-dashboard animation QA.
+1. User should complete Basic checkout in browser with Stripe test card `4242 4242 4242 4242`.
+2. Verify dashboard/settings switch to Basic after checkout webhook.
+3. Auth-gate `/api/tutor` and record `usage_events`, without enabling live AI calls until approved.
+4. Continue manual login-to-dashboard animation QA.

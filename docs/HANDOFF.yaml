@@ -7,7 +7,7 @@ project:
 status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
-  current_stage: verified Supabase persistence plus server-side plan limits on top of production SaaS foundation
+  current_stage: verified Supabase persistence, server-side plan limits, subscription-state UI, and Stripe sync wiring on top of production SaaS foundation
   current_branch: main
   base_checkpoint: checkpoint/06-persistent-terminal-reveal
   checkpoint_work:
@@ -16,23 +16,26 @@ status:
     - client course creation moved from direct Supabase insert to /api/courses
     - Reset demo moved from local-only clearing to authenticated Supabase archive plus local clearing
     - shared server plan limit helper and verifier
-    - dashboard default plan label aligned to Free until subscription state is loaded
+    - authenticated /api/subscription route for Free/Basic/Pro subscription state
+    - dashboard and billing/usage settings now load real subscription state
+    - authenticated Stripe checkout and portal customer mapping
+    - Billing settings actions for Basic checkout, Pro checkout, and billing portal
+    - Stripe webhook event mapping into subscriptions
     - docs updated for live Supabase verification and server-side plan limit work
   current_risks:
-    - paid Basic/Pro subscription state is not yet surfaced in the dashboard UI; client currently displays Free defaults
     - real user login-to-dashboard timing is still not verified with actual credentials
     - broader dashboard component animations still need more manual flow testing after the latest optimization pass
-    - Stripe endpoints exist but need env vars, auth, customer mapping, and webhook persistence
+    - full browser Stripe checkout with test card still needs user/manual verification
     - tutor endpoint is not yet auth-gated or usage-tracked
 deployment:
   host_target: unknown
   branch: main
-  latest_commit: 0f8191a
+  latest_commit: 5768e11
   config_file: null
   pushed: false
   pr_url: null
 git:
-  main: 0f8191a
+  main: 5768e11
   origin_main: ac85eb9
   checkpoint_branches:
     - checkpoint/00-initial-stonecode
@@ -75,6 +78,18 @@ done:
   - setup finalize now keeps the setup panel open and shows server errors instead of silently closing on failed course creation
   - free-plan limit verified end to end: first course create succeeds and second course create returns 403
   - Reset demo and setup finalize were manually verified in browser after restarting the dev server
+  - added server-side subscription state formatter and authenticated `GET /api/subscription`
+  - dashboard launcher and billing/usage settings now display loaded Free/Basic/Pro plan state and active-course limits
+  - verified `/api/subscription` against live Supabase temporary users for Free fallback and active Basic
+  - added authenticated Stripe checkout customer reuse/creation with user and plan metadata
+  - added authenticated billing portal lookup from saved `stripe_customer_id`
+  - added Billing settings actions for Basic checkout, Pro checkout, and billing portal
+  - added Stripe webhook sync for checkout/session and subscription lifecycle events into `subscriptions`
+  - added `docs/STRIPE_SETUP.md`
+  - installed and authenticated Stripe CLI to the StoneCode sandbox
+  - configured local Stripe webhook secret in untracked `.env`
+  - verified authenticated checkout and portal endpoints return Stripe URLs with live test Stripe keys
+  - verified Stripe CLI webhook trigger forwards events to local `/api/stripe/webhook` with 200 responses
   - OpenAI/API tutor work intentionally not touched to avoid AI credit usage
   - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
   - merged work/auth-transition-from-06 into local main at d6bc39e
@@ -83,20 +98,27 @@ verification:
     - npm run verify:supabase
     - npm run verify:course-reset
     - npm run verify:plan-limits
+    - npm run verify:subscription-state
+    - npm run verify:stripe-subscription-sync
     - npm run typecheck
     - npm run build
     - local /api/courses live Supabase temp-user check
-  latest_result: server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
+    - local /api/subscription live Supabase temp-user Free and Basic checks
+    - local /api/billing/checkout live Stripe temp-user check
+    - local /api/billing/portal live Stripe temp-user check
+    - stripe trigger checkout.session.completed
+    - Chrome CDP production render check for /login and protected settings redirect
+  latest_result: subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
   not_verified:
     - authenticated Supabase login credentials were not available for full real-session dashboard interaction QA
+    - full browser Stripe card checkout and dashboard plan refresh after checkout
 next:
-  - load real subscription plan state in dashboard instead of the temporary Free display default
+  - user should complete Basic checkout in browser with Stripe test card 4242 4242 4242 4242 and confirm dashboard/settings show Basic
+  - after browser checkout passes, auth-gate /api/tutor and record usage_events
   - manually test real login-to-dashboard timing with valid Supabase credentials
   - continue optimizing remaining dashboard component animations while preserving current intro and login zoom
   - replace local setup generator with AI-backed course plan and README generation
-  - map Stripe webhook events into subscriptions table
   - record AI usage events without enabling live AI calls
-  - auth-gate /api/tutor and record usage_events
 read_first:
   - docs/HANDOFF.yaml
   - docs/README.md

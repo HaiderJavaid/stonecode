@@ -21,7 +21,7 @@ Stonecode is moving from prototype to focused paid beta:
 - required app pages now have routes.
 - Supabase-backed workspace persistence is verified live, including `workspace_folders`.
 - server-side Free plan course creation and reset behavior are enforced through `/api/courses`.
-- billing is scaffolded but not connected live.
+- billing is wired for authenticated checkout, portal, and webhook subscription sync; it needs Stripe env values for live QA.
 - current work is on `main`.
 
 ## Commands
@@ -34,6 +34,10 @@ npm run typecheck
 npm run verify:supabase
 npm run verify:course-reset
 npm run verify:plan-limits
+npm run verify:subscription-state
+npm run verify:stripe-subscription-sync
 ```
 
 `npm run lint` needs an ESLint 9 config before it can be required.
+
+Stripe setup lives in `docs/STRIPE_SETUP.md`.

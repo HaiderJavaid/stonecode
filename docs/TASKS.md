@@ -59,10 +59,10 @@
 - [x] Finish accepted startup/load-in fade through login zoom.
 - [x] Diagnose right panel/add-course area reveal stutter after login zoom.
 - [ ] Continue dashboard component animation optimization and real-session QA.
-- [ ] Sync Stripe webhook events to `subscriptions`.
-- [ ] Add Stripe billing portal customer mapping.
+- [x] Sync Stripe webhook events to `subscriptions`.
+- [x] Add Stripe billing portal customer mapping.
 - [x] Enforce Free active-course limit server-side.
-- [ ] Load Basic/Pro subscription state into dashboard and enforce paid plan limits end to end.
+- [x] Load Basic/Pro subscription state into dashboard and enforce paid plan limits end to end.
 - [ ] Record AI usage in `usage_events`.
 - [ ] Block unauthenticated `/api/tutor` calls.
 - [ ] Add streaming tutor response transport.
@@ -78,5 +78,5 @@
 - [ ] edit file and refresh restore.
 - [ ] send tutor message.
 - [ ] plan limit blocks extra active course.
-- [ ] billing portal opens for subscribed user.
+- [ ] billing portal opens for subscribed user with real Stripe env.
 - [ ] privacy/terms/support pages exist.

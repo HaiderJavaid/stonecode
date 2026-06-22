@@ -1,14 +1,18 @@
 import { KeyboardEvent, useMemo } from "react";
-import { Course, currentPlan } from "@/data/courses";
+import { Course } from "@/data/courses";
 import { CourseCard } from "@/components/stonecode/CourseCard";
 import { ActiveState, CardView } from "@/components/stonecode/types";
 import { StoredCourseState } from "@/services/courseStorage";
+import { SubscriptionState } from "@/services/subscriptionState";
 import { WorkspaceFile } from "@/services/workspaceFiles";
 
 export function DashboardPage({
   active,
   activeCourseCount,
   courses,
+  subscription,
+  subscriptionError,
+  isSubscriptionLoading,
   isSetupOpen,
   storedState,
   typingMessageId,
@@ -27,6 +31,9 @@ export function DashboardPage({
   active: ActiveState | null;
   activeCourseCount: number;
   courses: Course[];
+  subscription: SubscriptionState;
+  subscriptionError: string | null;
+  isSubscriptionLoading: boolean;
   isSetupOpen: boolean;
   storedState: StoredCourseState;
   typingMessageId: string | null;
@@ -51,11 +58,13 @@ export function DashboardPage({
     <section className={`cards${active || isSetupOpen ? " has-open" : ""}`} aria-label="Course folders">
       {!active && !isSetupOpen && (
         <div className="course-launcher" aria-label="Course launcher">
-          <button className="new-course" disabled={activeCourseCount >= currentPlan.activeCourseLimit} onClick={onOpenSetup} type="button">
+          <button className="new-course" disabled={activeCourseCount >= subscription.activeCourseLimit} onClick={onOpenSetup} type="button">
             Add learning course
           </button>
           <span>
-            {currentPlan.name}: {activeCourseCount}/{currentPlan.activeCourseLimit} active
+            {subscription.planName}: {activeCourseCount}/{subscription.activeCourseLimit} active
+            {isSubscriptionLoading ? " loading" : ""}
+            {subscriptionError ? " sync issue" : ""}
           </span>
           <button className="reset-demo" onClick={onResetDemoState} type="button">
             Reset demo

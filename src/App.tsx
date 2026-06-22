@@ -4,6 +4,7 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { useAuth } from "@/auth/AuthProvider";
 import { StonecodePrototype } from "@/components/stonecode/StonecodePrototype";
 import { defaultCourseCodeHtml } from "@/data/courses";
+import { useSubscriptionState } from "@/hooks/useSubscriptionState";
 
 type AuthRevealPhase = "idle" | "holding" | "revealing";
 
@@ -249,10 +250,54 @@ function AuthTransitionSurface({
 function SettingsPage({ section }: { section: "profile" | "account" | "billing" | "usage" }) {
   const auth = useAuth();
   const navigate = useNavigate();
+  const { subscription, isLoading, error } = useSubscriptionState();
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [isBillingActionPending, setIsBillingActionPending] = useState(false);
 
   async function handleSignOut() {
     await auth.signOut();
     navigate("/login", { replace: true });
+  }
+
+  async function openCheckout(plan: "basic" | "pro") {
+    await openBillingUrl("/api/billing/checkout", { plan });
+  }
+
+  async function openBillingPortal() {
+    await openBillingUrl("/api/billing/portal", {});
+  }
+
+  async function openBillingUrl(path: string, body: Record<string, string>) {
+    setBillingError(null);
+    setIsBillingActionPending(true);
+    try {
+      const token = auth.session?.access_token;
+      if (!token) throw new Error("Authentication is required.");
+
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          ...body,
+          successUrl: `${window.location.origin}/settings/billing`,
+          cancelUrl: `${window.location.origin}/settings/billing`,
+          returnUrl: `${window.location.origin}/settings/billing`
+        })
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.url) {
+        throw new Error(payload?.error ?? "Failed to open Stripe.");
+      }
+
+      window.location.href = payload.url;
+    } catch (caughtError) {
+      setBillingError(caughtError instanceof Error ? caughtError.message : "Failed to open Stripe.");
+      setIsBillingActionPending(false);
+    }
   }
 
   return (
@@ -262,6 +307,29 @@ function SettingsPage({ section }: { section: "profile" | "account" | "billing" 
         <h1>{section[0].toUpperCase() + section.slice(1)}</h1>
         <p>{settingsCopy[section]}</p>
         {auth.user?.email && <p className="plain-muted">Signed in as {auth.user.email}</p>}
+        {(section === "billing" || section === "usage") && (
+          <p className="plain-muted">
+            Plan: {subscription.planName} ({subscription.status})
+            {isLoading ? " loading" : ""}. Courses: {subscription.activeCourseLimit}. AI messages: {subscription.aiMessagesPerMonth}/month.
+            {error ? ` Subscription sync issue: ${error}` : ""}
+          </p>
+        )}
+        {section === "billing" && (
+          <>
+            {billingError && <p className="plain-error">{billingError}</p>}
+            <nav className="plain-actions" aria-label="Billing actions">
+              <button disabled={isBillingActionPending} onClick={() => openCheckout("basic")} type="button">
+                Basic checkout
+              </button>
+              <button disabled={isBillingActionPending} onClick={() => openCheckout("pro")} type="button">
+                Pro checkout
+              </button>
+              <button disabled={isBillingActionPending || subscription.plan === "free"} onClick={openBillingPortal} type="button">
+                Billing portal
+              </button>
+            </nav>
+          </>
+        )}
         <nav className="plain-actions" aria-label="Settings sections">
           <Link to="/settings/profile">Profile</Link>
           <Link to="/settings/account">Account</Link>

@@ -3,6 +3,14 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canCreateActiveCourse, normalizePlanTier, resolvePlanLimit } from "./plan-limits.mjs";
+import { formatSubscriptionState } from "./subscription-state.mjs";
+import {
+  buildCheckoutMetadata,
+  extractCheckoutSessionState,
+  extractStripeSubscriptionState,
+  patchCheckoutSessionState,
+  upsertSubscriptionState
+} from "./stripe-subscriptions.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const isDev = process.argv.includes("--dev") || process.env.NODE_ENV !== "production";
@@ -48,6 +56,11 @@ const server = createHttpServer(async (request, response) => {
 
     if (request.url?.startsWith("/api/courses")) {
       await handleCourseRequest(request, response);
+      return;
+    }
+
+    if (request.url?.startsWith("/api/subscription")) {
+      await handleSubscriptionRequest(request, response);
       return;
     }
 
@@ -155,6 +168,30 @@ async function handleCourseRequest(request, response) {
   }
 
   sendJson(response, 405, { error: "Method not allowed." });
+}
+
+async function handleSubscriptionRequest(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+
+  const { data, error } = await admin
+    .from("subscriptions")
+    .select("plan,status,current_period_end")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    sendJson(response, 500, { error: error.message });
+    return;
+  }
+
+  sendJson(response, 200, { subscription: formatSubscriptionState(data) });
 }
 
 async function handleCreateCourseRequest(request, response) {
@@ -275,11 +312,16 @@ async function handleCheckoutRequest(request, response) {
     return;
   }
 
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+
   const stripe = await createStripeClient(response);
   if (!stripe) return;
 
   const body = await readJsonBody(request);
-  const priceId = body?.priceId ?? process.env.STRIPE_BASIC_PRICE_ID;
+  const plan = normalizePlanTier(body?.plan ?? "basic");
+  const priceId = readStripePriceId(plan);
   const successUrl = body?.successUrl ?? process.env.STRIPE_SUCCESS_URL;
   const cancelUrl = body?.cancelUrl ?? process.env.STRIPE_CANCEL_URL;
 
@@ -288,8 +330,23 @@ async function handleCheckoutRequest(request, response) {
     return;
   }
 
+  const profileError = await upsertServerProfile(admin, user);
+  if (profileError) {
+    sendJson(response, 500, { error: profileError.message });
+    return;
+  }
+
+  const customerId = await readOrCreateStripeCustomer(admin, stripe, user);
+  const metadata = buildCheckoutMetadata(user.id, plan);
+
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
+    customer: customerId,
+    client_reference_id: user.id,
+    metadata,
+    subscription_data: {
+      metadata
+    },
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -305,15 +362,19 @@ async function handleBillingPortalRequest(request, response) {
     return;
   }
 
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+
   const stripe = await createStripeClient(response);
   if (!stripe) return;
 
   const body = await readJsonBody(request);
-  const customerId = body?.customerId;
   const returnUrl = body?.returnUrl ?? process.env.STRIPE_PORTAL_RETURN_URL;
+  const customerId = await readStripeCustomerId(admin, user.id);
 
   if (!customerId || !returnUrl) {
-    sendJson(response, 400, { error: "Stripe customer and return URL are required." });
+    sendJson(response, 400, { error: "Stripe customer and return URL are required. Start checkout before opening billing portal." });
     return;
   }
 
@@ -348,7 +409,10 @@ async function handleStripeWebhook(request, response) {
 
   const rawBody = await readRawBody(request);
   try {
-    stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+    const event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+    const admin = await createSupabaseAdminClient(response);
+    if (!admin) return;
+    await syncStripeEventToSubscription(admin, event);
   } catch (error) {
     sendJson(response, 400, {
       error: error instanceof Error ? error.message : "Invalid Stripe webhook."
@@ -367,7 +431,61 @@ async function createStripeClient(response) {
   }
 
   const { default: Stripe } = await import("stripe");
-  return new Stripe(stripeSecretKey);
+  return new Stripe(stripeSecretKey, {
+    apiVersion: "2026-02-25.clover"
+  });
+}
+
+function readStripePriceId(plan) {
+  if (plan === "pro") return process.env.STRIPE_PRO_PRICE_ID;
+  return process.env.STRIPE_BASIC_PRICE_ID;
+}
+
+async function readStripeCustomerId(client, userId) {
+  const { data, error } = await client
+    .from("subscriptions")
+    .select("stripe_customer_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.stripe_customer_id ?? null;
+}
+
+async function readOrCreateStripeCustomer(client, stripe, user) {
+  const existingCustomerId = await readStripeCustomerId(client, user.id);
+  if (existingCustomerId) return existingCustomerId;
+
+  const customer = await stripe.customers.create({
+    email: user.email ?? undefined,
+    metadata: {
+      user_id: user.id
+    }
+  });
+
+  const { error } = await client.from("subscriptions").upsert({
+    user_id: user.id,
+    plan: "free",
+    status: "free",
+    stripe_customer_id: customer.id,
+    updated_at: new Date().toISOString()
+  });
+  if (error) throw error;
+
+  return customer.id;
+}
+
+async function syncStripeEventToSubscription(client, event) {
+  const subscriptionState = extractStripeSubscriptionState(event);
+  if (subscriptionState) {
+    await upsertSubscriptionState(client, subscriptionState);
+    return;
+  }
+
+  const checkoutState = extractCheckoutSessionState(event);
+  if (checkoutState) {
+    await patchCheckoutSessionState(client, checkoutState);
+  }
 }
 
 async function createSupabaseAdminClient(response) {

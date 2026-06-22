@@ -46,19 +46,20 @@ Done:
 - Start project initializes only folders and `README.md`.
 - setup renders outside the course-list stack and uses the same full-height learning chat layout as course conversations.
 - file tree supports VS Code-style colored glyphs and local drag/drop moves.
-- Stripe checkout/portal/webhook route scaffolds.
+- Authenticated Stripe checkout, billing portal customer mapping, and webhook subscription sync.
+- Billing settings has Basic checkout, Pro checkout, and billing portal actions.
 - Supabase-backed course, workspace file/folder, chat, and progress persistence code with local fallback.
 - Live Supabase persistence verification passes, including `workspace_folders`.
 - Server-side `/api/courses` creates courses with authenticated Free plan limits.
 - Server-side `DELETE /api/courses` archives active user courses for Reset demo.
+- Server-side `/api/subscription` loads authenticated Free/Basic/Pro plan state for dashboard/settings UI.
 - Setup finalize now shows server errors instead of silently closing on failed course creation.
 - Auth onboarding/login-to-dashboard transition polish is committed on `main`.
 
 Not done:
 
 - AI-backed course setup generation for course shell and README content.
-- Stripe webhook persistence.
-- Basic/Pro subscription state loading in dashboard.
+- Real Stripe dashboard/CLI live QA for checkout, portal, and webhook events.
 - AI usage tracking.
 - streaming tutor replies.
 - production code sandbox.

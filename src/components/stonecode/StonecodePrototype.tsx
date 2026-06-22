@@ -3,6 +3,7 @@ import { CourseSetupCard } from "@/components/stonecode/CourseSetupCard";
 import { DashboardPage } from "@/components/stonecode/DashboardPage";
 import { useAuth } from "@/auth/AuthProvider";
 import { useCourseWorkspace } from "@/hooks/useCourseWorkspace";
+import { useSubscriptionState } from "@/hooks/useSubscriptionState";
 import { useTerminalRunner } from "@/hooks/useTerminalRunner";
 import { useTutorChat } from "@/hooks/useTutorChat";
 import { useEffect, useState } from "react";
@@ -23,6 +24,7 @@ export function StonecodePrototype({
   const [isBooting, setIsBooting] = useState(true);
   const [dashboardRevealReady, setDashboardRevealReady] = useState(!authRevealActive);
   const workspace = useCourseWorkspace();
+  const subscriptionState = useSubscriptionState();
   const terminal = useTerminalRunner(workspace.selectedFile);
   const tutor = useTutorChat({
     active: workspace.active,
@@ -134,6 +136,7 @@ export function StonecodePrototype({
         activeCourseCount={workspace.activeCourseCount}
         courses={workspace.userCourses}
         getCourseFiles={workspace.getCourseFiles}
+        isSubscriptionLoading={subscriptionState.isLoading}
         isSetupOpen={isSetupOpen}
         onCardKeyDown={workspace.handleCardKey}
         onChat={tutor.updateCourseChat}
@@ -149,6 +152,8 @@ export function StonecodePrototype({
         onTypingComplete={tutor.finishTyping}
         onViewChange={tutor.updateLessonView}
         storedState={workspace.storedState}
+        subscription={subscriptionState.subscription}
+        subscriptionError={subscriptionState.error}
         typingMessageId={tutor.typingMessageId}
       />
 

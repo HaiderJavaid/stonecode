@@ -11,6 +11,8 @@
     "lint": "eslint .",
     "verify:course-reset": "node scripts/verify-course-reset.mjs",
     "verify:plan-limits": "node scripts/verify-plan-limits.mjs",
+    "verify:stripe-subscription-sync": "node scripts/verify-stripe-subscription-sync.mjs",
+    "verify:subscription-state": "node scripts/verify-subscription-state.mjs",
     "verify:supabase": "node scripts/verify-supabase-persistence.mjs"
   },
   "dependencies": {
