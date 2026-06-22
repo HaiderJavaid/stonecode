@@ -1,6 +1,7 @@
 import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
+import { AiFileEdit, applyAiFileEdits } from "@/ai/fileEditCommands";
 import { Course } from "@/data/courses";
 import {
   clearCourseState,
@@ -30,6 +31,11 @@ export function useCourseWorkspace() {
   const { isConfigured, user } = useAuth();
   const [active, setActive] = useState<ActiveState | null>(null);
   const [storedState, setStoredState] = useState<StoredCourseState>(() => loadCourseState());
+  const [lastAiEditSnapshot, setLastAiEditSnapshot] = useState<{
+    courseId: string;
+    files: WorkspaceFile[];
+    selectedIndex: number;
+  } | null>(null);
   const [isRemoteLoaded, setIsRemoteLoaded] = useState(false);
   const syncTimerRef = useRef<number | null>(null);
   const syncErrorRef = useRef<string | null>(null);
@@ -367,6 +373,62 @@ export function useCourseWorkspace() {
     setActive({ courseId: activeCourse.id, fileIndex: selectedIndex });
   }
 
+  function applyAiEdits(course: Course, edits: AiFileEdit[]) {
+    if (!edits.length) return { appliedCount: 0 };
+
+    let selectedIndex: number | undefined;
+    let appliedCount = 0;
+
+    setStoredState((current) => {
+      setLastAiEditSnapshot({
+        courseId: course.id,
+        files: getCourseFiles(course, current),
+        selectedIndex: current.selectedFilesByCourse[course.id] ?? 0
+      });
+      const result = applyAiFileEdits(getCourseFiles(course, current), edits);
+      selectedIndex = result.selectedIndex;
+      appliedCount = result.appliedCount;
+
+      return {
+        ...current,
+        workspaceFilesByCourse: {
+          ...current.workspaceFilesByCourse,
+          [course.id]: result.files
+        },
+        selectedFilesByCourse: {
+          ...current.selectedFilesByCourse,
+          [course.id]: result.selectedIndex ?? current.selectedFilesByCourse[course.id] ?? 0
+        }
+      };
+    });
+
+    if (active?.courseId === course.id && typeof selectedIndex === "number") {
+      setActive({ courseId: course.id, fileIndex: selectedIndex });
+    }
+
+    return { appliedCount };
+  }
+
+  function undoLastAiEdit() {
+    if (!lastAiEditSnapshot) return false;
+    setStoredState((current) => ({
+      ...current,
+      workspaceFilesByCourse: {
+        ...current.workspaceFilesByCourse,
+        [lastAiEditSnapshot.courseId]: lastAiEditSnapshot.files
+      },
+      selectedFilesByCourse: {
+        ...current.selectedFilesByCourse,
+        [lastAiEditSnapshot.courseId]: lastAiEditSnapshot.selectedIndex
+      }
+    }));
+    if (active?.courseId === lastAiEditSnapshot.courseId) {
+      setActive({ courseId: lastAiEditSnapshot.courseId, fileIndex: lastAiEditSnapshot.selectedIndex });
+    }
+    setLastAiEditSnapshot(null);
+    return true;
+  }
+
   async function resetDemoState() {
     if (isSupabaseBacked && user) {
       await resetSupabaseCourses(user);
@@ -408,6 +470,9 @@ export function useCourseWorkspace() {
     moveWorkspaceFile,
     moveWorkspaceFolder,
     deleteWorkspaceFile,
+    applyAiEdits,
+    undoLastAiEdit,
+    canUndoAiEdit: Boolean(lastAiEditSnapshot),
     resetDemoState,
     handleCardKey
   };

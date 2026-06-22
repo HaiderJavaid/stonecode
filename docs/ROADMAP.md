@@ -48,19 +48,43 @@ Status: done.
 
 ## Stage 6: AI Production Safety
 
-Status: active.
+Status: done for paid-beta foundation; polish remains.
 
 - authenticated tutor endpoint. Done.
 - usage tracking. Done.
 - streaming. Done.
 - provider routing for OpenAI/OpenRouter. Done.
-- direct AI file edits and terminal tool execution. Next.
-- undo/history and safe command limits.
-- evals and observability.
+- direct AI file edits. Done.
+- safe active-file terminal execution. Done.
+- undo for last AI file-edit batch. Done.
+- arbitrary shell commands intentionally not enabled.
+- evals and observability. Later hardening.
 
-## Stage 7: Progression + Retention
+## Stage 7: Paid Beta Polish
 
-Status: planned.
+Status: active next.
+
+- create real content/pages for profile, account, billing, usage, support, privacy, and terms.
+- connect app-wide navigation between dashboard, workspace, settings, support, and legal routes.
+- polish dashboard/workspace UI and AI chat flows.
+- tighten empty/loading/error states.
+- real-session QA for signup/login/logout, course creation, workspace persistence, tutor chat, AI edits, and safe terminal run.
+- mobile/responsive QA.
+
+## Stage 8: Production Launch Prep
+
+Status: planned after polish.
+
+- deployment target and pipeline.
+- production env/secrets checklist.
+- production sandbox decision for future richer code execution.
+- support/legal final review.
+- billing/pricing final QA.
+- observability and eval basics.
+
+## Post-Launch: Progression + Retention
+
+Status: later.
 
 - completion tracking for tasks, lessons, and courses.
 - AI-estimated XP based on difficulty, level, and demonstrated completion.
@@ -68,7 +92,7 @@ Status: planned.
 - learner levels that unlock more hints, exercises, review prompts, and guided challenges.
 - visible profile/progress surfaces that make the subscription feel valuable beyond raw chat access.
 
-## Stage 8: Course Library + Marketplace
+## Post-Launch: Course Library + Marketplace
 
 Status: future option.
 
@@ -77,13 +101,3 @@ Status: future option.
 - support both AI-generated courses and user-authored/shared courses.
 - explore trust/safety and quality signals before public publishing: moderation, visibility controls, course previews, ratings, and report flow.
 - evaluate monetization options after beta learning behavior is clearer: freemium limits, per-course generation credits, paid hint packs, premium replicated courses, or creator rewards.
-
-## Stage 9: Paid Beta Launch
-
-Status: planned.
-
-- support/legal polish.
-- app-wide navigation polish for dashboard, workspace, profile, billing, usage, support, privacy, and terms.
-- mobile/responsive QA.
-- deployment pipeline.
-- production sandbox decision.

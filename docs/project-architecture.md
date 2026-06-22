@@ -43,8 +43,8 @@
 - `FilePanel` and `WorkspaceFileTree`: workspace navigation.
 - `RunTerminal`: browser Worker run output.
 - `useCourseWorkspace`: active course, files, folders, local persistence.
-- `useTutorChat`: tutor requests, chat messages, lesson panel state.
-- `useTerminalRunner`: code execution state.
+- `useTutorChat`: tutor requests, chat messages, AI file-edit parsing, and AI run triggers.
+- `useTerminalRunner`: safe active-file browser Worker execution state.
 
 ## Current Data Flow
 
@@ -59,6 +59,8 @@ Supabase Auth
 -> /api/tutor
 -> LLM provider adapter
 -> OpenAI Responses API or OpenRouter Chat Completions
+-> optional AI file edit blocks applied to workspace state
+-> optional active-file browser Worker run trigger
 -> usage_events
 ```
 
@@ -70,9 +72,10 @@ Supabase Auth
 -> Supabase courses/files/chat/progress
 -> server-side plan limit checks
 -> authenticated /api/tutor
+-> direct workspace file edits with undo
+-> safe active-file terminal run
 -> usage_events
 -> Stripe subscriptions
--> future direct file/terminal tools scoped to the workspace
 ```
 
 ## API Routes

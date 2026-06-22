@@ -27,7 +27,7 @@ Required before selling:
 - user-bound courses, files, chat, progress, and settings.
 - Stripe checkout, billing portal, subscription sync, and plan limits.
 - authenticated tutor endpoint with usage tracking.
-- apply/reject approval before AI file edits.
+- direct AI file edits with undo/history and safe execution limits.
 - clear in-app navigation between dashboard, workspace, profile/account/billing/usage, and support/legal pages.
 - basic support, privacy, and terms pages.
 
@@ -60,15 +60,14 @@ Done:
 - Auth onboarding/login-to-dashboard transition polish is committed on `main`.
 - Real Stripe checkout, portal, and webhook smoke QA passed; product lead manually verified Pro checkout.
 - Authenticated tutor calls, usage event tracking, streaming transport, and OpenRouter dev/test provider routing.
+- Direct AI file edits, last-edit undo, and safe active-file terminal execution from AI chat.
 
 Not done:
 
 - Proper app-wide navigation and route linking. Account/settings/support/legal routes exist but are not yet designed as a connected user flow.
 - AI-backed course setup generation for course shell and README content.
-- XP, level, badge, and unlockable hint/exercise progression system.
-- Course publishing/replication marketplace or community library.
-- Freemium and microtransaction model decisions: possible paid actions include extra hints, course generation, premium course replication, or advanced exercises.
-- direct AI file-edit and terminal tool execution inside the IDE.
+- Real content and polished UI for profile/account/billing/usage/support/privacy/terms pages.
+- AI chat flow polish, better tool feedback, and broader rendered QA.
 - production code sandbox.
 - final rendered QA for the auth transition.
 

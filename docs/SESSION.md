@@ -8,7 +8,7 @@
 
 Stonecode remains a focused paid-beta SaaS for self-taught beginners with a persistent IDE-style learning workspace.
 
-Current focus: provider-backed tutor streaming is live for dev/test; next product priority is direct AI file editing and terminal tool execution inside the IDE.
+Current focus: Stage 6 AI foundation is complete; next priority is paid-beta polish across routes, navigation, UI states, and AI chat flows.
 
 ## Branch State
 
@@ -23,14 +23,16 @@ Current focus: provider-backed tutor streaming is live for dev/test; next produc
 - Added streaming tutor transport and fixed client stream reading so successful streams are not locked by JSON parsing.
 - Added provider adapter for `LLM_PROVIDER=openai|openrouter`.
 - Local dev/test now uses OpenRouter with `OPENROUTER_MODEL=openai/gpt-oss-20b:free` in ignored `.env`.
+- Added direct AI file edits, last-edit undo, safe active-file terminal run trigger, and forgiving parser fallbacks for weaker free-model output.
 - Added `npm run verify:usage-summary` and `npm run verify:response-stream`.
+- Added `npm run verify:ai-file-edits`.
 - Updated project docs and handoff for current tutor state.
 
 ## Current Risks
 
-- Direct AI file edits and terminal tool execution are not implemented yet.
 - OpenRouter free models can rate-limit or change availability; switch `OPENROUTER_MODEL` to another `:free` model if needed.
 - Existing settings/support/legal/profile routes are still not a coherent app-wide navigation flow.
+- AI chat flow needs polish around edit/run status, error handling, and command feedback.
 
 ## Verification
 
@@ -43,12 +45,14 @@ Latest verification:
 - `npm run verify:stripe-subscription-sync` passed.
 - `npm run verify:usage-summary` passed.
 - `npm run verify:response-stream` passed.
+- `npm run verify:ai-file-edits` passed.
 - `npm run typecheck` passed.
 - `npm run build` passed.
 - Authenticated `/api/tutor` temp-user smoke returned a streamed OpenRouter response on `http://127.0.0.1:5174`.
 
 ## Next Work
 
-1. Add direct AI file editing and terminal tool execution inside the IDE.
-2. Design undo/history and command safety limits for AI actions.
-3. Continue app-wide navigation and real-session dashboard QA.
+1. Create polished pages for profile, account, billing, usage, support, privacy, and terms.
+2. Design app-wide navigation between dashboard, workspace, settings, support, and legal routes.
+3. Polish AI chat flow copy, loading, edit/run status, and error states.
+4. Continue real-session dashboard/workspace QA.

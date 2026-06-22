@@ -7,7 +7,7 @@ project:
 status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
-  current_stage: verified Supabase persistence, server-side plan limits, subscription-state UI, Stripe sync, and provider-backed tutor streaming on top of production SaaS foundation
+  current_stage: Stage 6 AI foundation complete; moving into paid-beta app polish, route content, navigation, and AI chat UX
   current_branch: main
   base_checkpoint: checkpoint/06-persistent-terminal-reveal
   checkpoint_work:
@@ -23,12 +23,15 @@ status:
     - Stripe webhook event mapping into subscriptions
     - authenticated streaming tutor endpoint with usage tracking
     - OpenRouter provider adapter for free-model dev/test
+    - direct AI file edits with last-edit undo
+    - safe active-file terminal execution trigger from AI chat
     - docs updated for live Supabase verification and server-side plan limit work
   current_risks:
     - existing settings/support/legal/profile routes are not yet linked or designed as a coherent navigation flow
     - real user login-to-dashboard timing is still not verified with actual credentials
     - broader dashboard component animations still need more manual flow testing after the latest optimization pass
-    - direct AI file edits and terminal tool execution are not implemented yet
+    - app-wide settings/support/legal/profile routes are placeholders and need polished content/navigation
+    - AI chat tool feedback needs UX polish after direct file edits and safe runs
 deployment:
   host_target: unknown
   branch: main
@@ -97,6 +100,8 @@ done:
   - OpenAI/API tutor work intentionally not touched to avoid AI credit usage
   - authenticated `/api/tutor` now records `usage_events` and streams replies
   - tutor provider routing supports `LLM_PROVIDER=openai|openrouter`; local ignored `.env` uses OpenRouter `openai/gpt-oss-20b:free` for dev testing
+  - AI can edit workspace files directly using structured edit blocks; app applies edits and offers Undo AI edit
+  - AI can trigger safe active-file browser-worker terminal runs; arbitrary shell commands remain disabled
   - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
   - merged work/auth-transition-from-06 into local main at d6bc39e
 verification:
@@ -108,6 +113,7 @@ verification:
     - npm run verify:stripe-subscription-sync
     - npm run verify:usage-summary
     - npm run verify:response-stream
+    - npm run verify:ai-file-edits
     - npm run typecheck
     - npm run build
     - local /api/tutor OpenRouter temp-user smoke check
@@ -117,14 +123,13 @@ verification:
     - local /api/billing/portal live Stripe temp-user check
     - stripe trigger checkout.session.completed
     - Chrome CDP production render check for /login and protected settings redirect
-  latest_result: OpenRouter provider-backed tutor smoke, streaming parser checks, usage summary checks, subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, manual Pro checkout, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
+  latest_result: AI file edit parser, safe run command detection, OpenRouter provider-backed tutor smoke, streaming parser checks, usage summary checks, subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, manual Pro checkout, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
   not_verified:
     - authenticated Supabase login credentials were not available for full real-session dashboard interaction QA
 next:
-  - add direct AI file-edit and terminal tool execution inside the IDE
-  - design and implement app-wide navigation between dashboard, workspace, profile/account/billing/usage, support, privacy, and terms
-  - design progression system for AI-estimated XP, levels, badges, and unlockable hints/exercises
-  - later, evaluate course publishing/replication marketplace and freemium/microtransaction model
+  - polish all existing app routes with real pages: profile, account, billing, usage, support, privacy, terms
+  - design and implement app-wide navigation between dashboard, workspace, settings, support, and legal routes
+  - polish AI chat flow copy, tool-run feedback, edit status, and error/loading states
   - manually test real login-to-dashboard timing with valid Supabase credentials
   - continue optimizing remaining dashboard component animations while preserving current intro and login zoom
   - replace local setup generator with AI-backed course plan and README generation

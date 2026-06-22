@@ -29,7 +29,9 @@ export function StonecodePrototype({
   const tutor = useTutorChat({
     active: workspace.active,
     storedState: workspace.storedState,
-    setStoredState: workspace.setStoredState
+    setStoredState: workspace.setStoredState,
+    onApplyFileEdits: workspace.applyAiEdits,
+    onRunActiveFile: () => terminal.runFile(workspace.selectedFile, "AI")
   });
 
   useEffect(() => {
@@ -130,6 +132,11 @@ export function StonecodePrototype({
       <button className="session-logout" onClick={handleSignOut} type="button">
         Log out
       </button>
+      {workspace.canUndoAiEdit && (
+        <button className="session-logout ai-undo-edit" onClick={workspace.undoLastAiEdit} type="button">
+          Undo AI edit
+        </button>
+      )}
 
       <DashboardPage
         active={workspace.active}

@@ -18,6 +18,10 @@ export type TutorContext = {
   currentFilePath: string | null;
   currentFileContent: string | null;
   fileTree: string[];
+  workspaceFiles: Array<{
+    path: string;
+    content: string;
+  }>;
   recentMessages: Array<{
     role: StoredChatMessage["role"];
     content: string;
@@ -34,6 +38,10 @@ export function buildTutorContext(input: TutorContextInput): TutorContext {
     currentFilePath: input.currentFile?.path ?? null,
     currentFileContent: input.currentFile?.content ?? null,
     fileTree: input.files.map((file) => file.path),
+    workspaceFiles: input.files.map((file) => ({
+      path: file.path,
+      content: file.content
+    })),
     recentMessages: input.recentMessages.slice(-8).map((message) => ({
       role: message.role,
       content: message.content

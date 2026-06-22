@@ -1446,6 +1446,10 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   color: rgba(238, 238, 228, 0.72);
 }
 
+.ai-undo-edit {
+  bottom: calc(2.55% + 36px);
+}
+
 .dot {
   width: 7px;
   height: 7px;

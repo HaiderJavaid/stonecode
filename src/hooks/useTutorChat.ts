@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction, useCallback, useState } from "react";
+import { extractAiFileEdits, extractAiRunCommand, AiFileEdit } from "@/ai/fileEditCommands";
 import { requestTutorReplyStream } from "@/ai/tutorClient";
 import { useAuth } from "@/auth/AuthProvider";
 import { Course } from "@/data/courses";
@@ -12,11 +13,15 @@ import { ActiveState, CardView } from "@/components/stonecode/types";
 export function useTutorChat({
   active,
   storedState,
-  setStoredState
+  setStoredState,
+  onApplyFileEdits,
+  onRunActiveFile
 }: {
   active: ActiveState | null;
   storedState: StoredCourseState;
   setStoredState: Dispatch<SetStateAction<StoredCourseState>>;
+  onApplyFileEdits: (course: Course, edits: AiFileEdit[]) => { appliedCount: number };
+  onRunActiveFile: () => void;
 }) {
   const { isConfigured, user } = useAuth();
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
@@ -93,7 +98,30 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
       }));
     }
 
-    persistChatMessage(course.id, "assistant", reply, lessonIndex);
+    const fileExtraction = extractAiFileEdits(reply);
+    const runExtraction = extractAiRunCommand(fileExtraction.displayReply);
+    const applied = onApplyFileEdits(course, fileExtraction.edits);
+    if (runExtraction.shouldRunActiveFile) onRunActiveFile();
+    const finalReply = formatFinalReply(runExtraction.displayReply, applied.appliedCount, runExtraction.shouldRunActiveFile);
+
+    if (finalReply !== reply) {
+      setStoredState((current) => ({
+        ...current,
+        chatByCourse: {
+          ...current.chatByCourse,
+          [course.id]: (current.chatByCourse[course.id] ?? []).map((entry) =>
+            entry.id === assistantMessage.id
+              ? {
+                  ...entry,
+                  content: finalReply
+                }
+              : entry
+          )
+        }
+      }));
+    }
+
+    persistChatMessage(course.id, "assistant", finalReply, lessonIndex);
     setTypingMessageId(null);
   }
 
@@ -131,4 +159,13 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
     updateLessonView,
     updateLessonStep
   };
+}
+
+function formatFinalReply(reply: string, appliedCount: number, didRunFile: boolean) {
+  if (!appliedCount && !didRunFile) return reply;
+  const baseReply = reply.trim() || "Updated the workspace.";
+  const notes = [];
+  if (appliedCount) notes.push(`applied ${appliedCount} file edit${appliedCount === 1 ? "" : "s"}`);
+  if (didRunFile) notes.push("ran the active file in the terminal");
+  return `${baseReply}\n\n_Stonecode ${notes.join(" and ")}._`;
 }

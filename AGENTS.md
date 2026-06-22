@@ -44,7 +44,7 @@ Supabase Auth is connected. Supabase-backed course/file/folder/chat/progress per
 
 Current branch: `main`.
 
-Next product priority: add direct AI file editing and terminal tool execution inside the IDE, with workspace scoping, undo/history, and safe command limits.
+Next product priority: finalize paid-beta polish across app routes, navigation, dashboard/workspace UI states, and AI chat flows.
 
 ## Verification
 

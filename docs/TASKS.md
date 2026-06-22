@@ -67,16 +67,23 @@
 - [x] Block unauthenticated `/api/tutor` calls.
 - [x] Add streaming tutor response transport.
 - [x] Add OpenRouter provider routing for free-model dev/test.
-- [ ] Add apply/reject AI edit flow.
+- [x] Add direct AI file-edit flow with last-edit undo.
+- [x] Add safe active-file terminal execution trigger for AI chat.
 - [ ] Design proper app-wide navigation and link existing routes into a coherent user flow.
 - [ ] Add profile/account entry points from dashboard/workspace.
+- [ ] Create real content/pages for profile, account, billing, usage, support, privacy, and terms.
+- [ ] Polish AI chat flow copy, loading, tool-run feedback, and edit status.
+- [ ] Polish dashboard/workspace UI states and responsive behavior.
+- [ ] Add ESLint 9 config or remove lint script.
+
+## Deferred Until After Launch
+
 - [ ] Design XP, levels, badges, and unlockable hints/exercises progression system.
 - [ ] Persist user XP, badge awards, and course/task completion history.
 - [ ] Let AI estimate XP and badge eligibility from task difficulty after completion.
 - [ ] Design course publishing/replication model for user-created and AI-generated courses.
 - [ ] Add star/favorite/replicate concepts for published courses.
 - [ ] Decide whether freemium monetization should use subscriptions only, generation credits, hint packs, premium course replication, or a hybrid.
-- [ ] Add ESLint 9 config or remove lint script.
 
 ## Paid Beta QA
 
