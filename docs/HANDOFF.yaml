@@ -34,11 +34,11 @@ deployment:
   branch: main
   latest_commit: see git HEAD
   config_file: null
-  pushed: pending
+  pushed: true
   pr_url: null
 git:
   main: see git HEAD
-  origin_main: pending push
+  origin_main: see git HEAD
   checkpoint_branches:
     - checkpoint/00-initial-stonecode
     - checkpoint/01-supabase-persistence
