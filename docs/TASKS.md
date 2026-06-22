@@ -32,6 +32,7 @@
 - First dashboard animation optimization pass completed without changing the accepted login zoom.
 - Right panel/add-course reveal now mounts after auth zoom with a preload gap, waits for workspace readiness, then animates from the right.
 - Course selection panel defers heavier chat/Markdown/typewriter content until the panel shell animation finishes.
+- Live verifier script now proves `workspace_folders` is the only missing persistence table in the current Supabase project.
 
 ## Current Stage: Production SaaS Foundation
 
@@ -52,7 +53,7 @@
 - [x] Persist workspace folders to `workspace_folders` in code.
 - [x] Persist chat to `chat_messages` in code.
 - [x] Persist progress to `course_progress` in code.
-- [ ] Apply/verify live Supabase schema migration, including `workspace_folders`.
+- [ ] Apply live Supabase `workspace_folders` migration and rerun verifier.
 - [x] Finish accepted startup/load-in fade through login zoom.
 - [x] Diagnose right panel/add-course area reveal stutter after login zoom.
 - [ ] Continue dashboard component animation optimization and real-session QA.
