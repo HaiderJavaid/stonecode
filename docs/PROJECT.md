@@ -61,13 +61,20 @@ Done:
 - Real Stripe checkout, portal, and webhook smoke QA passed; product lead manually verified Pro checkout.
 - Authenticated tutor calls, usage event tracking, streaming transport, and OpenRouter dev/test provider routing.
 - Direct AI file edits, last-edit undo, and safe active-file terminal execution from AI chat.
+- Dashboard-integrated settings routes for overview, profile, billing, usage, security, and support.
+- Public landing, support, privacy, and terms surfaces in the stone-textured visual system.
+- Tutor panel now supports theory, chat-answer exercises, multiple choice, terminal exercises, and visual canvas/code blocks.
+- Tutor exercises carry language, difficulty, and XP metadata; persistence and award rules remain future backend work.
+- Tutor chat now accepts spaces, Enter submits, and Shift+Enter creates a new line.
+- CodeMirror syntax support now lazy-loads JavaScript/TypeScript, Python, HTML, CSS, JSON, Markdown, SQL, Java, C/C++, and PHP.
+- File tree icons cover common web, systems, scripting, JVM, database, and text formats.
 
 Not done:
 
-- Proper app-wide navigation and route linking. Account/settings/support/legal routes exist but are not yet designed as a connected user flow.
 - AI-backed course setup generation for course shell and README content.
-- Real content and polished UI for profile/account/billing/usage/support/privacy/terms pages.
-- AI chat flow polish, better tool feedback, and broader rendered QA.
+- Persisted XP awards, streaks, badge eligibility, and per-language/category progress.
+- Production schema/protocol for model-generated MCQ choices and interactive tutor blocks.
+- Better AI tool feedback and broader authenticated rendered QA.
 - production code sandbox.
 - final rendered QA for the auth transition.
 

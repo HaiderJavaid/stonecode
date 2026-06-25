@@ -4,8 +4,7 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { useAuth } from "@/auth/AuthProvider";
 import { StonecodePrototype } from "@/components/stonecode/StonecodePrototype";
 import { defaultCourseCodeHtml } from "@/data/courses";
-import { useSubscriptionState } from "@/hooks/useSubscriptionState";
-import { useUsageSummary } from "@/hooks/useUsageSummary";
+import { LandingPage, LegalPage, SupportPage } from "@/components/app/SitePages";
 
 type AuthRevealPhase = "idle" | "holding" | "revealing";
 
@@ -62,33 +61,20 @@ export function App() {
           }
           path="/courses/:courseId"
         />
-        <Route element={<RequireAuth><SettingsPage section="profile" /></RequireAuth>} path="/settings/profile" />
-        <Route element={<RequireAuth><SettingsPage section="account" /></RequireAuth>} path="/settings/account" />
-        <Route element={<RequireAuth><SettingsPage section="billing" /></RequireAuth>} path="/settings/billing" />
-        <Route element={<RequireAuth><SettingsPage section="usage" /></RequireAuth>} path="/settings/usage" />
-        <Route element={<TextPage title="Privacy" />} path="/privacy" />
-        <Route element={<TextPage title="Terms" />} path="/terms" />
-        <Route element={<TextPage title="Support" />} path="/support" />
+        <Route element={<Navigate replace to="/settings/overview" />} path="/settings" />
+        <Route element={<RequireAuth><StonecodePrototype settingsSection="overview" /></RequireAuth>} path="/settings/overview" />
+        <Route element={<RequireAuth><StonecodePrototype settingsSection="profile" /></RequireAuth>} path="/settings/profile" />
+        <Route element={<Navigate replace to="/settings/security" />} path="/settings/account" />
+        <Route element={<RequireAuth><StonecodePrototype settingsSection="billing" /></RequireAuth>} path="/settings/billing" />
+        <Route element={<RequireAuth><StonecodePrototype settingsSection="usage" /></RequireAuth>} path="/settings/usage" />
+        <Route element={<RequireAuth><StonecodePrototype settingsSection="security" /></RequireAuth>} path="/settings/security" />
+        <Route element={<RequireAuth><StonecodePrototype settingsSection="support" /></RequireAuth>} path="/settings/support" />
+        <Route element={<LegalPage type="privacy" />} path="/privacy" />
+        <Route element={<LegalPage type="terms" />} path="/terms" />
+        <Route element={<SupportPage />} path="/support" />
         <Route element={<Navigate replace to="/dashboard" />} path="*" />
       </Routes>
     </>
-  );
-}
-
-function LandingPage() {
-  return (
-    <main className="plain-page">
-      <section className="plain-panel">
-        <span className="plain-eyebrow">Stonecode</span>
-        <h1>Persistent AI programming tutor workspace</h1>
-        <p>Open a course, code in the workspace, and keep tutor memory tied to that course.</p>
-        <nav className="plain-actions" aria-label="Landing actions">
-          <Link to="/signup">Start beta</Link>
-          <Link to="/login">Log in</Link>
-          <Link to="/dashboard">View demo</Link>
-        </nav>
-      </section>
-    </main>
   );
 }
 
@@ -247,131 +233,3 @@ function AuthTransitionSurface({
     </div>
   );
 }
-
-function SettingsPage({ section }: { section: "profile" | "account" | "billing" | "usage" }) {
-  const auth = useAuth();
-  const navigate = useNavigate();
-  const { subscription, isLoading, error } = useSubscriptionState();
-  const { usage, isLoading: isUsageLoading, error: usageError } = useUsageSummary(section === "usage");
-  const [billingError, setBillingError] = useState<string | null>(null);
-  const [isBillingActionPending, setIsBillingActionPending] = useState(false);
-
-  async function handleSignOut() {
-    await auth.signOut();
-    navigate("/login", { replace: true });
-  }
-
-  async function openCheckout(plan: "basic" | "pro") {
-    await openBillingUrl("/api/billing/checkout", { plan });
-  }
-
-  async function openBillingPortal() {
-    await openBillingUrl("/api/billing/portal", {});
-  }
-
-  async function openBillingUrl(path: string, body: Record<string, string>) {
-    setBillingError(null);
-    setIsBillingActionPending(true);
-    try {
-      const token = auth.session?.access_token;
-      if (!token) throw new Error("Authentication is required.");
-
-      const response = await fetch(path, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          ...body,
-          successUrl: `${window.location.origin}/settings/billing`,
-          cancelUrl: `${window.location.origin}/settings/billing`,
-          returnUrl: `${window.location.origin}/settings/billing`
-        })
-      });
-
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.url) {
-        throw new Error(payload?.error ?? "Failed to open Stripe.");
-      }
-
-      window.location.href = payload.url;
-    } catch (caughtError) {
-      setBillingError(caughtError instanceof Error ? caughtError.message : "Failed to open Stripe.");
-      setIsBillingActionPending(false);
-    }
-  }
-
-  return (
-    <main className="plain-page">
-      <section className="plain-panel">
-        <span className="plain-eyebrow">Settings</span>
-        <h1>{section[0].toUpperCase() + section.slice(1)}</h1>
-        <p>{settingsCopy[section]}</p>
-        {auth.user?.email && <p className="plain-muted">Signed in as {auth.user.email}</p>}
-        {(section === "billing" || section === "usage") && (
-          <p className="plain-muted">
-            Plan: {subscription.planName} ({subscription.status})
-            {isLoading ? " loading" : ""}. Courses: {subscription.activeCourseLimit}. AI messages: {subscription.aiMessagesPerMonth}/month.
-            {error ? ` Subscription sync issue: ${error}` : ""}
-          </p>
-        )}
-        {section === "usage" && (
-          <p className="plain-muted">
-            Tutor messages: {usage.totalTutorMessages}
-            {isUsageLoading ? " loading" : ""}. Success: {usage.statusCounts.success}. Failed: {usage.statusCounts.failed}. Blocked: {usage.statusCounts.blocked}.
-            {usage.latestEventAt ? ` Last event: ${new Date(usage.latestEventAt).toLocaleString()}.` : ""}
-            {usageError ? ` Usage sync issue: ${usageError}` : ""}
-          </p>
-        )}
-        {section === "billing" && (
-          <>
-            {billingError && <p className="plain-error">{billingError}</p>}
-            <nav className="plain-actions" aria-label="Billing actions">
-              <button disabled={isBillingActionPending} onClick={() => openCheckout("basic")} type="button">
-                Basic checkout
-              </button>
-              <button disabled={isBillingActionPending} onClick={() => openCheckout("pro")} type="button">
-                Pro checkout
-              </button>
-              <button disabled={isBillingActionPending || subscription.plan === "free"} onClick={openBillingPortal} type="button">
-                Billing portal
-              </button>
-            </nav>
-          </>
-        )}
-        <nav className="plain-actions" aria-label="Settings sections">
-          <Link to="/settings/profile">Profile</Link>
-          <Link to="/settings/account">Account</Link>
-          <Link to="/settings/billing">Billing</Link>
-          <Link to="/settings/usage">Usage</Link>
-          <Link to="/dashboard">Dashboard</Link>
-          <button onClick={handleSignOut} type="button">Sign out</button>
-        </nav>
-      </section>
-    </main>
-  );
-}
-
-function TextPage({ title }: { title: string }) {
-  return (
-    <main className="plain-page">
-      <section className="plain-panel">
-        <span className="plain-eyebrow">Stonecode</span>
-        <h1>{title}</h1>
-        <p>This page is reserved for the paid beta launch content.</p>
-        <nav className="plain-actions" aria-label={`${title} links`}>
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/support">Support</Link>
-        </nav>
-      </section>
-    </main>
-  );
-}
-
-const settingsCopy = {
-  profile: "Learner name, avatar, timezone, and course preferences will live here.",
-  account: "Email, password, connected auth providers, and account deletion controls will live here.",
-  billing: "Stripe checkout, plan status, invoices, and billing portal access will live here.",
-  usage: "AI message usage, course limits, and plan guardrails will live here."
-};

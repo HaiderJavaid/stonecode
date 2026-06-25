@@ -23,6 +23,8 @@ Stonecode is moving from prototype to focused paid beta:
 - server-side Free plan course creation and reset behavior are enforced through `/api/courses`.
 - billing is wired for authenticated checkout, portal, and webhook subscription sync; it needs Stripe env values for live QA.
 - tutor calls are auth-gated, usage-tracked, streamed, and can run through `LLM_PROVIDER=openai|openrouter`.
+- tutor UI includes theory, chat-answer, MCQ, terminal exercise, and visual canvas demo states.
+- file icons and lazy editor syntax modes cover common web, scripting, JVM, systems, database, and documentation formats.
 - current work is on `main`.
 
 ## Commands
@@ -39,6 +41,7 @@ npm run verify:subscription-state
 npm run verify:stripe-subscription-sync
 npm run verify:usage-summary
 npm run verify:response-stream
+npm run verify:tutor-flow
 ```
 
 `npm run lint` needs an ESLint 9 config before it can be required.

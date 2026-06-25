@@ -12,7 +12,9 @@ export function CourseWorkspace({
   activeCourse,
   activeFiles,
   activeFolders,
+  planName,
   selectedFile,
+  userEmail,
   terminalLogs,
   isRunningCode,
   onCreateFile,
@@ -30,7 +32,9 @@ export function CourseWorkspace({
   activeCourse: Course | null;
   activeFiles: WorkspaceFile[];
   activeFolders: WorkspaceFolder[];
+  planName: string;
   selectedFile: WorkspaceFile | null;
+  userEmail: string;
   terminalLogs: RunLog[];
   isRunningCode: boolean;
   onCreateFile: () => void;
@@ -53,6 +57,7 @@ export function CourseWorkspace({
         activeCourse={activeCourse}
         activeFiles={activeFiles}
         activeFolders={activeFolders}
+        planName={planName}
         onCreateFile={onCreateFile}
         onCreateFolder={onCreateFolder}
         onDeleteFile={onDeleteFile}
@@ -62,6 +67,7 @@ export function CourseWorkspace({
         onSelectFile={onSelectFile}
         selectedFile={selectedFile}
         selectedFileIndex={active?.fileIndex ?? -1}
+        userEmail={userEmail}
       />
 
       <section className="terminal" aria-label="Stone IDE simulator">

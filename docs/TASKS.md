@@ -69,10 +69,16 @@
 - [x] Add OpenRouter provider routing for free-model dev/test.
 - [x] Add direct AI file-edit flow with last-edit undo.
 - [x] Add safe active-file terminal execution trigger for AI chat.
-- [ ] Design proper app-wide navigation and link existing routes into a coherent user flow.
-- [ ] Add profile/account entry points from dashboard/workspace.
-- [ ] Create real content/pages for profile, account, billing, usage, support, privacy, and terms.
-- [ ] Polish AI chat flow copy, loading, tool-run feedback, and edit status.
+- [x] Design proper app-wide navigation and link existing routes into a coherent user flow.
+- [x] Add profile/account entry points from dashboard/workspace.
+- [x] Create initial content/pages for profile, account, billing, usage, support, privacy, and terms.
+- [x] Add tutor theory, chat exercise, MCQ, terminal exercise, and canvas demo states.
+- [x] Add tutor section progress, exercise language/difficulty/XP metadata, and clickable MCQ options.
+- [x] Fix tutor composer spaces and Enter-to-send; keep Shift+Enter for new lines.
+- [x] Expand file icons and lazy CodeMirror language modes beyond JS/TS.
+- [ ] Persist XP awards by exercise language, category, and difficulty.
+- [ ] Define model response schema for generated interactive tutor blocks and MCQ grading.
+- [ ] Polish AI tool-run feedback, edit status, and error/loading states.
 - [ ] Polish dashboard/workspace UI states and responsive behavior.
 - [ ] Add ESLint 9 config or remove lint script.
 
@@ -95,5 +101,5 @@
 - [ ] send tutor message.
 - [ ] plan limit blocks extra active course.
 - [x] billing portal opens for subscribed user with real Stripe env.
-- [ ] privacy/terms/support pages exist.
-- [ ] profile/account/billing/usage routes are discoverable from main app UI.
+- [x] privacy/terms/support pages exist.
+- [x] profile/account/billing/usage routes are discoverable from main app UI.

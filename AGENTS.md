@@ -44,7 +44,7 @@ Supabase Auth is connected. Supabase-backed course/file/folder/chat/progress per
 
 Current branch: `main`.
 
-Next product priority: finalize paid-beta polish across app routes, navigation, dashboard/workspace UI states, and AI chat flows.
+Next product priority: persist XP/streak/badge progression and define structured, model-generated tutor exercise blocks and grading.
 
 ## Verification
 
@@ -52,6 +52,6 @@ Before marking a stage done:
 
 - Run `npm run build`.
 - Run `npm run typecheck`.
-- Run relevant verifier scripts such as `npm run verify:response-stream` and `npm run verify:usage-summary` after tutor changes.
+- Run relevant verifier scripts such as `npm run verify:tutor-flow`, `npm run verify:response-stream`, and `npm run verify:usage-summary` after tutor changes.
 - Run the local app.
 - Verify the main flow: login -> empty dashboard -> add learning course -> finalize -> Start project -> folders/README appear -> learning chat opens -> file tree drag/drop works.

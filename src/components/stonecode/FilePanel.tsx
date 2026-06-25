@@ -8,8 +8,10 @@ export function FilePanel({
   activeCourse,
   activeFiles,
   activeFolders,
+  planName,
   selectedFileIndex,
   selectedFile,
+  userEmail,
   onCreateFile,
   onCreateFolder,
   onRenameFile,
@@ -22,8 +24,10 @@ export function FilePanel({
   activeCourse: Course | null;
   activeFiles: WorkspaceFile[];
   activeFolders: WorkspaceFolder[];
+  planName: string;
   selectedFileIndex: number;
   selectedFile: WorkspaceFile | null;
+  userEmail: string;
   onCreateFile: () => void;
   onCreateFolder: () => void;
   onRenameFile: () => void;
@@ -36,8 +40,18 @@ export function FilePanel({
 
   return (
     <aside className={`file-panel${active ? " is-visible" : ""}`} aria-label="Stonecode files" aria-hidden={!active}>
+      <div className="file-panel-brand">
+        <div className="file-panel-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <rect fill="none" height="18" rx="5" stroke="currentColor" strokeWidth="1.5" width="18" x="3" y="3" />
+            <path d="M10 8.6 7.7 12 10 15.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+            <path d="M14 8.6 16.3 12 14 15.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+          </svg>
+        </div>
+        <strong>stonecode</strong>
+      </div>
       <div className="file-panel-head">
-        <span>Files</span>
+        <span>Project</span>
         <strong>{activeCourse?.subject ?? "Courses"}</strong>
       </div>
       {activeCourse && (
@@ -68,6 +82,7 @@ export function FilePanel({
           if (dragged.type === "folder") onMoveFolder(dragged.path, "");
         }}
       >
+        <div className="tree-root-label">/</div>
         <WorkspaceFileTree
           files={activeFiles}
           folders={activeFolders}
@@ -76,6 +91,21 @@ export function FilePanel({
           onSelectFile={onSelectFile}
           selectedFileIndex={selectedFileIndex}
         />
+      </div>
+
+      <div className="file-panel-footer">
+        <div className="file-panel-status">
+          <span>Git status</span>
+          <strong>main</strong>
+          <small>Workspace synced</small>
+        </div>
+        <div className="file-panel-user">
+          <div className="file-panel-user-avatar" aria-hidden="true">{userEmail[0]?.toUpperCase() ?? "S"}</div>
+          <div>
+            <strong>{userEmail}</strong>
+            <span>{planName}</span>
+          </div>
+        </div>
       </div>
     </aside>
   );

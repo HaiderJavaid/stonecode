@@ -441,6 +441,16 @@ export function useCourseWorkspace() {
   }
 
   function handleCardKey(event: KeyboardEvent<HTMLElement>, course: Course) {
+    const target = event.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLButtonElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    ) {
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     if (active?.courseId !== course.id) openCourse(course);

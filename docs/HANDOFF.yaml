@@ -1,138 +1,52 @@
-date: 2026-06-23
+date: 2026-06-25
 project:
   name: Stonecode
   local_path: /Users/kinghaider/Desktop/Coding/projects/stonecode
-  release_clone_path: null
   github_repo: https://github.com/HaiderJavaid/stonecode.git
 status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
-  current_stage: Stage 6 AI foundation complete; moving into paid-beta app polish, route content, navigation, and AI chat UX
+  current_stage: paid-beta UI and tutor interaction polish
   current_branch: main
-  base_checkpoint: checkpoint/06-persistent-terminal-reveal
-  checkpoint_work:
-    - server-side /api/courses route with auth and active course limit enforcement
-    - server-side DELETE /api/courses route for archiving active courses during Reset demo
-    - client course creation moved from direct Supabase insert to /api/courses
-    - Reset demo moved from local-only clearing to authenticated Supabase archive plus local clearing
-    - shared server plan limit helper and verifier
-    - authenticated /api/subscription route for Free/Basic/Pro subscription state
-    - dashboard and billing/usage settings now load real subscription state
-    - authenticated Stripe checkout and portal customer mapping
-    - Billing settings actions for Basic checkout, Pro checkout, and billing portal
-    - Stripe webhook event mapping into subscriptions
-    - authenticated streaming tutor endpoint with usage tracking
-    - OpenRouter provider adapter for free-model dev/test
-    - direct AI file edits with last-edit undo
-    - safe active-file terminal execution trigger from AI chat
-    - docs updated for live Supabase verification and server-side plan limit work
   current_risks:
-    - existing settings/support/legal/profile routes are not yet linked or designed as a coherent navigation flow
-    - real user login-to-dashboard timing is still not verified with actual credentials
-    - broader dashboard component animations still need more manual flow testing after the latest optimization pass
-    - app-wide settings/support/legal/profile routes are placeholders and need polished content/navigation
-    - AI chat tool feedback needs UX polish after direct file edits and safe runs
+    - XP, streaks, badges, and exercise grading are not server-persisted
+    - generated interactive tutor blocks need a structured protocol
+    - Vite 5 has advisories whose available npm fix requires a breaking Vite 8 upgrade
+    - full authenticated login-to-dashboard timing still needs manual real-user QA
 deployment:
   host_target: unknown
   branch: main
-  latest_commit: see git HEAD
+  latest_commit: 142cd54
   config_file: null
-  pushed: true
+  pushed: false
   pr_url: null
-git:
-  main: see git HEAD
-  origin_main: see git HEAD
-  checkpoint_branches:
-    - checkpoint/00-initial-stonecode
-    - checkpoint/01-supabase-persistence
-    - checkpoint/02-auth-transition-docs
-    - checkpoint/03-auth-onboarding-transition
-    - checkpoint/04-smooth-auth-dashboard
-    - checkpoint/05-global-auth-terminal
-    - checkpoint/06-persistent-terminal-reveal
-    - checkpoint/07-supabase-persistence-verifier
-    - checkpoint/08-server-plan-reset
-  stash:
-    - "stash@{0}: wip auth transition experiments 2026-06-21"
 done:
-  - Supabase Auth forms and route guard
-  - Supabase-backed courses/files/folders/progress/chat persistence code with local fallback
-  - empty first-login dashboard with guided local course setup
-  - Start project initializes folders and README only
-  - auth transition checkpoint branches created for visual comparison
-  - current WIP branch created from checkpoint 06
-  - login-to-dashboard transition now keeps matching dashboard code in the auth terminal and includes logout button
-  - accepted startup/login intro through zoom as visually correct
-  - restored delayed startup fade using a cheap overlay plus opacity-only card fade
-  - optimized dashboard animation pass without changing login zoom
-  - moved typing work to rAF throttling and stopped inactive course cards from running typewriter updates
-  - reduced dashboard animation paint cost by removing large dashboard blur/filter/blend hotspots
-  - right panel reveal currently uses full offscreen CSS slide from the right with 120ms delay and 620ms duration
-  - dashboard route now mounts 520ms earlier after auth zoom so the workspace can preload behind the transition surface
-  - right dashboard panel reveal is gated on workspace readiness plus a short paint-prep delay before CSS animation starts
-  - course selection panel defers chat/Markdown/typewriter content until the panel shell animation settles
-  - added `npm run verify:supabase` to create a temporary confirmed user, exercise live persistence tables, and clean up after itself
-  - verified live Supabase round-trip succeeds for courses, workspace_files, chat_messages, and course_progress
-  - diagnosed live Supabase `workspace_folders` failure as missing schema cache/table before migration
-  - added targeted SQL migration `supabase/migrations/2026-06-22-add-workspace-folders.sql`
-  - verified live Supabase round-trip now succeeds for workspace_folders after the migration was applied
-  - checkpoint branch `checkpoint/07-supabase-persistence-verifier` created at commit 80f53b7
-  - added `POST /api/courses` with bearer-token auth, service-role insert, profile upsert, subscription lookup, and active course limit enforcement
-  - added `DELETE /api/courses` so Reset demo archives authenticated active Supabase courses before clearing local state
-  - moved Supabase-backed client course creation through `/api/courses` instead of direct browser insert
-  - setup finalize now keeps the setup panel open and shows server errors instead of silently closing on failed course creation
-  - free-plan limit verified end to end: first course create succeeds and second course create returns 403
-  - Reset demo and setup finalize were manually verified in browser after restarting the dev server
-  - added server-side subscription state formatter and authenticated `GET /api/subscription`
-  - dashboard launcher and billing/usage settings now display loaded Free/Basic/Pro plan state and active-course limits
-  - verified `/api/subscription` against live Supabase temporary users for Free fallback and active Basic
-  - added authenticated Stripe checkout customer reuse/creation with user and plan metadata
-  - added authenticated billing portal lookup from saved `stripe_customer_id`
-  - added Billing settings actions for Basic checkout, Pro checkout, and billing portal
-  - added Stripe webhook sync for checkout/session and subscription lifecycle events into `subscriptions`
-  - added `docs/STRIPE_SETUP.md`
-  - installed and authenticated Stripe CLI to the StoneCode sandbox
-  - configured local Stripe webhook secret in untracked `.env`
-  - verified authenticated checkout and portal endpoints return Stripe URLs with live test Stripe keys
-  - verified Stripe CLI webhook trigger forwards events to local `/api/stripe/webhook` with 200 responses
-  - product lead manually verified browser Stripe checkout by upgrading to Pro and seeing the paid plan work
-  - captured future direction for course publishing/replication, stars/favorites, and possible freemium microtransactions
-  - OpenAI/API tutor work intentionally not touched to avoid AI credit usage
-  - authenticated `/api/tutor` now records `usage_events` and streams replies
-  - tutor provider routing supports `LLM_PROVIDER=openai|openrouter`; local ignored `.env` uses OpenRouter `openai/gpt-oss-20b:free` for dev testing
-  - AI can edit workspace files directly using structured edit blocks; app applies edits and offers Undo AI edit
-  - AI can trigger safe active-file browser-worker terminal runs; arbitrary shell commands remain disabled
-  - reverted the later two-requestAnimationFrame panel-ready experiment; do not assume that approach is accepted
-  - merged work/auth-transition-from-06 into local main at d6bc39e
+  - Supabase course/file/folder/chat/progress persistence verified
+  - server-side Free course limits and subscription state
+  - Stripe checkout, portal, and webhook subscription sync
+  - authenticated streaming tutor with usage tracking
+  - direct AI file edits with undo and safe active-file runs
+  - dashboard-integrated settings and public landing/legal/support pages
+  - tutor theory, chat-answer, MCQ, terminal exercise, and canvas demo flow
+  - tutor progress bar, language/difficulty/XP metadata, and clickable MCQ feedback
+  - chat spaces, Enter submit, and Shift+Enter newline behavior
+  - broad file icons and lazy CodeMirror language modes
 verification:
-  latest_commands:
-    - npm run verify:supabase
-    - npm run verify:course-reset
-    - npm run verify:plan-limits
-    - npm run verify:subscription-state
-    - npm run verify:stripe-subscription-sync
-    - npm run verify:usage-summary
+  passed:
+    - npm run verify:tutor-flow
     - npm run verify:response-stream
-    - npm run verify:ai-file-edits
+    - npm run verify:usage-summary
     - npm run typecheck
     - npm run build
-    - local /api/tutor OpenRouter temp-user smoke check
-    - local /api/courses live Supabase temp-user check
-    - local /api/subscription live Supabase temp-user Free and Basic checks
-    - local /api/billing/checkout live Stripe temp-user check
-    - local /api/billing/portal live Stripe temp-user check
-    - stripe trigger checkout.session.completed
-    - Chrome CDP production render check for /login and protected settings redirect
-  latest_result: AI file edit parser, safe run command detection, OpenRouter provider-backed tutor smoke, streaming parser checks, usage summary checks, subscription-state API/UI wiring, Stripe checkout/portal endpoint smoke QA, Stripe webhook forwarding, manual Pro checkout, server-side free-plan course limit, live Supabase persistence, and remote Reset demo all passed
-  not_verified:
-    - authenticated Supabase login credentials were not available for full real-session dashboard interaction QA
+  rendered:
+    - /tmp/stonecode-tutor-mcq-open.png
+  limitations:
+    - Browser plugin bootstrap failed from invalid sandbox metadata; Chrome CDP fallback used
 next:
-  - polish all existing app routes with real pages: profile, account, billing, usage, support, privacy, terms
-  - design and implement app-wide navigation between dashboard, workspace, settings, support, and legal routes
-  - polish AI chat flow copy, tool-run feedback, edit status, and error/loading states
-  - manually test real login-to-dashboard timing with valid Supabase credentials
-  - continue optimizing remaining dashboard component animations while preserving current intro and login zoom
-  - replace local setup generator with AI-backed course plan and README generation
+  - persist XP/streak/category/badge progress
+  - define structured model-generated tutor blocks and grading
+  - award terminal exercise XP only after verified execution
+  - continue authenticated dashboard/workspace QA
 read_first:
   - docs/HANDOFF.yaml
   - docs/README.md

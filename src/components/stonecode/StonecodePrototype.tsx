@@ -1,20 +1,23 @@
 import { CourseWorkspace } from "@/components/stonecode/CourseWorkspace";
 import { CourseSetupCard } from "@/components/stonecode/CourseSetupCard";
 import { DashboardPage } from "@/components/stonecode/DashboardPage";
+import { SettingsScene, StonecodeSettingsSection } from "@/components/stonecode/SettingsScene";
 import { useAuth } from "@/auth/AuthProvider";
 import { useCourseWorkspace } from "@/hooks/useCourseWorkspace";
 import { useSubscriptionState } from "@/hooks/useSubscriptionState";
 import { useTerminalRunner } from "@/hooks/useTerminalRunner";
 import { useTutorChat } from "@/hooks/useTutorChat";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 export function StonecodePrototype({
   authRevealActive = false,
-  onAuthRevealComplete
+  onAuthRevealComplete,
+  settingsSection = null
 }: {
   authRevealActive?: boolean;
   onAuthRevealComplete?: () => void;
+  settingsSection?: StonecodeSettingsSection | null;
 }) {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -33,6 +36,7 @@ export function StonecodePrototype({
     onApplyFileEdits: workspace.applyAiEdits,
     onRunActiveFile: () => terminal.runFile(workspace.selectedFile, "AI")
   });
+  const isSettingsView = settingsSection !== null;
 
   useEffect(() => {
     if (!authRevealActive) return;
@@ -102,10 +106,10 @@ export function StonecodePrototype({
       <div className="light light-b" aria-hidden="true" />
 
       <CourseWorkspace
-        active={workspace.active}
-        activeCourse={workspace.activeCourse}
-        activeFiles={workspace.activeFiles}
-        activeFolders={workspace.activeFolders}
+        active={isSettingsView ? null : workspace.active}
+        activeCourse={isSettingsView ? null : workspace.activeCourse}
+        activeFiles={isSettingsView ? [] : workspace.activeFiles}
+        activeFolders={isSettingsView ? [] : workspace.activeFolders}
         isRunningCode={terminal.isRunningCode}
         onClearTerminal={terminal.clearTerminal}
         onCreateFile={workspace.createWorkspaceFile}
@@ -117,54 +121,74 @@ export function StonecodePrototype({
         onRenameFile={workspace.renameWorkspaceFile}
         onRun={terminal.runActiveFile}
         onSelectFile={workspace.selectFile}
-        selectedFile={workspace.selectedFile}
+        planName={subscriptionState.subscription.planName}
+        selectedFile={isSettingsView ? null : workspace.selectedFile}
         terminalLogs={terminal.terminalLogs}
+        userEmail={auth.user?.email ?? "stonecode.dev"}
       />
 
-      <aside className="side-note" aria-label="Figma order note">
-        <span>FIGMA STYLE MUST BE IN THIS ORDER</span>
-        <i className="dot red" />
-        <i className="dot blue" />
-        <i className="dot green" />
-        <i className="dot purple" />
-      </aside>
+      {isSettingsView && settingsSection ? <SettingsScene section={settingsSection} /> : null}
 
-      <button className="session-logout" onClick={handleSignOut} type="button">
-        Log out
-      </button>
+      {!isSettingsView && (
+        <aside className="side-note" aria-label="Figma order note">
+          <span>FIGMA STYLE MUST BE IN THIS ORDER</span>
+          <i className="dot red" />
+          <i className="dot blue" />
+          <i className="dot green" />
+          <i className="dot purple" />
+        </aside>
+      )}
+
+      <details className="session-menu">
+        <summary aria-label="Open profile menu">
+          <span>{auth.user?.email?.[0]?.toUpperCase() ?? "S"}</span>
+        </summary>
+        <nav aria-label="Profile menu">
+          <strong>{auth.user?.email ?? "Stonecode user"}</strong>
+          <Link to="/dashboard">Dashboard</Link>
+          <Link to="/settings/overview">Settings</Link>
+          <Link to="/settings/profile">Profile</Link>
+          <Link to="/settings/billing">Billing</Link>
+          <Link to="/settings/usage">Usage</Link>
+          <Link to="/settings/support">Support</Link>
+          <button onClick={handleSignOut} type="button">Sign out</button>
+        </nav>
+      </details>
       {workspace.canUndoAiEdit && (
         <button className="session-logout ai-undo-edit" onClick={workspace.undoLastAiEdit} type="button">
           Undo AI edit
         </button>
       )}
 
-      <DashboardPage
-        active={workspace.active}
-        activeCourseCount={workspace.activeCourseCount}
-        courses={workspace.userCourses}
-        getCourseFiles={workspace.getCourseFiles}
-        isSubscriptionLoading={subscriptionState.isLoading}
-        isSetupOpen={isSetupOpen}
-        onCardKeyDown={workspace.handleCardKey}
-        onChat={tutor.updateCourseChat}
-        onCloseCourse={workspace.closeCourse}
-        onLessonIndexChange={tutor.updateLessonStep}
-        onOpenSetup={() => {
-          setSetupError(null);
-          setIsSetupOpen(true);
-        }}
-        onOpenCourse={workspace.openCourse}
-        onResetDemoState={handleResetDemoState}
-        onStartProject={workspace.startProject}
-        onTypingComplete={tutor.finishTyping}
-        onViewChange={tutor.updateLessonView}
-        storedState={workspace.storedState}
-        subscription={subscriptionState.subscription}
-        subscriptionError={subscriptionState.error}
-        typingMessageId={tutor.typingMessageId}
-      />
+      {!isSettingsView && (
+        <DashboardPage
+          active={workspace.active}
+          activeCourseCount={workspace.activeCourseCount}
+          courses={workspace.userCourses}
+          getCourseFiles={workspace.getCourseFiles}
+          isSubscriptionLoading={subscriptionState.isLoading}
+          isSetupOpen={isSetupOpen}
+          onCardKeyDown={workspace.handleCardKey}
+          onChat={tutor.updateCourseChat}
+          onCloseCourse={workspace.closeCourse}
+          onLessonIndexChange={tutor.updateLessonStep}
+          onOpenSetup={() => {
+            setSetupError(null);
+            setIsSetupOpen(true);
+          }}
+          onOpenCourse={workspace.openCourse}
+          onResetDemoState={handleResetDemoState}
+          onStartProject={workspace.startProject}
+          onTypingComplete={tutor.finishTyping}
+          onViewChange={tutor.updateLessonView}
+          storedState={workspace.storedState}
+          subscription={subscriptionState.subscription}
+          subscriptionError={subscriptionState.error}
+          typingMessageId={tutor.typingMessageId}
+        />
+      )}
 
-      {isSetupOpen && !workspace.active && (
+      {isSetupOpen && !workspace.active && !isSettingsView && (
         <div className="setup-stage" aria-label="New course setup stage">
           <CourseSetupCard
             error={setupError}
@@ -179,7 +203,7 @@ export function StonecodePrototype({
         </div>
       )}
 
-      <p className="caption">stonecode</p>
+      {!isSettingsView && <p className="caption">stonecode</p>}
     </main>
   );
 }

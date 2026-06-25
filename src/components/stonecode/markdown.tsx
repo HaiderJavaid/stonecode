@@ -18,8 +18,9 @@ export function renderMarkdown(content: string) {
 
   function flushCodeFence() {
     if (!codeFence) return;
+    const languageClass = codeFence.lang ? ` language-${codeFence.lang.replace(/[^a-z0-9-]/gi, "").toLowerCase()}` : "";
     blocks.push(
-      <pre className={`ai-canvas ${codeFence.lang === "diagram" ? "diagram-canvas" : "code-canvas"}`} key={`canvas-${blocks.length}`}>
+      <pre className={`ai-canvas ${codeFence.lang === "diagram" ? "diagram-canvas" : "code-canvas"}${languageClass}`} key={`canvas-${blocks.length}`}>
         <code>{codeFence.lines.join("\n")}</code>
       </pre>
     );

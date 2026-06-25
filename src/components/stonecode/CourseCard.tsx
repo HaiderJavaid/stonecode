@@ -26,6 +26,7 @@ export function CourseCard({
 }: CourseCardProps) {
   const lesson = lessonSteps[lessonIndex];
   const [panelContentReady, setPanelContentReady] = useState(false);
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
   const canvasMessages = useMemo(
     () => chatMessages.filter((message) => message.lessonIndex === lessonIndex),
     [chatMessages, lessonIndex]
@@ -66,6 +67,7 @@ export function CourseCard({
 
   useEffect(() => {
     setPanelContentReady(false);
+    setSelectedOptionIndex(null);
     if (!active || !view) return;
 
     const timer = window.setTimeout(() => setPanelContentReady(true), 460);
@@ -89,6 +91,9 @@ export function CourseCard({
   function moveLesson(direction: -1 | 1) {
     onLessonIndexChange(Math.min(Math.max(lessonIndex + direction, 0), lessonSteps.length - 1));
   }
+
+  const lessonProgress = ((lessonIndex + 1) / lessonSteps.length) * 100;
+  const selectedOption = selectedOptionIndex === null ? null : lesson.options?.[selectedOptionIndex] ?? null;
 
   const cardClassName = [
     "shadow-card",
@@ -172,14 +177,54 @@ export function CourseCard({
           {panelContentReady && view === "resume" && (
             <div className="lesson-panel ai-chat-panel">
               <div className="chat-canvas-head">
+                <div className="lesson-progress-copy">
+                  <span>Section {lessonIndex + 1} / {lessonSteps.length}</span>
+                  <span>{Math.round(lessonProgress)}%</span>
+                </div>
+                <div className="lesson-progress-track" aria-label={`${Math.round(lessonProgress)}% course progress`}>
+                  <i style={{ width: `${lessonProgress}%` }} />
+                </div>
                 <span>{lesson.label}</span>
                 <strong>{lesson.title}</strong>
+                {lesson.xp && (
+                  <div className="exercise-meta">
+                    <span>{lesson.language}</span>
+                    <span>{lesson.difficulty}</span>
+                    <strong>+{lesson.xp} XP</strong>
+                  </div>
+                )}
               </div>
               <div className="ai-chat-scroll" aria-label={`${lesson.label} conversation`} ref={chatScrollRef}>
                 <div className="ai-message assistant-message ai-response">
                   {typedLessonMarkup}
                   {typedLessonContent.length < lesson.tutor.length && <span className="typing-caret" />}
                 </div>
+                {lesson.kind === "multiple-choice" && (
+                  <div className="lesson-options" aria-label="Answer choices">
+                    {lesson.options?.map((option, index) => (
+                      <button
+                        className={[
+                          selectedOptionIndex === index ? "is-selected" : "",
+                          selectedOptionIndex !== null && option.correct ? "is-correct" : "",
+                          selectedOptionIndex === index && !option.correct ? "is-incorrect" : ""
+                        ].filter(Boolean).join(" ")}
+                        key={option.label}
+                        onClick={() => setSelectedOptionIndex(index)}
+                        type="button"
+                      >
+                        <span>{String.fromCharCode(65 + index)}</span>
+                        {option.label}
+                      </button>
+                    ))}
+                    {selectedOption && (
+                      <p className={`option-feedback${selectedOption.correct ? " is-correct" : ""}`}>
+                        {selectedOption.correct
+                          ? `Correct. This answer mutates the original array and earns ${lesson.xp} XP.`
+                          : "Not quite. Look for the operation that changes the existing array instead of returning a new one."}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {canvasMessages.map((message) => (
                   <div className={`ai-message ${message.role === "assistant" ? "assistant-message ai-response" : "user-message"}`} key={message.id}>
                     {message.role === "assistant" ? (
@@ -194,6 +239,7 @@ export function CourseCard({
                 ))}
               </div>
               <div className="chat-dock">
+                <div className="quick-action-label">Quick actions</div>
                 <div className="reply-suggestions" aria-label="Suggested replies">
                   {lesson.suggestions.map((suggestion) => (
                     <button key={suggestion} onClick={() => sendSuggestion(suggestion)} type="button">
@@ -202,7 +248,19 @@ export function CourseCard({
                   ))}
                 </div>
                 <form className="chat-compose" onSubmit={handleSubmit}>
-                  <input aria-label="Chat message" name="message" placeholder="Type next, check, explain..." type="text" />
+                  <textarea
+                    aria-label="Chat message"
+                    name="message"
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    placeholder="Ask a follow-up or answer the exercise..."
+                    rows={2}
+                  />
                   <button type="submit">Send</button>
                 </form>
                 <div className="lesson-controls">

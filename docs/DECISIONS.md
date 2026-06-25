@@ -62,6 +62,24 @@ Keep browser Worker execution only for beginner lesson snippets.
 
 Reason: full untrusted project execution needs a backend/container sandbox later.
 
+### Tutor Response Model
+
+Tutor steps may be theory, chat-answer exercises, multiple-choice exercises, terminal coding exercises, or visual canvas/code explanations.
+
+Reason: different concepts need different interaction surfaces, while one linear Next/Prev flow keeps course progress understandable.
+
+### Exercise Progression
+
+Exercise XP is attributed to the exercise language/category and scales by difficulty. UI metadata may be shown before backend award persistence exists.
+
+Reason: learners need visible progression context now, but XP awards must eventually be server-validated.
+
+### Upcoming Topic Questions
+
+Answer current-topic clarification directly. If the question belongs to a clearly upcoming topic, identify that section, provide only the minimum bridge, and return to the current step.
+
+Reason: preserve curiosity without derailing the planned learning sequence.
+
 ## Pending
 
 - Production host.
@@ -73,7 +91,8 @@ Reason: full untrusted project execution needs a backend/container sandbox later
 - Direct AI file-edit control model, including scope, undo/history, and terminal command limits.
 - Final exact timing/easing for remaining dashboard component animations.
 - Final app navigation model for dashboard/workspace/settings/support/legal routes.
-- XP formula and badge taxonomy.
+- Exact XP formula, streak rules, and badge taxonomy.
+- Server-validated interactive tutor response schema and grading rules.
 - Which unlockables are earned by progression versus subscription tier.
 - Whether shared/published courses belong in paid beta or post-beta.
 - Monetization model for future freemium path: subscription-only, usage credits, microtransactions, creator marketplace, or hybrid.
