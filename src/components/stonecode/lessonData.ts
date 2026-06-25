@@ -73,12 +73,12 @@ Choose the answer that mutates the original array.`,
     kind: "terminal-exercise",
     label: "Exercise",
     title: "Write and Run Code",
-    language: "Python",
+    language: "JavaScript",
     difficulty: "Intermediate",
     xp: 25,
     tutor: `## Complete this in the editor
 
-Create \`practice/queue.py\` and implement a queue with:
+Create \`practice/queue.js\` and implement a queue with:
 
 - \`enqueue(value)\`
 - \`dequeue()\`

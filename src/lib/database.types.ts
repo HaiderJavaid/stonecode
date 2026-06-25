@@ -5,6 +5,8 @@ export type Profile = {
   email: string;
   display_name: string | null;
   avatar_url: string | null;
+  timezone: string;
+  equipped_badge_key: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -18,6 +20,9 @@ export type CourseRecord = {
   checkpoint: string;
   description: string | null;
   progress: number;
+  languages: string[];
+  tags: string[];
+  syllabus: import("@/data/courses").CourseSyllabusSection[];
   status: "active" | "archived";
   created_at: string;
   updated_at: string;
@@ -77,4 +82,24 @@ export type UsageEventRecord = {
   output_tokens: number | null;
   status: "success" | "failed" | "blocked";
   created_at: string;
+};
+
+export type ChallengeProgressRecord = {
+  id: string;
+  user_id: string;
+  course_id: string | null;
+  challenge_key: string;
+  scope_key: string;
+  section_id: string | null;
+  source: "course" | "independent";
+  language: string;
+  topic: string;
+  difficulty: "Beginner" | "Intermediate" | "Advanced";
+  attempts: number;
+  hint_used: boolean;
+  completed_at: string | null;
+  xp_awarded: number;
+  last_attempt_at: string | null;
+  created_at: string;
+  updated_at: string;
 };

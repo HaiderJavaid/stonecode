@@ -27,7 +27,8 @@ expect(workspace.includes("target instanceof HTMLTextAreaElement"), "card keyboa
 expect(courseHome.includes("Exercises"), "course home must expose independent exercises");
 expect(courseHome.includes("Course roadmap"), "course home must expose the course roadmap");
 expect(roadmap.includes("onSelectSection(section.lessonIndex)"), "roadmap sections must navigate to real lesson indexes");
-expect(independentExercises.includes("stonecode.exerciseSession.v1"), "independent limits must be shared across courses");
+expect(independentExercises.includes("skipChallenge"), "independent limits must be enforced through the shared server API");
+expect(!independentExercises.includes("localStorage"), "independent progression must not trust local storage");
 expect(independentExercises.includes("Hint used for this exercise"), "exercise hint composer must lock after use");
 expect(setup.includes("Proposed course"), "course setup must render a structured proposal");
 

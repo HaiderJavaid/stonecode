@@ -1,58 +1,73 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import {
+  BadgeDollarSign,
+  BookOpen,
+  CircleHelp,
+  CreditCard,
+  ExternalLink,
+  KeyRound,
+  LayoutDashboard,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  Clock3,
+  Flame,
+  Trophy,
+  BookOpenCheck,
+  UserRound
+} from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
+import { useProgression } from "@/hooks/useProgression";
 import { useSubscriptionState } from "@/hooks/useSubscriptionState";
 import { useUsageSummary } from "@/hooks/useUsageSummary";
+import { ProgressionOverview } from "@/components/stonecode/ProgressionOverview";
+import { saveProfilePreferences } from "@/services/profilePreferences";
 
-export type StonecodeSettingsSection = "overview" | "profile" | "billing" | "usage" | "security" | "support";
+export type StonecodeSettingsSection = "overview" | "profile" | "billing" | "api-keys" | "security" | "preferences";
 
-const settingsTabs: Array<{ id: StonecodeSettingsSection; label: string; path: string }> = [
-  { id: "overview", label: "Overview", path: "/settings/overview" },
-  { id: "profile", label: "Profile", path: "/settings/profile" },
-  { id: "billing", label: "Billing", path: "/settings/billing" },
-  { id: "usage", label: "Usage", path: "/settings/usage" },
-  { id: "security", label: "Security", path: "/settings/security" },
-  { id: "support", label: "Support", path: "/settings/support" }
-];
-
-const codingJourney = [
-  { label: "JavaScript", streak: "14 day streak", progress: 0.78, note: "Arrays, objects, loops" },
-  { label: "TypeScript", streak: "9 day streak", progress: 0.63, note: "Types, narrowing, generics" },
-  { label: "Python", streak: "6 day streak", progress: 0.48, note: "Functions, files, problem sets" },
-  { label: "HTML/CSS", streak: "11 day streak", progress: 0.72, note: "Layout, forms, responsive polish" }
-];
-
-const overviewActivity = [
-  { title: "Asked tutor", detail: "Explain BFS complexity", age: "15m ago" },
-  { title: "Edited file", detail: "graph.ts", age: "48m ago" },
-  { title: "Ran code", detail: "queue.ts", age: "1h ago" },
-  { title: "Completed checkpoint", detail: "Trees and traversal", age: "Yesterday" }
-];
+const settingsTabs = [
+  { id: "overview", label: "Overview", path: "/settings/overview", icon: LayoutDashboard },
+  { id: "profile", label: "Profile", path: "/settings/profile", icon: UserRound },
+  { id: "billing", label: "Billing", path: "/settings/billing", icon: CreditCard },
+  { id: "api-keys", label: "API Keys", path: "/settings/api-keys", icon: KeyRound },
+  { id: "security", label: "Security", path: "/settings/security", icon: ShieldCheck },
+  { id: "preferences", label: "Preferences", path: "/settings/preferences", icon: Settings2 }
+] satisfies Array<{
+  id: StonecodeSettingsSection;
+  label: string;
+  path: string;
+  icon: typeof LayoutDashboard;
+}>;
 
 export function SettingsScene({ section }: { section: StonecodeSettingsSection }) {
   const auth = useAuth();
   const navigate = useNavigate();
-  const { subscription, isLoading, error } = useSubscriptionState();
-  const { usage, isLoading: isUsageLoading, error: usageError } = useUsageSummary(section === "usage" || section === "overview");
+  const [language, setLanguage] = useState("All");
+  const { progression, isLoading: progressionLoading, error: progressionError, refresh, equipTitle } =
+    useProgression(language === "All" ? null : language);
+  const { subscription, isLoading: subscriptionLoading, error: subscriptionError } = useSubscriptionState();
+  const { usage, isLoading: usageLoading, error: usageError } = useUsageSummary(true);
   const [billingError, setBillingError] = useState<string | null>(null);
   const [isBillingActionPending, setIsBillingActionPending] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [timezone, setTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  const [learningStyle, setLearningStyle] = useState(() => window.localStorage.getItem("stonecode.learningStyle") ?? "explain-then-code");
+  const [profileStatus, setProfileStatus] = useState<string | null>(null);
+  const [preferenceStatus, setPreferenceStatus] = useState<string | null>(null);
   const userEmail = auth.user?.email ?? "stonecode.dev";
-  const joinedAt = auth.user?.created_at ? new Date(auth.user.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Recently";
-  const isVerified = Boolean(auth.user?.email_confirmed_at);
   const userInitial = userEmail[0]?.toUpperCase() ?? "S";
-  const monthlyUsage = useMemo(() => {
-    const tutorMessages = Math.max(usage.totalTutorMessages, 1);
-    const planCap = subscription.aiMessagesPerMonth > 0 ? subscription.aiMessagesPerMonth : tutorMessages;
-    const usageRatio = Math.min(tutorMessages / planCap, 1);
-    const successRatio = tutorMessages > 0 ? usage.statusCounts.success / tutorMessages : 0;
-    const blockedRatio = tutorMessages > 0 ? usage.statusCounts.blocked / tutorMessages : 0;
+  const isVerified = Boolean(auth.user?.email_confirmed_at);
+  const syncState = progressionLoading || subscriptionLoading || usageLoading
+    ? "Syncing"
+    : progressionError || subscriptionError || usageError
+      ? "Needs attention"
+      : "Synced";
 
-    return [
-      { label: "Tutor messages", value: usage.totalTutorMessages, suffix: ` / ${subscription.aiMessagesPerMonth === 0 ? "Unlimited" : subscription.aiMessagesPerMonth}`, ratio: usageRatio },
-      { label: "Successful replies", value: usage.statusCounts.success, suffix: " completed", ratio: successRatio },
-      { label: "Blocked actions", value: usage.statusCounts.blocked, suffix: " guarded", ratio: blockedRatio }
-    ];
-  }, [subscription.aiMessagesPerMonth, usage]);
+  useEffect(() => {
+    setDisplayName(progression.displayName ?? readDisplayName(userEmail));
+    setTimezone(progression.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  }, [progression.displayName, progression.timezone, userEmail]);
 
   async function handleSignOut() {
     await auth.signOut();
@@ -63,6 +78,33 @@ export function SettingsScene({ section }: { section: StonecodeSettingsSection }
     event.preventDefault();
     if (!auth.user?.email) return;
     await auth.resetPassword(auth.user.email);
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.user) return;
+    setProfileStatus(null);
+    try {
+      await saveProfilePreferences({ userId: auth.user.id, displayName });
+      await refresh();
+      setProfileStatus("Profile saved.");
+    } catch (error) {
+      setProfileStatus(error instanceof Error ? error.message : "Profile save failed.");
+    }
+  }
+
+  async function savePreferences(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.user) return;
+    setPreferenceStatus(null);
+    try {
+      await saveProfilePreferences({ userId: auth.user.id, timezone });
+      window.localStorage.setItem("stonecode.learningStyle", learningStyle);
+      await refresh();
+      setPreferenceStatus("Preferences saved.");
+    } catch (error) {
+      setPreferenceStatus(error instanceof Error ? error.message : "Preference save failed.");
+    }
   }
 
   async function openCheckout(plan: "basic" | "pro") {
@@ -79,7 +121,6 @@ export function SettingsScene({ section }: { section: StonecodeSettingsSection }
     try {
       const token = auth.session?.access_token;
       if (!token) throw new Error("Authentication required.");
-
       const response = await fetch(path, {
         method: "POST",
         headers: {
@@ -93,357 +134,245 @@ export function SettingsScene({ section }: { section: StonecodeSettingsSection }
           returnUrl: `${window.location.origin}/settings/billing`
         })
       });
-
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.url) throw new Error(payload?.error ?? "Failed to open Stripe.");
       window.location.href = payload.url;
-    } catch (caughtError) {
-      setBillingError(caughtError instanceof Error ? caughtError.message : "Failed to open Stripe.");
+    } catch (error) {
+      setBillingError(error instanceof Error ? error.message : "Failed to open Stripe.");
       setIsBillingActionPending(false);
     }
   }
 
   return (
-    <>
-      <aside className="settings-scene-nav settings-pane" aria-label="Settings navigation">
-        <div className="settings-scene-brand">
-          <div className="settings-scene-mark" aria-hidden="true">
-            <StonecodeGlyph />
-          </div>
-          <div>
-            <strong>stonecode</strong>
-            <span>Account</span>
-          </div>
-        </div>
+    <div className="settings-workspace">
+      <aside className="file-panel is-visible settings-left-panel" aria-label="Settings navigation">
+        <NavLink className="file-panel-brand settings-left-brand" to="/dashboard">
+          <div className="file-panel-mark"><StonecodeGlyph /></div>
+          <strong>stonecode</strong>
+        </NavLink>
 
-        <div className="settings-scene-stack">
+        <div className="settings-left-navigation">
           <span className="settings-pane-label">Account</span>
           <nav className="settings-scene-links" aria-label="Settings sections">
-            {settingsTabs.map((tab) => (
-              <NavLink className={({ isActive }) => isActive ? "is-active" : ""} key={tab.id} to={tab.path}>
-                <span className="settings-link-icon" aria-hidden="true">{tab.label[0]}</span>
-                {tab.label}
-              </NavLink>
-            ))}
+            {settingsTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <NavLink className={({ isActive }) => isActive ? "is-active" : ""} key={tab.id} to={tab.path}>
+                  <Icon aria-hidden="true" size={16} />
+                  <span>{tab.label}</span>
+                </NavLink>
+              );
+            })}
           </nav>
         </div>
 
-        <div className="settings-side-help">
-          <span className="settings-pane-label">Need help?</span>
-          <p>Use Support for billing issues, access problems, or tutor feedback.</p>
-          <NavLink to="/settings/support">Open support</NavLink>
+        <div className="settings-side-help settings-left-help">
+          <CircleHelp size={18} />
+          <strong>Need help?</strong>
+          <p>Read the docs or contact support.</p>
+          <NavLink to="/support">View docs <ExternalLink size={12} /></NavLink>
         </div>
 
-        <div className="settings-side-user">
-          <div className="settings-side-avatar" aria-hidden="true">{userInitial}</div>
-          <div>
-            <strong>{userEmail}</strong>
-            <span>{subscription.planName}</span>
+        <div className="file-panel-footer settings-left-footer">
+          <div className="file-panel-user">
+          <div className="file-panel-user-avatar">{userInitial}</div>
+          <div><strong>{displayName || userEmail}</strong><span>{subscription.planName} plan</span></div>
+          <i>⌄</i>
           </div>
         </div>
       </aside>
 
-      <section className="settings-scene-main settings-pane" aria-label="Account overview">
+      <section className="settings-scene-main settings-pane" aria-label={sectionTitleMap[section]}>
         <header className="settings-scene-header">
           <div>
             <h1>{sectionTitleMap[section]}</h1>
             <p>{sectionDescriptionMap[section]}</p>
           </div>
+          <NavLink className="settings-dashboard-link" to="/dashboard"><BookOpen size={15} />Dashboard</NavLink>
         </header>
 
         <div className="settings-scene-scroll">
+          {progressionError && <p className="settings-inline-error">{progressionError}</p>}
           {section === "overview" && (
-            <>
-              <section className="settings-card settings-hero-card">
-                <div className="settings-profile-lockup">
-                  <div className="settings-profile-avatar" aria-hidden="true">{userInitial}</div>
-                  <div>
-                    <strong>{readDisplayName(userEmail)}</strong>
-                    <span>{userEmail}</span>
-                    <div className="settings-profile-meta">
-                      <small>Member since {joinedAt}</small>
-                      {isVerified && <em>Email verified</em>}
-                    </div>
-                  </div>
-                </div>
-                <button className="settings-quiet-button" type="button">Edit profile</button>
-              </section>
-
-              <div className="settings-two-column">
-                <section className="settings-card">
-                  <div className="settings-card-heading">
-                    <div>
-                      <span>Current plan</span>
-                      <strong>{isLoading ? "Loading..." : subscription.planName}</strong>
-                    </div>
-                    <small>{subscription.status}</small>
-                  </div>
-                  <p>{planCopy(subscription.plan)}</p>
-                  <div className="settings-inline-actions">
-                    <button disabled={isBillingActionPending} onClick={() => openCheckout("basic")} type="button">Basic</button>
-                    <button disabled={isBillingActionPending} onClick={() => openCheckout("pro")} type="button">Pro</button>
-                    <button disabled={isBillingActionPending || subscription.plan === "free"} onClick={openBillingPortal} type="button">Portal</button>
-                  </div>
-                </section>
-
-                <section className="settings-card">
-                  <div className="settings-card-heading">
-                    <div>
-                      <span>Usage this month</span>
-                      <strong>{usage.totalTutorMessages}</strong>
-                    </div>
-                    <small>{isUsageLoading ? "Syncing..." : "Live"}</small>
-                  </div>
-                  <div className="settings-meter-list">
-                    {monthlyUsage.map((item) => (
-                      <UsageBar item={item} key={item.label} />
-                    ))}
-                  </div>
-                </section>
-              </div>
-
-              <div className="settings-two-column">
-                <section className="settings-card">
-                  <div className="settings-card-heading">
-                    <div>
-                      <span>Coding journey</span>
-                      <strong>By language</strong>
-                    </div>
-                    <small>Static beta preview</small>
-                  </div>
-                  <div className="journey-list">
-                    {codingJourney.map((item) => (
-                      <div className="journey-row" key={item.label}>
-                        <div>
-                          <strong>{item.label}</strong>
-                          <span>{item.note}</span>
-                        </div>
-                        <small>{item.streak}</small>
-                        <div className="journey-meter"><i style={{ width: `${item.progress * 100}%` }} /></div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="settings-card">
-                  <div className="settings-card-heading">
-                    <div>
-                      <span>Security shortcuts</span>
-                      <strong>Account controls</strong>
-                    </div>
-                  </div>
-                  <div className="security-shortcuts">
-                    <button className="settings-shortcut" type="button" onClick={() => navigate("/settings/security")}>
-                      <div><strong>Security</strong><span>Password reset and session control</span></div>
-                      <small>Open</small>
-                    </button>
-                    <button className="settings-shortcut" type="button" onClick={() => navigate("/settings/usage")}>
-                      <div><strong>Usage</strong><span>Track tutor requests and plan guardrails</span></div>
-                      <small>Open</small>
-                    </button>
-                  </div>
-                </section>
-              </div>
-            </>
+            <ProgressionOverview
+              language={language}
+              onEquipTitle={equipTitle}
+              onLanguageChange={setLanguage}
+              progression={progression}
+              userEmail={userEmail}
+              userInitial={userInitial}
+            />
           )}
 
           {section === "profile" && (
-            <section className="settings-card">
+            <form className="settings-card settings-form-section" onSubmit={saveProfile}>
               <div className="settings-profile-grid">
-                <div className="settings-profile-avatar large" aria-hidden="true">{userInitial}</div>
+                <div className="settings-profile-avatar large">{userInitial}</div>
                 <div>
-                  <strong>{readDisplayName(userEmail)}</strong>
+                  <span className="settings-eyebrow">Public learner identity</span>
+                  <strong>{displayName || readDisplayName(userEmail)}</strong>
                   <span>{userEmail}</span>
-                  <div className="settings-profile-meta">
-                    <small>Timezone {Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
-                    {isVerified && <em>Verified</em>}
-                  </div>
                 </div>
               </div>
-
-              <div className="settings-form-grid">
-                <Field label="Display name" value={readDisplayName(userEmail)} />
-                <Field label="Primary focus" value="Algorithms and core CS" />
-                <Field label="Weekly cadence" value="4 focused sessions" />
-                <Field label="Preferred style" value="Explain, then let me code" />
+              <label className="settings-input">
+                <span>Display name</span>
+                <input onChange={(event) => setDisplayName(event.target.value)} value={displayName} />
+              </label>
+              <div className="settings-readonly-grid">
+                <Field label="Email" value={userEmail} />
+                <Field label="Equipped title" value={progression.badges.find((badge) => badge.equipped)?.title ?? "None"} />
+                <Field label="Member since" value={formatDate(auth.user?.created_at)} />
+                <Field label="Verification" value={isVerified ? "Email verified" : "Pending"} />
               </div>
-            </section>
+              <button className="settings-primary-button" type="submit">Save profile</button>
+              {profileStatus && <p className="settings-meta-line">{profileStatus}</p>}
+            </form>
           )}
 
           {section === "billing" && (
             <section className="settings-card">
               <div className="settings-card-heading">
-                <div>
-                  <span>Billing</span>
-                  <strong>{isLoading ? "Loading..." : subscription.planName}</strong>
-                </div>
-                <small>{subscription.currentPeriodEnd ? `Renews ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}` : "No renewal date"}</small>
+                <div><span>Current plan</span><strong>{subscriptionLoading ? "Loading..." : subscription.planName}</strong></div>
+                <small>{subscription.status}</small>
               </div>
               <p>{planCopy(subscription.plan)}</p>
-              {error && <p className="settings-inline-error">{error}</p>}
-              {billingError && <p className="settings-inline-error">{billingError}</p>}
+              <div className="settings-readonly-grid">
+                <Field label="Active course limit" value={subscription.activeCourseLimit} />
+                <Field label="Tutor messages" value={subscription.aiMessagesPerMonth || "Unlimited"} />
+                <Field label="Renewal" value={formatDate(subscription.currentPeriodEnd)} />
+                <Field label="Billing state" value={subscription.status} />
+              </div>
+              {(subscriptionError || billingError) && <p className="settings-inline-error">{subscriptionError ?? billingError}</p>}
               <div className="settings-inline-actions">
-                <button disabled={isBillingActionPending} onClick={() => openCheckout("basic")} type="button">Upgrade to Basic</button>
-                <button disabled={isBillingActionPending} onClick={() => openCheckout("pro")} type="button">Upgrade to Pro</button>
-                <button disabled={isBillingActionPending || subscription.plan === "free"} onClick={openBillingPortal} type="button">Manage billing</button>
+                <button disabled={isBillingActionPending} onClick={() => void openCheckout("basic")} type="button">Upgrade Basic</button>
+                <button disabled={isBillingActionPending} onClick={() => void openCheckout("pro")} type="button">Upgrade Pro</button>
+                <button disabled={isBillingActionPending || subscription.plan === "free"} onClick={() => void openBillingPortal()} type="button">Billing portal</button>
               </div>
             </section>
           )}
 
-          {section === "usage" && (
-            <>
-              <section className="settings-card">
-                <div className="settings-usage-grid">
-                  <UsageStat label="Tutor messages" value={usage.totalTutorMessages} />
-                  <UsageStat label="Succeeded" value={usage.statusCounts.success} />
-                  <UsageStat label="Failed" value={usage.statusCounts.failed} />
-                  <UsageStat label="Blocked" value={usage.statusCounts.blocked} />
+          {section === "api-keys" && (
+            <section className="settings-card">
+              <div className="settings-card-heading">
+                <div><span>Provider access</span><strong>API keys</strong></div>
+                <small>Server managed</small>
+              </div>
+              <p>Stonecode beta keeps model-provider keys on the server. Personal browser-stored keys are disabled to prevent accidental exposure.</p>
+              <div className="settings-security-stack">
+                <div className="settings-security-row">
+                  <KeyRound size={18} />
+                  <div><strong>Tutor provider</strong><span>Configured through protected server environment variables.</span></div>
                 </div>
-                {usage.latestEventAt && <p className="settings-meta-line">Last tutor event: {new Date(usage.latestEventAt).toLocaleString()}</p>}
-                {usageError && <p className="settings-inline-error">{usageError}</p>}
-              </section>
-
-              <section className="settings-card">
-                <div className="settings-card-heading">
-                  <div>
-                    <span>Coding journey</span>
-                    <strong>Practice split</strong>
-                  </div>
+                <div className="settings-security-row">
+                  <ShieldCheck size={18} />
+                  <div><strong>Client safety</strong><span>No secret model key is sent to the browser.</span></div>
                 </div>
-                <div className="journey-list compact">
-                  {codingJourney.map((item) => (
-                    <div className="journey-row" key={item.label}>
-                      <div>
-                        <strong>{item.label}</strong>
-                        <span>{item.note}</span>
-                      </div>
-                      <small>{item.streak}</small>
-                      <div className="journey-meter"><i style={{ width: `${item.progress * 100}%` }} /></div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </>
+              </div>
+            </section>
           )}
 
           {section === "security" && (
             <section className="settings-card">
               <div className="settings-card-heading">
-                <div>
-                  <span>Security</span>
-                  <strong>Access and recovery</strong>
-                </div>
-                <small>{isVerified ? "Verified email" : "Email not verified"}</small>
+                <div><span>Access</span><strong>Security controls</strong></div>
+                <small>{isVerified ? "Verified" : "Verification pending"}</small>
               </div>
               <div className="settings-security-stack">
                 <div className="settings-security-row">
-                  <div>
-                    <strong>Email</strong>
-                    <span>{userEmail}</span>
-                  </div>
-                  <small>{isVerified ? "Confirmed" : "Pending"}</small>
+                  <KeyRound size={18} />
+                  <div><strong>Password recovery</strong><span>Send a secure reset link to {userEmail}.</span></div>
                 </div>
-
-                <form className="settings-inline-actions" onSubmit={handlePasswordReset}>
-                  <button type="submit">Send password reset</button>
-                  <button onClick={handleSignOut} type="button">Sign out</button>
-                </form>
+                <div className="settings-security-row">
+                  <ShieldCheck size={18} />
+                  <div><strong>Session</strong><span>Sign out this browser session immediately.</span></div>
+                </div>
               </div>
+              <form className="settings-inline-actions" onSubmit={handlePasswordReset}>
+                <button type="submit">Send password reset</button>
+                <button onClick={() => void handleSignOut()} type="button">Sign out</button>
+              </form>
             </section>
           )}
 
-          {section === "support" && (
-            <section className="settings-card">
-              <div className="settings-support-grid">
-                {[
-                  ["Billing help", "Start in Billing. If portal access fails, include your account email and plan."],
-                  ["Bug report", "Send route, click path, expected result, and whether learning is blocked."],
-                  ["Tutor feedback", "Include course, last prompt, and whether code was edited or run."],
-                  ["Account access", "Use password reset first, then report exact auth error text."]
-                ].map(([title, copy]) => (
-                  <article className="settings-support-card" key={title}>
-                    <strong>{title}</strong>
-                    <p>{copy}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
+          {section === "preferences" && (
+            <form className="settings-card settings-form-section" onSubmit={savePreferences}>
+              <label className="settings-input">
+                <span>Display</span>
+                <select defaultValue="stone-dark">
+                  <option value="stone-dark">Stone dark</option>
+                </select>
+              </label>
+              <label className="settings-input">
+                <span>Timezone</span>
+                <input onChange={(event) => setTimezone(event.target.value)} value={timezone} />
+                <small>Used for heatmap dates, daily limits, and streak boundaries.</small>
+              </label>
+              <label className="settings-input">
+                <span>Learning default</span>
+                <select onChange={(event) => setLearningStyle(event.target.value)} value={learningStyle}>
+                  <option value="explain-then-code">Explain, then let me code</option>
+                  <option value="challenge-first">Challenge first</option>
+                  <option value="guided">Step-by-step guidance</option>
+                </select>
+              </label>
+              <button className="settings-primary-button" type="submit">Save preferences</button>
+              {preferenceStatus && <p className="settings-meta-line">{preferenceStatus}</p>}
+            </form>
           )}
         </div>
       </section>
 
-      <aside className="settings-scene-rail settings-pane" aria-label="Recent activity">
-        <div className="settings-rail-section">
-          <div className="settings-card-heading">
-            <div>
-              <span>Recent activity</span>
-              <strong>Last touches</strong>
-            </div>
-          </div>
-          <div className="settings-activity-list">
-            {overviewActivity.map((item) => (
-              <div className="settings-activity-row" key={`${item.title}-${item.age}`}>
-                <div className="settings-activity-icon" aria-hidden="true" />
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </div>
-                <small>{item.age}</small>
-              </div>
-            ))}
-          </div>
-        </div>
+      <aside className="settings-scene-rail settings-pane" aria-label="Your environment">
+        <header className="settings-rail-header">
+          <strong>Your Environment</strong>
+          <button onClick={() => void refresh()} type="button">Refresh</button>
+        </header>
 
-        <div className="settings-rail-section">
-          <span className="settings-pane-label">This month</span>
-          <div className="settings-mini-metrics">
-            <UsageStat label="Messages" value={usage.totalTutorMessages} compact />
-            <UsageStat label="Success" value={usage.statusCounts.success} compact />
+        <section className="settings-environment-card">
+          <div className="settings-environment-brand">
+            <div className="settings-environment-mark"><Sparkles size={25} /></div>
+            <div><strong>stonecode</strong><span>v1.0.0 <em>{subscription.planName}</em></span></div>
           </div>
-        </div>
+          <div className="settings-environment-rows">
+            <EnvironmentRow icon={<BookOpenCheck />} label="Courses completed" value={progression.completedCourses} />
+            <EnvironmentRow icon={<Flame />} label="Current streak" value={`${progression.currentStreak} days`} />
+            <EnvironmentRow icon={<Trophy />} label="Total XP" value={progression.totalXp.toLocaleString()} />
+            <EnvironmentRow icon={<BadgeDollarSign />} label="Challenges solved" value={progression.solvedChallenges} />
+            <EnvironmentRow icon={<Clock3 />} label="Last active" value={formatRelativeDate(progression.lastActiveAt)} active />
+          </div>
+        </section>
 
-        <div className="settings-rail-section">
-          <span className="settings-pane-label">Storage</span>
-          <div className="settings-storage-row">
-            <strong>2.4 MB</strong>
-            <span>workspace files and notes</span>
+        <section className="settings-rail-section settings-sync-card">
+          <strong>Sync status</strong>
+          <div>
+            <ShieldCheck size={18} />
+            <span><b>{syncState === "Synced" ? "All changes synced" : syncState}</b><small>{syncState === "Synced" ? "Just now" : "Check connection"}</small></span>
           </div>
-        </div>
+        </section>
       </aside>
-    </>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="settings-field-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }
 
-function UsageBar({
-  item
+function Field({ label, value }: { label: string; value: string | number }) {
+  return <div className="settings-field-card"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function EnvironmentRow({
+  icon,
+  label,
+  value,
+  active = false
 }: {
-  item: { label: string; value: number; suffix: string; ratio: number };
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  active?: boolean;
 }) {
   return (
-    <div className="usage-bar">
-      <div className="usage-bar-copy">
-        <span>{item.label}</span>
-        <strong>{item.value}{item.suffix}</strong>
-      </div>
-      <div className="usage-bar-track"><i style={{ width: `${Math.max(item.ratio * 100, item.value > 0 ? 12 : 0)}%` }} /></div>
-    </div>
-  );
-}
-
-function UsageStat({ label, value, compact = false }: { label: string; value: number; compact?: boolean }) {
-  return (
-    <div className={`settings-usage-stat${compact ? " compact" : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div>
+      <span>{icon}{label}</span>
+      <strong className={active ? "is-active" : ""}>{value}</strong>
     </div>
   );
 }
@@ -451,38 +380,52 @@ function UsageStat({ label, value, compact = false }: { label: string; value: nu
 function StonecodeGlyph() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
-      <rect fill="none" height="18" rx="5" stroke="currentColor" strokeWidth="1.6" width="18" x="3" y="3" />
-      <path d="M10 8.4 7.7 12 10 15.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
-      <path d="M14 8.4 16.3 12 14 15.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+      <rect fill="none" height="18" rx="5" stroke="currentColor" strokeWidth="1.5" width="18" x="3" y="3" />
+      <path d="M10 8.6 7.7 12 10 15.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+      <path d="M14 8.6 16.3 12 14 15.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
     </svg>
   );
 }
 
 function readDisplayName(email: string) {
-  const stem = email.split("@")[0] ?? "learner";
-  return stem.replace(/[._-]+/g, " ");
+  return (email.split("@")[0] ?? "learner").replace(/[._-]+/g, " ");
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Not yet";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Not yet" : date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatRelativeDate(value?: string | null) {
+  if (!value) return "Not yet";
+  const difference = Date.now() - new Date(value).getTime();
+  if (difference < 60_000) return "Just now";
+  if (difference < 3_600_000) return `${Math.max(Math.floor(difference / 60_000), 1)}m ago`;
+  if (difference < 86_400_000) return `${Math.floor(difference / 3_600_000)}h ago`;
+  return formatDate(value);
 }
 
 function planCopy(plan: string) {
   if (plan === "pro") return "Unlimited course workspaces, priority access, and the broadest tutor allowance.";
-  if (plan === "basic") return "More room for active courses and a higher monthly tutor allowance.";
-  return "One active course, guided beta access, and guarded monthly tutor usage.";
+  if (plan === "basic") return "More active courses and a higher monthly tutor allowance.";
+  return "One active course with guarded monthly tutor usage.";
 }
 
 const sectionTitleMap: Record<StonecodeSettingsSection, string> = {
-  overview: "Account overview",
+  overview: "Progression overview",
   profile: "Profile",
   billing: "Billing",
-  usage: "Usage",
+  "api-keys": "API Keys",
   security: "Security",
-  support: "Support"
+  preferences: "Preferences"
 };
 
 const sectionDescriptionMap: Record<StonecodeSettingsSection, string> = {
-  overview: "Manage profile, subscription, streaks, and account controls without leaving the Stonecode scene.",
-  profile: "Learner identity, current focus, and workspace-facing defaults.",
-  billing: "Plan state, upgrades, and billing portal access for the paid beta.",
-  usage: "Tutor activity, usage guardrails, and practice trend snapshots.",
-  security: "Password recovery, email verification state, and session controls.",
-  support: "What to send when billing, auth, or tutor behavior needs help."
+  overview: "XP, streaks, activity, courses, badges, and earned titles.",
+  profile: "Learner identity and the title shown across Stonecode.",
+  billing: "Plan limits, upgrades, renewal state, and Stripe controls.",
+  "api-keys": "How Stonecode protects model-provider credentials.",
+  security: "Password recovery, verification state, and session controls.",
+  preferences: "Display, timezone boundaries, and learning defaults."
 };

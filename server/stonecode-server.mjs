@@ -20,6 +20,15 @@ import {
   upsertSubscriptionState
 } from "./stripe-subscriptions.mjs";
 import { formatUsageSummary } from "./usage-events.mjs";
+import {
+  completeCourse,
+  equipProgressionTitle,
+  loadProgression,
+  recordChallengeAttempt,
+  recordChallengeHint,
+  recordChallengeSkip,
+  saveProfileTimezone
+} from "./progression-store.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const isDev = process.argv.includes("--dev") || process.env.NODE_ENV !== "production";
@@ -75,6 +84,36 @@ const server = createHttpServer(async (request, response) => {
   try {
     if (request.url?.startsWith("/api/tutor")) {
       await handleTutorRequest(request, response);
+      return;
+    }
+
+    if (request.url?.startsWith("/api/challenges/attempt")) {
+      await handleChallengeAttemptRequest(request, response);
+      return;
+    }
+
+    if (request.url?.startsWith("/api/challenges/hint")) {
+      await handleChallengeHintRequest(request, response);
+      return;
+    }
+
+    if (request.url?.startsWith("/api/challenges/skip")) {
+      await handleChallengeSkipRequest(request, response);
+      return;
+    }
+
+    if (request.url?.startsWith("/api/progression/equipped-title")) {
+      await handleEquippedTitleRequest(request, response);
+      return;
+    }
+
+    if (request.url?.startsWith("/api/progression")) {
+      await handleProgressionRequest(request, response);
+      return;
+    }
+
+    if (/^\/api\/courses\/[^/]+\/complete(?:\?|$)/.test(request.url ?? "")) {
+      await handleCourseCompletionRequest(request, response);
       return;
     }
 
@@ -302,6 +341,158 @@ async function handleUsageRequest(request, response) {
   sendJson(response, 200, { usage: formatUsageSummary(data ?? []) });
 }
 
+async function handleProgressionRequest(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+  const url = new URL(request.url ?? "/api/progression", "http://localhost");
+  const language = url.searchParams.get("language") || null;
+  const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 365, 1), 365);
+  const timezone = url.searchParams.get("timezone");
+
+  const profileError = await upsertServerProfile(admin, user);
+  if (profileError) {
+    sendJson(response, 500, { error: profileError.message });
+    return;
+  }
+  if (timezone) await saveProfileTimezone(admin, user.id, timezone);
+
+  const progression = await loadProgression(admin, user.id, { language, days });
+  sendJson(response, 200, { progression });
+}
+
+async function handleChallengeAttemptRequest(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+  const body = await readJsonBody(request);
+  if (!body || typeof body.challengeKey !== "string") {
+    sendJson(response, 400, { error: "Challenge key is required." });
+    return;
+  }
+
+  const profileError = await upsertServerProfile(admin, user);
+  if (profileError) {
+    sendJson(response, 500, { error: profileError.message });
+    return;
+  }
+
+  try {
+    const result = await recordChallengeAttempt(admin, {
+      userId: user.id,
+      courseId: typeof body.courseId === "string" ? body.courseId : null,
+      challengeKey: body.challengeKey,
+      sectionId: typeof body.sectionId === "string" ? body.sectionId : null,
+      submission: body.submission ?? {},
+      plan: await readUserPlan(admin, user.id)
+    });
+    sendJson(response, result.accepted ? 200 : 422, { result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to record challenge attempt.";
+    sendJson(response, /limit reached/i.test(message) ? 429 : 400, { error: message });
+  }
+}
+
+async function handleChallengeHintRequest(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+  const body = await readJsonBody(request);
+  if (!body || typeof body.challengeKey !== "string") {
+    sendJson(response, 400, { error: "Challenge key is required." });
+    return;
+  }
+
+  try {
+    const result = await recordChallengeHint(admin, {
+      userId: user.id,
+      courseId: typeof body.courseId === "string" ? body.courseId : null,
+      challengeKey: body.challengeKey,
+      sectionId: typeof body.sectionId === "string" ? body.sectionId : null
+    });
+    sendJson(response, 200, { result });
+  } catch (error) {
+    sendJson(response, 409, { error: error instanceof Error ? error.message : "Hint unavailable." });
+  }
+}
+
+async function handleChallengeSkipRequest(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  try {
+    const result = await recordChallengeSkip(auth.admin, auth.user.id);
+    sendJson(response, 200, { result });
+  } catch (error) {
+    sendJson(response, 409, { error: error instanceof Error ? error.message : "Skip unavailable." });
+  }
+}
+
+async function handleCourseCompletionRequest(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+  const courseId = decodeURIComponent(pathname.split("/")[3] ?? "");
+  if (!courseId) {
+    sendJson(response, 400, { error: "Course id is required." });
+    return;
+  }
+
+  try {
+    const completion = await completeCourse(auth.admin, auth.user.id, courseId);
+    sendJson(response, 200, { completion });
+  } catch (error) {
+    sendJson(response, 409, { error: error instanceof Error ? error.message : "Course cannot be completed." });
+  }
+}
+
+async function handleEquippedTitleRequest(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const body = await readJsonBody(request);
+  const badgeKey = body?.badgeKey === null ? null : typeof body?.badgeKey === "string" ? body.badgeKey : undefined;
+  if (badgeKey === undefined) {
+    sendJson(response, 400, { error: "Badge key is required." });
+    return;
+  }
+
+  try {
+    const result = await equipProgressionTitle(auth.admin, auth.user.id, badgeKey);
+    sendJson(response, 200, { result });
+  } catch (error) {
+    sendJson(response, 403, { error: error instanceof Error ? error.message : "Title cannot be equipped." });
+  }
+}
+
 async function handleCreateCourseRequest(request, response) {
   const auth = await readAuthenticatedUser(request, response);
   if (!auth) return;
@@ -353,7 +544,10 @@ async function handleCreateCourseRequest(request, response) {
       mode: draft.mode,
       checkpoint: draft.checkpoint,
       description: draft.description,
-      progress: draft.progress
+      progress: draft.progress,
+      languages: draft.languages,
+      tags: draft.tags,
+      syllabus: draft.syllabus
     })
     .select("*")
     .single();
@@ -672,7 +866,12 @@ function isCourseDraft(draft) {
       typeof draft.description === "string" &&
       Number.isInteger(draft.progress) &&
       draft.progress >= 0 &&
-      draft.progress <= 100
+      draft.progress <= 100 &&
+      Array.isArray(draft.languages) &&
+      draft.languages.every((language) => typeof language === "string") &&
+      Array.isArray(draft.tags) &&
+      draft.tags.every((tag) => typeof tag === "string") &&
+      Array.isArray(draft.syllabus)
   );
 }
 

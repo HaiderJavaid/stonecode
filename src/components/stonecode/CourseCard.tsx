@@ -6,6 +6,8 @@ import { useTypedText } from "@/hooks/useTypedText";
 import { CourseHome } from "@/components/stonecode/CourseHome";
 import { CourseRoadmap } from "@/components/stonecode/CourseRoadmap";
 import { IndependentExercisePanel } from "@/components/stonecode/IndependentExercisePanel";
+import { useAuth } from "@/auth/AuthProvider";
+import { requestChallengeHint, submitChallengeAttempt } from "@/services/progression";
 
 export function CourseCard({
   active,
@@ -28,9 +30,12 @@ export function CourseCard({
   typingMessageId,
   plan
 }: CourseCardProps) {
+  const auth = useAuth();
   const lesson = lessonSteps[lessonIndex];
   const [panelContentReady, setPanelContentReady] = useState(false);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
+  const [challengeFeedback, setChallengeFeedback] = useState<string | null>(null);
+  const [isChallengePending, setIsChallengePending] = useState(false);
   const canvasMessages = useMemo(
     () => chatMessages.filter((message) => message.lessonIndex === lessonIndex),
     [chatMessages, lessonIndex]
@@ -72,13 +77,14 @@ export function CourseCard({
   useEffect(() => {
     setPanelContentReady(false);
     setSelectedOptionIndex(null);
+    setChallengeFeedback(null);
     if (!active || !view) return;
 
     const timer = window.setTimeout(() => setPanelContentReady(true), 460);
     return () => window.clearTimeout(timer);
   }, [active, course.id, view]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
@@ -86,10 +92,64 @@ export function CourseCard({
     if (!message) return;
     onChat(message, lessonIndex);
     form.reset();
+    if (lessonIndex === 1) {
+      await submitCourseChallenge("course-empty-array", { answer: message });
+    }
   }
 
-  function sendSuggestion(message: string) {
+  async function sendSuggestion(message: string) {
+    if (/hint/i.test(message) && lessonIndex === 1) {
+      const token = auth.session?.access_token;
+      if (token) {
+        setIsChallengePending(true);
+        try {
+          await requestChallengeHint(token, {
+            challengeKey: "course-empty-array",
+            courseId: course.id,
+            sectionId: course.syllabus.find((section) => section.lessonIndex === lessonIndex)?.id ?? null
+          });
+          setChallengeFeedback("Hint recorded. You still earn XP after a correct answer.");
+        } catch (error) {
+          setChallengeFeedback(error instanceof Error ? error.message : "Hint unavailable.");
+        } finally {
+          setIsChallengePending(false);
+        }
+      }
+    }
     onChat(message, lessonIndex);
+  }
+
+  async function submitCourseChallenge(
+    challengeKey: "course-empty-array" | "course-array-mutation",
+    submission: { answer: string }
+  ) {
+    const token = auth.session?.access_token;
+    if (!token) return;
+    setIsChallengePending(true);
+    try {
+      const result = await submitChallengeAttempt(token, {
+        challengeKey,
+        courseId: course.id,
+        sectionId: course.syllabus.find((section) => section.lessonIndex === lessonIndex)?.id ?? null,
+        submission
+      });
+      setChallengeFeedback(
+        result.xpAwarded > 0
+          ? `Accepted. +${result.xpAwarded} XP added.`
+          : "Accepted previously. No duplicate XP awarded."
+      );
+    } catch (error) {
+      setChallengeFeedback(error instanceof Error ? error.message : "Answer not accepted.");
+    } finally {
+      setIsChallengePending(false);
+    }
+  }
+
+  async function selectMultipleChoice(index: number) {
+    setSelectedOptionIndex(index);
+    const option = lesson.options?.[index];
+    if (!option) return;
+    await submitCourseChallenge("course-array-mutation", { answer: option.label });
   }
 
   function moveLesson(direction: -1 | 1) {
@@ -206,7 +266,8 @@ export function CourseCard({
                           selectedOptionIndex === index && !option.correct ? "is-incorrect" : ""
                         ].filter(Boolean).join(" ")}
                         key={option.label}
-                        onClick={() => setSelectedOptionIndex(index)}
+                        disabled={isChallengePending}
+                        onClick={() => void selectMultipleChoice(index)}
                         type="button"
                       >
                         <span>{String.fromCharCode(65 + index)}</span>
@@ -215,9 +276,9 @@ export function CourseCard({
                     ))}
                     {selectedOption && (
                       <p className={`option-feedback${selectedOption.correct ? " is-correct" : ""}`}>
-                        {selectedOption.correct
-                          ? `Correct. This answer mutates the original array and earns ${lesson.xp} XP.`
-                          : "Not quite. Look for the operation that changes the existing array instead of returning a new one."}
+                        {challengeFeedback ?? (selectedOption.correct
+                          ? "Checking the answer..."
+                          : "Not quite. Look for the operation that changes the existing array instead of returning a new one.")}
                       </p>
                     )}
                   </div>
@@ -234,6 +295,9 @@ export function CourseCard({
                     )}
                   </div>
                 ))}
+                {lesson.kind === "chat-exercise" && challengeFeedback && (
+                  <p className="option-feedback">{challengeFeedback}</p>
+                )}
               </div>
               <div className="chat-dock">
                 <div className="quick-action-label">Quick actions</div>

@@ -3,6 +3,8 @@ create table if not exists public.profiles (
   email text not null,
   display_name text,
   avatar_url text,
+  timezone text not null default 'UTC',
+  equipped_badge_key text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -16,6 +18,9 @@ create table if not exists public.courses (
   checkpoint text not null,
   description text,
   progress integer not null default 0 check (progress between 0 and 100),
+  languages jsonb not null default '[]'::jsonb,
+  tags jsonb not null default '[]'::jsonb,
+  syllabus jsonb not null default '[]'::jsonb,
   status text not null default 'active' check (status in ('active', 'archived')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -79,6 +84,51 @@ create table if not exists public.usage_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.challenge_progress (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  course_id uuid references public.courses(id) on delete cascade,
+  challenge_key text not null,
+  scope_key text not null,
+  section_id text,
+  source text not null check (source in ('course', 'independent')),
+  language text not null,
+  topic text not null,
+  difficulty text not null check (difficulty in ('Beginner', 'Intermediate', 'Advanced')),
+  attempts integer not null default 0,
+  hint_used boolean not null default false,
+  completed_at timestamptz,
+  xp_awarded integer not null default 0,
+  last_attempt_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, scope_key)
+);
+
+create table if not exists public.daily_exercise_usage (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  activity_date date not null,
+  independent_completions integer not null default 0,
+  independent_skips integer not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, activity_date)
+);
+
+create table if not exists public.course_completions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  course_id uuid not null references public.courses(id) on delete cascade,
+  completed_at timestamptz not null default now(),
+  unique (user_id, course_id)
+);
+
+create table if not exists public.user_badges (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  badge_key text not null,
+  earned_at timestamptz not null default now(),
+  primary key (user_id, badge_key)
+);
+
 alter table public.profiles enable row level security;
 alter table public.courses enable row level security;
 alter table public.workspace_files enable row level security;
@@ -87,6 +137,10 @@ alter table public.chat_messages enable row level security;
 alter table public.course_progress enable row level security;
 alter table public.subscriptions enable row level security;
 alter table public.usage_events enable row level security;
+alter table public.challenge_progress enable row level security;
+alter table public.daily_exercise_usage enable row level security;
+alter table public.course_completions enable row level security;
+alter table public.user_badges enable row level security;
 
 create policy "profiles own rows" on public.profiles for all using (auth.uid() = id) with check (auth.uid() = id);
 create policy "courses own rows" on public.courses for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -112,3 +166,7 @@ create policy "progress own course" on public.course_progress for all using (
 );
 create policy "subscriptions own rows" on public.subscriptions for select using (auth.uid() = user_id);
 create policy "usage own rows" on public.usage_events for select using (auth.uid() = user_id);
+create policy "challenge progress own rows" on public.challenge_progress for select using (auth.uid() = user_id);
+create policy "daily exercise usage own rows" on public.daily_exercise_usage for select using (auth.uid() = user_id);
+create policy "course completions own rows" on public.course_completions for select using (auth.uid() = user_id);
+create policy "user badges own rows" on public.user_badges for select using (auth.uid() = user_id);

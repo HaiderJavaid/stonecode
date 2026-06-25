@@ -9,6 +9,7 @@ import { useTerminalRunner } from "@/hooks/useTerminalRunner";
 import { useTutorChat } from "@/hooks/useTutorChat";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { submitChallengeAttempt } from "@/services/progression";
 
 export function StonecodePrototype({
   authRevealActive = false,
@@ -95,9 +96,41 @@ export function StonecodePrototype({
     }
   }
 
+  async function handleRunActiveFile() {
+    const result = await terminal.runActiveFile();
+    if (!result || !workspace.activeCourse || !workspace.selectedFile) return;
+    const lessonIndex = workspace.storedState.lessonStepByCourse[workspace.activeCourse.id] ?? 0;
+    if (lessonIndex !== 3) return;
+    const token = auth.session?.access_token;
+    if (!token) return;
+
+    try {
+      const challengeResult = await submitChallengeAttempt(token, {
+        challengeKey: "course-queue-terminal",
+        courseId: workspace.activeCourse.id,
+        sectionId: workspace.activeCourse.syllabus.find((section) => section.lessonIndex === 3)?.id ?? null,
+        submission: {
+          code: workspace.selectedFile.content,
+          runPassed: result.ok
+        }
+      });
+      terminal.appendLog({
+        type: "info",
+        text: challengeResult.xpAwarded > 0
+          ? `Challenge accepted. +${challengeResult.xpAwarded} XP.`
+          : "Challenge already completed. No duplicate XP."
+      });
+    } catch (error) {
+      terminal.appendLog({
+        type: "error",
+        text: error instanceof Error ? error.message : "Challenge was not accepted."
+      });
+    }
+  }
+
   return (
     <main
-      className={`scene${workspace.active ? " has-panel" : ""}${authRevealActive ? " auth-reveal-active" : ""}${dashboardRevealReady ? " auth-dashboard-ready" : ""}${isBooting ? " is-booting" : ""}`}
+      className={`scene${workspace.active ? " has-panel" : ""}${isSettingsView ? " is-settings-scene" : ""}${authRevealActive ? " auth-reveal-active" : ""}${dashboardRevealReady ? " auth-dashboard-ready" : ""}${isBooting ? " is-booting" : ""}`}
       aria-label="Stonecode programming tutor workspace"
       style={{ "--code-light": workspace.activeCourse?.light ?? 1 } as React.CSSProperties}
     >
@@ -105,7 +138,7 @@ export function StonecodePrototype({
       <div className="light light-a" aria-hidden="true" />
       <div className="light light-b" aria-hidden="true" />
 
-      <CourseWorkspace
+      {!isSettingsView && <CourseWorkspace
         active={isSettingsView ? null : workspace.active}
         activeCourse={isSettingsView ? null : workspace.activeCourse}
         activeFiles={isSettingsView ? [] : workspace.activeFiles}
@@ -119,13 +152,13 @@ export function StonecodePrototype({
         onMoveFile={workspace.moveWorkspaceFile}
         onMoveFolder={workspace.moveWorkspaceFolder}
         onRenameFile={workspace.renameWorkspaceFile}
-        onRun={terminal.runActiveFile}
+        onRun={() => void handleRunActiveFile()}
         onSelectFile={workspace.selectFile}
         planName={subscriptionState.subscription.planName}
         selectedFile={isSettingsView ? null : workspace.selectedFile}
         terminalLogs={terminal.terminalLogs}
         userEmail={auth.user?.email ?? "stonecode.dev"}
-      />
+      />}
 
       {isSettingsView && settingsSection ? <SettingsScene section={settingsSection} /> : null}
 
@@ -139,7 +172,7 @@ export function StonecodePrototype({
         </aside>
       )}
 
-      <details className="session-menu">
+      {!isSettingsView && <details className="session-menu">
         <summary aria-label="Open profile menu">
           <span>{auth.user?.email?.[0]?.toUpperCase() ?? "S"}</span>
         </summary>
@@ -149,11 +182,11 @@ export function StonecodePrototype({
           <Link to="/settings/overview">Settings</Link>
           <Link to="/settings/profile">Profile</Link>
           <Link to="/settings/billing">Billing</Link>
-          <Link to="/settings/usage">Usage</Link>
-          <Link to="/settings/support">Support</Link>
+          <Link to="/settings/preferences">Preferences</Link>
+          <Link to="/support">Support</Link>
           <button onClick={handleSignOut} type="button">Sign out</button>
         </nav>
-      </details>
+      </details>}
       {workspace.canUndoAiEdit && (
         <button className="session-logout ai-undo-edit" onClick={workspace.undoLastAiEdit} type="button">
           Undo AI edit

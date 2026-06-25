@@ -11,7 +11,10 @@ import { supabase } from "@/lib/supabaseClient";
 import { StoredCourseState } from "@/services/courseStorage";
 import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
 
-type SupabaseCourseDraft = Pick<Course, "title" | "subject" | "mode" | "checkpoint" | "description" | "progress">;
+type SupabaseCourseDraft = Pick<
+  Course,
+  "title" | "subject" | "mode" | "checkpoint" | "description" | "progress" | "languages" | "tags" | "syllabus"
+>;
 
 export async function loadSupabaseCourseState(user: User): Promise<StoredCourseState> {
   const client = requireSupabase();
@@ -277,7 +280,9 @@ function courseRecordToCourse(record: CourseRecord): Course {
     files: starterCourseFiles,
     lastMessage: "Resume your learning workspace.",
     updatedAt: formatUpdatedAt(record.updated_at),
-    ...metadata
+    languages: Array.isArray(record.languages) && record.languages.length ? record.languages : metadata.languages,
+    tags: Array.isArray(record.tags) && record.tags.length ? record.tags : metadata.tags,
+    syllabus: Array.isArray(record.syllabus) && record.syllabus.length ? record.syllabus : metadata.syllabus
   };
 }
 

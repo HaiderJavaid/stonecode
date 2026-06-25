@@ -9,7 +9,7 @@ export function useTerminalRunner(selectedFile: WorkspaceFile | null) {
   const [isRunningCode, setIsRunningCode] = useState(false);
 
   async function runActiveFile() {
-    if (!selectedFile || isRunningCode) return;
+    if (!selectedFile || isRunningCode) return null;
     setIsRunningCode(true);
     setTerminalLogs([{ type: "info", text: `Running ${selectedFile.path}...` }]);
     const result = await runWorkspaceCode(selectedFile.content);
@@ -18,6 +18,7 @@ export function useTerminalRunner(selectedFile: WorkspaceFile | null) {
       ...result.logs
     ]);
     setIsRunningCode(false);
+    return result;
   }
 
   async function runFile(file: WorkspaceFile | null, label = "AI run") {
@@ -36,11 +37,16 @@ export function useTerminalRunner(selectedFile: WorkspaceFile | null) {
     setTerminalLogs([{ type: "info", text: "Terminal cleared." }]);
   }
 
+  function appendLog(log: RunLog) {
+    setTerminalLogs((current) => [...current, log]);
+  }
+
   return {
     terminalLogs,
     isRunningCode,
     runActiveFile,
     runFile,
-    clearTerminal
+    clearTerminal,
+    appendLog
   };
 }
