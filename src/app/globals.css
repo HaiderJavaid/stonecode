@@ -7071,7 +7071,7 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
     left: 23.7%;
     top: 2.55%;
     bottom: auto;
-    width: 48.8%;
+    width: 52.6%;
     min-width: 520px;
     height: 95vh;
   }
@@ -7097,6 +7097,38 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
       -18px 18px 18px -1.5px rgba(0, 0, 0, 0.08),
       -37px 37px 37px -3px rgba(0, 0, 0, 0.16),
       -75px 75px 75px -6px rgba(0, 0, 0, 0.24);
+  }
+}
+
+.settings-workspace .settings-scene-scroll,
+.settings-workspace .settings-scene-rail,
+.settings-workspace .progression-heatmap {
+  scrollbar-width: none;
+}
+
+.settings-workspace .settings-scene-scroll::-webkit-scrollbar,
+.settings-workspace .settings-scene-rail::-webkit-scrollbar,
+.settings-workspace .progression-heatmap::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .settings-workspace .progression-heatmap,
+  .settings-workspace .reference-heatmap-card .progression-heatmap {
+    grid-template-columns: repeat(53, minmax(0, 1fr));
+    grid-template-rows: repeat(7, auto);
+    grid-auto-flow: column;
+    grid-auto-columns: unset;
+    width: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+  }
+
+  .settings-workspace .progression-heatmap i,
+  .settings-workspace .reference-heatmap-card .progression-heatmap i {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
   }
 }
 
