@@ -99,6 +99,7 @@ export function DashboardPage({
             onStartProject={onStartProject}
             onTypingComplete={onTypingComplete}
             onViewChange={(view) => onViewChange(course.id, view)}
+            plan={subscription.plan}
             typingMessageId={typingMessageId}
             view={storedState.lessonViewByCourse[course.id] ?? null}
           />

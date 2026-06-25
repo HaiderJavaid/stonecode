@@ -52,7 +52,7 @@ export type ChatMessageRecord = {
 export type CourseProgressRecord = {
   course_id: string;
   lesson_index: number;
-  lesson_view: "resume" | "details" | "progress" | null;
+  lesson_view: "resume" | "progress" | "exercises" | null;
   selected_file_path: string | null;
   updated_at: string;
 };

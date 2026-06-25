@@ -17,7 +17,7 @@ export type StoredCourseState = {
   fileOverridesByCourse: Record<string, Record<string, string>>;
   workspaceFilesByCourse: Record<string, WorkspaceFile[]>;
   workspaceFoldersByCourse: Record<string, WorkspaceFolder[]>;
-  lessonViewByCourse: Record<string, "resume" | "details" | "progress" | null>;
+  lessonViewByCourse: Record<string, "resume" | "progress" | "exercises" | null>;
   lessonStepByCourse: Record<string, number>;
 };
 

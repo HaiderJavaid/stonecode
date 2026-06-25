@@ -38,6 +38,18 @@
 
 ## Current Stage: Production SaaS Foundation
 
+### Active: Onboarding and Practice Flow
+
+- [x] Collect learning objective, level, and practical outcome in setup chat.
+- [x] Show a structured course proposal with syllabus, languages, and tags before Finalize.
+- [x] Add a course home with summary, overall progress, tags, and primary actions.
+- [x] Replace the placeholder progress path with real syllabus navigation.
+- [x] Add independent course-related exercises with different scenarios from lesson challenges.
+- [x] Add local Free-plan behavior: two independent completions/day, one skip/day, one hint/exercise.
+- [x] Keep course challenges unlimited and separate from independent exercise limits.
+- [x] Add an exercise-session verifier and rendered QA.
+- [x] Update project documentation after implementation.
+
 - [x] Connect Supabase Auth to login/signup/forgot-password pages.
 - [x] Create authenticated route guard.
 - [x] Replace mock courses with user-owned Supabase courses in code.
@@ -77,6 +89,7 @@
 - [x] Fix tutor composer spaces and Enter-to-send; keep Shift+Enter for new lines.
 - [x] Expand file icons and lazy CodeMirror language modes beyond JS/TS.
 - [ ] Persist XP awards by exercise language, category, and difficulty.
+- [ ] Move independent exercise allowance, skip, hint, attempt, completion, and XP state from localStorage to server persistence.
 - [ ] Define model response schema for generated interactive tutor blocks and MCQ grading.
 - [ ] Polish AI tool-run feedback, edit status, and error/loading states.
 - [ ] Polish dashboard/workspace UI states and responsive behavior.

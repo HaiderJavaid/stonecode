@@ -45,6 +45,12 @@
 - `useCourseWorkspace`: active course, files, folders, local persistence.
 - `useTutorChat`: tutor requests, chat messages, AI file-edit parsing, and AI run triggers.
 - `useTerminalRunner`: safe active-file browser Worker execution state.
+- `CourseHome`: finalized-course overview and primary navigation.
+- `CourseRoadmap`: real syllabus section navigation.
+- `IndependentExercisePanel`: direct-practice interaction.
+- `exerciseSession`: local daily allowance and per-exercise state until backend enforcement exists.
+
+Independent exercise session state currently uses the account-wide localStorage key `stonecode.exerciseSession.v1`. This is interaction scaffolding, not a security or billing boundary.
 
 ## Current Data Flow
 

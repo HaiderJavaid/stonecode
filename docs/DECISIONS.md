@@ -74,6 +74,18 @@ Exercise XP is attributed to the exercise language/category and scales by diffic
 
 Reason: learners need visible progression context now, but XP awards must eventually be server-validated.
 
+### Course Challenges Versus Independent Exercises
+
+Course challenges are unlimited, syllabus-integrated, and may affect course completion. Independent exercises use different scenarios and angles, are subject to plan-based daily completion and skip limits, and do not affect course completion.
+
+Reason: learners can either follow the teaching path or jump directly into harder practical coding without allowing practice quotas to block the course.
+
+### Independent Exercise Interaction
+
+Each independent exercise permits one hint question, repeatable Run attempts, and one account-wide daily Skip. A successful Run changes Skip to Next. Free users may complete two independent exercises per local calendar day in the initial product model.
+
+Reason: this gives direct-practice users enough help and variety while keeping AI generation and grading cost controllable.
+
 ### Upcoming Topic Questions
 
 Answer current-topic clarification directly. If the question belongs to a clearly upcoming topic, identify that section, provide only the minimum bridge, and return to the current step.

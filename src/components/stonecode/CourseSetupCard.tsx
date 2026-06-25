@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Course, createLearningCourse } from "@/data/courses";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Course, createDefaultCourseMetadata, createLearningCourse } from "@/data/courses";
 import { useTypedText } from "@/hooks/useTypedText";
 
 const favoriteIdeas = [
@@ -37,8 +37,11 @@ export function CourseSetupCard({
   ]);
   const [typingMessageIndex, setTypingMessageIndex] = useState(0);
   const [suggestionsReady, setSuggestionsReady] = useState(false);
-  const latestUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
-  const plan = useMemo(() => createDraftPlan(latestUserMessage), [latestUserMessage]);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const proposalRef = useRef<HTMLElement | null>(null);
+  const userMessages = messages.filter((message) => message.role === "user").map((message) => message.content);
+  const plan = useMemo(() => createDraftPlan(userMessages), [userMessages]);
+  const planReady = userMessages.length >= 3;
   const typingMessage = messages[typingMessageIndex];
   const typingText = typingMessage?.role === "assistant" ? typingMessage.content : "";
   const { typedText: typedContent } = useTypedText(typingText, {
@@ -60,6 +63,14 @@ export function CourseSetupCard({
     return () => window.clearTimeout(timer);
   }, [typedContent.length, typingText]);
 
+  useEffect(() => {
+    const scrollElement = chatScrollRef.current;
+    if (!scrollElement) return;
+    scrollElement.scrollTop = planReady && proposalRef.current
+      ? Math.max(proposalRef.current.offsetTop - scrollElement.offsetTop - 8, 0)
+      : scrollElement.scrollHeight;
+  }, [messages, planReady, typedContent]);
+
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -67,24 +78,21 @@ export function CourseSetupCard({
     const message = String(formData.get("message") ?? "").trim();
     if (!message) return;
 
-    setMessages((current) => [
-      ...current,
-      { role: "user", content: message },
-      {
-        role: "assistant",
-        content: createFollowUp(message)
-      }
-    ]);
+    addAnswer(message);
     form.reset();
   }
 
   function useFavorite(idea: string) {
+    addAnswer(idea);
+  }
+
+  function addAnswer(answer: string) {
     setMessages((current) => [
       ...current,
-      { role: "user", content: idea },
+      { role: "user", content: answer },
       {
         role: "assistant",
-        content: createFollowUp(idea)
+        content: createFollowUp(current.filter((message) => message.role === "user").length + 1, answer)
       }
     ]);
   }
@@ -93,7 +101,10 @@ export function CourseSetupCard({
     const course = createLearningCourse({
       title: plan.title,
       subject: plan.subject,
-      description: plan.description
+      description: plan.description,
+      languages: plan.languages,
+      tags: plan.tags,
+      syllabus: plan.syllabus
     });
     await onFinalize(course);
   }
@@ -113,7 +124,7 @@ export function CourseSetupCard({
             <span>Setup</span>
             <strong>What do you want to learn today?</strong>
           </div>
-          <div className="ai-chat-scroll setup-chat" aria-label="Course setup conversation">
+          <div className="ai-chat-scroll setup-chat" aria-label="Course setup conversation" ref={chatScrollRef}>
             {messages.map((message, index) => (
               <div
                 className={`ai-message ${message.role === "assistant" ? "assistant-message ai-response" : "user-message"}`}
@@ -125,22 +136,35 @@ export function CourseSetupCard({
                 )}
               </div>
             ))}
+            {planReady && (
+              <section className="course-proposal" aria-label="Proposed course plan" ref={proposalRef}>
+                <span>Proposed course</span>
+                <h3>{plan.title}</h3>
+                <p>{plan.description}</p>
+                <div className="proposal-tags">
+                  {[...plan.languages, ...plan.tags].map((tag) => <i key={tag}>{tag}</i>)}
+                </div>
+                <ol>
+                  {plan.syllabus.map((section) => <li key={section.id}>{section.title}</li>)}
+                </ol>
+              </section>
+            )}
           </div>
           <div className="chat-dock">
             <section className={`reply-suggestions setup-favorites${suggestionsReady ? " is-ready" : ""}`} aria-label="Course suggestions">
-              {favoriteIdeas.map((idea) => (
+              {getSuggestions(userMessages.length).map((idea) => (
                 <button key={idea} onClick={() => useFavorite(idea)} type="button">
                   {idea}
                 </button>
               ))}
             </section>
             <form className="chat-compose setup-compose" onSubmit={submitMessage}>
-              <input name="message" placeholder="I want to learn..." type="text" />
+              <input name="message" placeholder={getInputPlaceholder(userMessages.length)} type="text" />
               <button type="submit">Send</button>
             </form>
             <div className="lesson-controls setup-controls">
               {error && <p className="setup-error">{error}</p>}
-              <button disabled={!latestUserMessage || isFinalizing} onClick={finalizeCourse} type="button">
+              <button disabled={!planReady || isFinalizing} onClick={finalizeCourse} type="button">
                 {isFinalizing ? "Finalizing..." : "Finalize"}
               </button>
             </div>
@@ -151,25 +175,48 @@ export function CourseSetupCard({
   );
 }
 
-function createFollowUp(message: string) {
-  return `Good. I can set up a beginner course for "${message}". Tell me your goal, current level, or the kind of project you want, then finalize when it feels right.`;
+function createFollowUp(answerNumber: number, answer: string) {
+  if (answerNumber === 1) {
+    return `I’ll build the course around "${answer}". What is your current level with programming and this topic?`;
+  }
+  if (answerNumber === 2) {
+    return "What practical outcome do you want: a project, job skill, interview preparation, automation, or something else?";
+  }
+  if (answerNumber === 3) {
+    return "Here is the proposed course. You can Finalize it now, or keep chatting to change the focus, languages, or syllabus.";
+  }
+  return `I’ve added "${answer}" as an amendment to the proposal. Review it below or keep refining it.`;
 }
 
-function createDraftPlan(message: string): {
-  title: string;
-  subject: string;
-  description: string;
-} {
-  const normalized = message.trim() || "Programming basics";
+function createDraftPlan(messages: string[]): Pick<Course, "title" | "subject" | "description" | "languages" | "tags" | "syllabus"> {
+  const [objective = "Programming basics", level = "Beginner", outcome = "Build practical projects", ...amendments] = messages;
+  const normalized = objective.trim() || "Programming basics";
   const title = normalized.length > 34 ? normalized.slice(0, 34).trim() : normalized;
   const subject = inferSubject(normalized);
-  const description = `A beginner-friendly path for ${normalized}, with notes, exercises, and a first practice file.`;
+  const metadata = createDefaultCourseMetadata(subject);
+  const amendmentCopy = amendments.length ? ` Updated focus: ${amendments.at(-1)}.` : "";
+  const description = `${level} path for ${normalized}, aimed at ${outcome}.${amendmentCopy}`;
 
   return {
     title,
     subject,
-    description
+    description,
+    ...metadata
   };
+}
+
+function getSuggestions(answerCount: number) {
+  if (answerCount === 0) return favoriteIdeas;
+  if (answerCount === 1) return ["Complete beginner", "Know the basics", "Built small projects"];
+  if (answerCount === 2) return ["Build a real project", "Prepare for a job", "Solve practical problems"];
+  return ["Use more projects", "Add debugging practice", "Change the language"];
+}
+
+function getInputPlaceholder(answerCount: number) {
+  if (answerCount === 0) return "I want to learn...";
+  if (answerCount === 1) return "My current level is...";
+  if (answerCount === 2) return "I want to be able to...";
+  return "Amend the proposed course...";
 }
 
 function inferSubject(message: string) {

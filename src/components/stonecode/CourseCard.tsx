@@ -1,8 +1,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { lessonSteps } from "@/components/stonecode/lessonData";
 import { renderMarkdown } from "@/components/stonecode/markdown";
-import { CourseCardProps, CardView } from "@/components/stonecode/types";
+import { CourseCardProps } from "@/components/stonecode/types";
 import { useTypedText } from "@/hooks/useTypedText";
+import { CourseHome } from "@/components/stonecode/CourseHome";
+import { CourseRoadmap } from "@/components/stonecode/CourseRoadmap";
+import { IndependentExercisePanel } from "@/components/stonecode/IndependentExercisePanel";
 
 export function CourseCard({
   active,
@@ -22,7 +25,8 @@ export function CourseCard({
   onStartProject,
   onKeyDown,
   onTypingComplete,
-  typingMessageId
+  typingMessageId,
+  plan
 }: CourseCardProps) {
   const lesson = lessonSteps[lessonIndex];
   const [panelContentReady, setPanelContentReady] = useState(false);
@@ -98,7 +102,7 @@ export function CourseCard({
   const cardClassName = [
     "shadow-card",
     active ? "is-active" : "",
-    active && view === "resume" ? "has-chat-canvas" : "",
+    active && (view === "resume" || view === "exercises") ? "has-chat-canvas" : "",
     hidden ? "is-hidden" : "",
     hidden ? `is-${hiddenDirection}` : ""
   ]
@@ -140,34 +144,27 @@ export function CourseCard({
         <span className="percent">{course.progress}%</span>
       </div>
       <div className="card-detail">
-        <div className="course-meta">
-          <span>{course.mode}</span>
-          <span>{course.checkpoint}</span>
-          <span>{course.updatedAt}</span>
-        </div>
-        <div className="actions">
-          {[
-            ["resume", isProjectStarted ? "Resume learning" : "Start project"],
-            ["details", "Course details"],
-            ["progress", "Progress"]
-          ].map(([value, label]) => (
-            <button
-              key={label}
-              className={view === value ? "is-selected" : ""}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (value === "resume" && !isProjectStarted) {
-                  onStartProject(course);
-                  return;
-                }
-                onViewChange(value as CardView);
-              }}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {active ? (
+          <CourseHome
+            course={course}
+            isProjectStarted={isProjectStarted}
+            lessonIndex={lessonIndex}
+            onExercises={() => onViewChange("exercises")}
+            onRoadmap={() => onViewChange("progress")}
+            onStartOrResume={() => {
+              if (isProjectStarted) onViewChange("resume");
+              else onStartProject(course);
+            }}
+          />
+        ) : (
+          <>
+            <div className="course-meta">
+              <span>{course.mode}</span>
+              <span>{course.checkpoint}</span>
+              <span>{course.updatedAt}</span>
+            </div>
+          </>
+        )}
       </div>
       {active && view && (
         <div className={`selection-panel${view === "resume" ? " is-chat-canvas" : ""}${panelContentReady ? " is-content-ready" : ""}`} onClick={(event) => event.stopPropagation()}>
@@ -272,28 +269,18 @@ export function CourseCard({
               </div>
             </div>
           )}
-          {panelContentReady && view === "details" && (
-            <div className="info-panel">
-              <span>Course details</span>
-              <p>{course.description}</p>
-              <dl>
-                <div><dt>Mode</dt><dd>{course.mode}</dd></div>
-                <div><dt>Checkpoint</dt><dd>{course.checkpoint}</dd></div>
-                <div><dt>Files</dt><dd>{fileCount}</dd></div>
-              </dl>
-            </div>
-          )}
           {panelContentReady && view === "progress" && (
-            <div className="progress-panel">
-              <span>Progress path</span>
-              <ul>
-                <li className="is-complete">Intro passed</li>
-                <li className="is-complete">Current file reviewed</li>
-                <li className="is-current">Checkpoint in progress</li>
-                <li className="is-locked">Practice review locked</li>
-                <li className="is-locked">Final exercise locked</li>
-              </ul>
-            </div>
+            <CourseRoadmap
+              course={course}
+              lessonIndex={lessonIndex}
+              onSelectSection={(nextLessonIndex) => {
+                onLessonIndexChange(nextLessonIndex);
+                onViewChange("resume");
+              }}
+            />
+          )}
+          {panelContentReady && view === "exercises" && (
+            <IndependentExercisePanel course={course} plan={plan} />
           )}
         </div>
       )}

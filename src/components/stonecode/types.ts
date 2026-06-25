@@ -1,13 +1,14 @@
 import { Course } from "@/data/courses";
 import { StoredChatMessage } from "@/services/courseStorage";
 import { KeyboardEvent } from "react";
+import { PlanTier } from "@/lib/database.types";
 
 export type ActiveState = {
   courseId: Course["id"];
   fileIndex: number;
 };
 
-export type CardView = "resume" | "details" | "progress";
+export type CardView = "resume" | "progress" | "exercises";
 
 export type CourseCardProps = {
   active: boolean;
@@ -28,4 +29,5 @@ export type CourseCardProps = {
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   onTypingComplete: () => void;
   typingMessageId: string | null;
+  plan: PlanTier;
 };

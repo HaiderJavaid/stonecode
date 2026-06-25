@@ -33,6 +33,21 @@ Required before selling:
 
 ## Current State
 
+Active implementation:
+
+- Guided onboarding will collect objective, level, and practical outcome before proposing a structured syllabus.
+- Finalized courses will open to a course home with progress, languages, tags, roadmap navigation, and an independent Exercises lane.
+- Course challenges remain unlimited and affect course completion.
+- Independent exercises use different scenarios, are locally limited by plan for the initial UI, and do not affect course completion.
+
+Implemented on 2026-06-25:
+
+- Three-step guided setup with an amendable structured proposal.
+- Course home with summary, progress, languages, tags, and Start/Resume, Exercises, and roadmap actions.
+- Roadmap navigation backed by the course syllabus.
+- Curated independent JavaScript, CSS, and Python scenarios.
+- Local account-wide exercise limits, one daily skip, one hint per exercise, repeatable Run, Next after success, and mock XP feedback.
+
 Done:
 
 - Vite + React + TypeScript app.
@@ -77,6 +92,9 @@ Not done:
 - Better AI tool feedback and broader authenticated rendered QA.
 - production code sandbox.
 - final rendered QA for the auth transition.
+- authoritative server persistence and grading for independent exercise attempts, hints, skips, completions, and XP.
+- profile activity heatmap and per-language challenge analytics.
+- server-authoritative exercise generation, execution, grading, quotas, and XP awards.
 
 ## Direction
 

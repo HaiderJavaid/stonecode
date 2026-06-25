@@ -716,6 +716,63 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   font: 10px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
+.course-proposal {
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid rgba(106, 183, 137, 0.16);
+  border-radius: 10px;
+  background:
+    linear-gradient(145deg, rgba(76, 150, 105, 0.08), transparent 48%),
+    rgba(255, 255, 255, 0.026);
+}
+
+.course-proposal > span {
+  color: rgba(112, 218, 151, 0.68);
+  font: 600 8px/1 "SF Mono", ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.course-proposal h3 {
+  margin: 8px 0 0;
+  color: rgba(242, 242, 232, 0.84);
+  font: 600 14px/1.25 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.course-proposal p {
+  min-height: 0;
+  padding: 8px 0 0;
+  color: rgba(229, 229, 220, 0.54);
+}
+
+.proposal-tags,
+.course-home-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.proposal-tags i,
+.course-home-tags span {
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(232, 232, 224, 0.55);
+  font: 500 8px/1 "SF Mono", ui-monospace, monospace;
+  font-style: normal;
+}
+
+.course-proposal ol {
+  display: grid;
+  gap: 5px;
+  margin: 11px 0 0;
+  padding-left: 20px;
+  color: rgba(232, 232, 224, 0.58);
+  font: 9px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
 .tree-icon {
   display: inline-grid;
   place-items: center;
@@ -1049,10 +1106,9 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 .shadow-card.is-active .card-detail {
   position: absolute;
   inset: 58px 16px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   margin: 0;
+  overflow-y: auto;
 }
 
 .shadow-card.is-active .course-meta {
@@ -1100,6 +1156,96 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 .actions button.is-selected {
   background: rgba(255, 255, 255, 0.065);
   color: rgba(242, 242, 232, 0.82);
+}
+
+.course-home {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  padding: 8px 2px 2px;
+}
+
+.course-home-copy > span {
+  color: rgba(110, 215, 149, 0.68);
+  font: 600 8px/1 "SF Mono", ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.course-home-copy h3 {
+  margin: 10px 0 0;
+  color: rgba(242, 242, 232, 0.86);
+  font: 600 17px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.course-home-copy p {
+  min-height: 0;
+  padding: 9px 0 0;
+  color: rgba(228, 228, 220, 0.5);
+  font-size: 10px;
+}
+
+.course-home-progress {
+  margin-top: 17px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.course-home-progress div {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(232, 232, 224, 0.62);
+  font: 600 9px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.course-home-progress i {
+  display: block;
+  height: 5px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.course-home-progress b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3bb96e, #6be09a);
+}
+
+.course-home-progress small {
+  display: block;
+  margin-top: 8px;
+  color: rgba(229, 229, 220, 0.38);
+  font: 8px/1.3 "SF Mono", ui-monospace, monospace;
+}
+
+.course-home-actions {
+  display: grid;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.course-home-actions button,
+.exercise-controls button,
+.exercise-hint button {
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(238, 238, 228, 0.72);
+  font: 600 9px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.course-home-actions button:first-child {
+  border-color: rgba(88, 211, 134, 0.18);
+  background: rgba(63, 174, 104, 0.08);
+  color: rgba(137, 226, 170, 0.82);
 }
 
 .lesson-panel,
@@ -1590,6 +1736,229 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   margin: 12px 0 0;
   padding: 0;
   list-style: none;
+}
+
+.course-roadmap {
+  min-height: calc(100% - 42px);
+  margin-top: 0;
+}
+
+.course-roadmap > p {
+  min-height: 0;
+  padding: 0;
+}
+
+.course-roadmap ol {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.course-roadmap li {
+  padding: 0;
+  background: transparent;
+}
+
+.course-roadmap li button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.027);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.course-roadmap li.is-current button {
+  border-color: rgba(96, 211, 138, 0.2);
+  background: rgba(65, 173, 105, 0.075);
+}
+
+.course-roadmap li i,
+.course-roadmap li em {
+  color: rgba(231, 231, 222, 0.38);
+  font: 600 8px/1 "SF Mono", ui-monospace, monospace;
+  font-style: normal;
+}
+
+.course-roadmap li em {
+  grid-column: 2;
+  margin-top: -4px;
+}
+
+.course-roadmap li span {
+  margin: 0;
+}
+
+.course-roadmap li strong,
+.course-roadmap li small {
+  display: block;
+}
+
+.course-roadmap li strong {
+  color: rgba(239, 239, 230, 0.72);
+  font: 600 9px/1.25 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.course-roadmap li small {
+  margin-top: 4px;
+  color: rgba(230, 230, 220, 0.38);
+  font: 8px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.independent-exercise-panel {
+  display: flex;
+  min-height: calc(100% - 42px);
+  flex-direction: column;
+  gap: 7px;
+}
+
+.independent-exercise-panel > header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.independent-exercise-panel header span,
+.independent-exercise-panel header strong {
+  display: block;
+}
+
+.independent-exercise-panel header span {
+  color: rgba(110, 215, 149, 0.68);
+  font: 600 8px/1 "SF Mono", ui-monospace, monospace;
+  text-transform: uppercase;
+}
+
+.independent-exercise-panel header strong {
+  margin-top: 7px;
+  color: rgba(242, 242, 232, 0.82);
+  font: 600 14px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.independent-exercise-panel header small {
+  max-width: 104px;
+  color: rgba(230, 230, 220, 0.4);
+  font: 8px/1.35 "SF Mono", ui-monospace, monospace;
+  text-align: right;
+}
+
+.exercise-session-meta {
+  margin-top: 0;
+}
+
+.exercise-session-meta span,
+.exercise-session-meta strong {
+  display: inline-flex;
+  min-height: 21px;
+  align-items: center;
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(228, 228, 220, 0.58);
+  font: 600 7px/1 "SF Mono", ui-monospace, monospace;
+}
+
+.exercise-session-meta strong {
+  margin-left: auto;
+  border-color: rgba(91, 214, 137, 0.18);
+  color: rgba(114, 222, 153, 0.82);
+}
+
+.exercise-brief {
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.exercise-brief p,
+.exercise-feedback,
+.exercise-hint p {
+  min-height: 0;
+  padding: 0;
+}
+
+.exercise-brief ul {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding-left: 16px;
+  color: rgba(230, 230, 220, 0.48);
+  font: 8px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.exercise-code {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 8px;
+  padding: 11px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(225, 232, 220, 0.72);
+  font: 9px/1.55 "SF Mono", ui-monospace, monospace;
+}
+
+.exercise-feedback {
+  color: rgba(229, 196, 142, 0.7);
+  font-size: 9px;
+}
+
+.exercise-feedback.is-success {
+  color: rgba(126, 222, 161, 0.78);
+}
+
+.exercise-hint {
+  display: grid;
+  gap: 7px;
+}
+
+.exercise-hint > div {
+  display: grid;
+  grid-template-columns: 1fr 50px;
+  gap: 7px;
+}
+
+.exercise-hint input {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(235, 235, 226, 0.7);
+  font: 9px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.exercise-hint input:disabled,
+.exercise-hint button:disabled,
+.exercise-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.exercise-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: auto;
+}
+
+.exercise-controls button:first-child {
+  border-color: rgba(91, 214, 137, 0.18);
+  color: rgba(130, 225, 165, 0.82);
 }
 
 .progress-panel li {

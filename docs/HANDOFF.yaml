@@ -6,7 +6,7 @@ project:
 status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
-  current_stage: paid-beta UI and tutor interaction polish
+  current_stage: onboarding and independent exercise UI complete; backend challenge persistence next
   current_branch: main
   current_risks:
     - XP, streaks, badges, and exercise grading are not server-persisted
@@ -21,6 +21,10 @@ deployment:
   pushed: false
   pr_url: null
 done:
+  - guided objective, level, and outcome onboarding with structured proposal
+  - finalized course home with summary, progress, languages, tags, and primary actions
+  - real syllabus roadmap navigation
+  - independent exercise mock flow with local Free limits, daily skip, one hint, Run, Next, and XP feedback
   - Supabase course/file/folder/chat/progress persistence verified
   - server-side Free course limits and subscription state
   - Stripe checkout, portal, and webhook subscription sync
@@ -33,20 +37,28 @@ done:
   - broad file icons and lazy CodeMirror language modes
 verification:
   passed:
+    - npm run verify:exercise-session
     - npm run verify:tutor-flow
     - npm run verify:response-stream
     - npm run verify:usage-summary
     - npm run typecheck
     - npm run build
   rendered:
+    - /tmp/stonecode-course-proposal-visible.png
+    - /tmp/stonecode-course-home.png
+    - /tmp/stonecode-course-roadmap.png
+    - /tmp/stonecode-independent-exercise-compact.png
+    - /tmp/stonecode-independent-hint-used.png
+    - /tmp/stonecode-independent-passed.png
+    - /tmp/stonecode-independent-limit-reached.png
     - /tmp/stonecode-tutor-mcq-open.png
   limitations:
     - Browser plugin bootstrap failed from invalid sandbox metadata; Chrome CDP fallback used
 next:
   - persist XP/streak/category/badge progress
   - define structured model-generated tutor blocks and grading
-  - award terminal exercise XP only after verified execution
-  - continue authenticated dashboard/workspace QA
+  - enforce independent exercise completion, hint, and skip limits server-side
+  - add activity heatmap and per-language challenge analytics
 read_first:
   - docs/HANDOFF.yaml
   - docs/README.md

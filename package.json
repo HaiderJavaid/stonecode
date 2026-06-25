@@ -14,6 +14,7 @@
     "verify:stripe-subscription-sync": "node scripts/verify-stripe-subscription-sync.mjs",
     "verify:subscription-state": "node scripts/verify-subscription-state.mjs",
     "verify:ai-file-edits": "node scripts/verify-ai-file-edits.mjs",
+    "verify:exercise-session": "node --no-warnings scripts/verify-exercise-session.mjs",
     "verify:tutor-flow": "node scripts/verify-tutor-flow.mjs",
     "verify:response-stream": "node scripts/verify-response-stream.mjs",
     "verify:usage-summary": "node scripts/verify-usage-summary.mjs",

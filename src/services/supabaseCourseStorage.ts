@@ -1,5 +1,5 @@
 import { User } from "@supabase/supabase-js";
-import { Course, starterCourseFiles } from "@/data/courses";
+import { Course, createDefaultCourseMetadata, starterCourseFiles } from "@/data/courses";
 import {
   ChatMessageRecord,
   CourseProgressRecord,
@@ -264,6 +264,7 @@ async function selectProgressByCourseIds(courseIds: string[]): Promise<CoursePro
 }
 
 function courseRecordToCourse(record: CourseRecord): Course {
+  const metadata = createDefaultCourseMetadata(record.subject);
   return {
     id: record.id,
     title: record.title,
@@ -275,7 +276,8 @@ function courseRecordToCourse(record: CourseRecord): Course {
     light: 1,
     files: starterCourseFiles,
     lastMessage: "Resume your learning workspace.",
-    updatedAt: formatUpdatedAt(record.updated_at)
+    updatedAt: formatUpdatedAt(record.updated_at),
+    ...metadata
   };
 }
 
