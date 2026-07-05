@@ -39,7 +39,7 @@ export function extractAiFileEdits(reply: string): AiFileEditExtraction {
   };
 }
 
-export function applyAiFileEdits(files: WorkspaceFile[], edits: AiFileEdit[]) {
+export function applyAiFileEdits(files: WorkspaceFile[], edits: AiFileEdit[], preferredIndex = 0) {
   let nextFiles = files;
   let selectedPath: string | null = null;
 
@@ -54,7 +54,13 @@ export function applyAiFileEdits(files: WorkspaceFile[], edits: AiFileEdit[]) {
       continue;
     }
 
-    nextFiles = [...nextFiles, { path, content: edit.content }];
+    if (nextFiles.length) {
+      const targetIndex = Math.min(Math.max(preferredIndex, 0), nextFiles.length - 1);
+      nextFiles = nextFiles.map((file, index) => (index === targetIndex ? { path, content: edit.content } : file));
+      continue;
+    }
+
+    nextFiles = [{ path, content: edit.content }];
   }
 
   const selectedIndex = selectedPath ? nextFiles.findIndex((file) => file.path === selectedPath) : -1;

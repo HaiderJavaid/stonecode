@@ -5,18 +5,18 @@ export function CourseHome({
   isProjectStarted,
   lessonIndex,
   onExercises,
-  onRoadmap,
   onStartOrResume
 }: {
   course: Course;
   isProjectStarted: boolean;
   lessonIndex: number;
   onExercises: () => void;
-  onRoadmap: () => void;
   onStartOrResume: () => void;
 }) {
-  const completedSections = Math.min(lessonIndex, course.syllabus.length);
-  const progress = Math.max(course.progress, Math.round((completedSections / course.syllabus.length) * 100));
+  const completedSections = course.syllabus.filter((section) => section.lessonIndex < lessonIndex).length;
+  const progress = course.syllabus.length
+    ? Math.max(course.progress, Math.round((completedSections / course.syllabus.length) * 100))
+    : Math.max(course.progress, 0);
   const currentSection = course.syllabus[Math.min(lessonIndex, course.syllabus.length - 1)];
 
   return (
@@ -39,7 +39,6 @@ export function CourseHome({
           {isProjectStarted ? "Resume learning" : "Start project"}
         </button>
         <button onClick={onExercises} type="button">Exercises</button>
-        <button onClick={onRoadmap} type="button">Course roadmap</button>
       </div>
     </section>
   );

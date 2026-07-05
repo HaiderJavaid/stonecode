@@ -20,6 +20,10 @@ export function WorkspaceFileTree({
   files,
   folders,
   selectedFileIndex,
+  onCreateFile,
+  onCreateFolder,
+  onDeleteFile,
+  onRenameFile,
   onSelectFile,
   onMoveFile,
   onMoveFolder
@@ -27,15 +31,20 @@ export function WorkspaceFileTree({
   files: WorkspaceFile[];
   folders: WorkspaceFolder[];
   selectedFileIndex: number;
+  onCreateFile?: () => void;
+  onCreateFolder?: () => void;
+  onDeleteFile?: () => void;
+  onRenameFile?: () => void;
   onSelectFile: (index: number) => void;
   onMoveFile: (fileIndex: number, folderPath: string) => void;
   onMoveFolder: (folderPath: string, targetFolderPath: string) => void;
 }) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const folderPaths = new Set<string>();
+  const uniqueFiles = dedupeFilesForTree(files);
 
   folders.forEach((folder) => folderPaths.add(folder.path));
-  files.forEach((file) => {
+  uniqueFiles.forEach((file) => {
     const parts = file.path.split("/");
     parts.slice(0, -1).forEach((_, index) => {
       folderPaths.add(parts.slice(0, index + 1).join("/"));
@@ -49,12 +58,12 @@ export function WorkspaceFileTree({
       depth: path.split("/").length - 1,
       label: path.split("/").at(-1) ?? path
     })),
-    ...files.map((file, index) => ({
+    ...uniqueFiles.map((file) => ({
       type: "file" as const,
       path: file.path,
       depth: file.path.split("/").length - 1,
       label: file.path.split("/").at(-1) ?? file.path,
-      index
+      index: file.index
     }))
   ].sort((first, second) => {
     const firstPath = first.path;
@@ -118,10 +127,18 @@ export function WorkspaceFileTree({
             <span className="tree-icon is-folder" aria-hidden="true">
               <FolderIcon />
             </span>
-            {node.label}
+            <span className="tree-node-label">{node.label}</span>
+            <TreeNodeMenu
+              disabledDelete
+              disabledRename
+              onCreateFile={onCreateFile}
+              onCreateFolder={onCreateFolder}
+              onDelete={onDeleteFile}
+              onRename={onRenameFile}
+            />
           </div>
         ) : (
-          <button
+          <div
             className={`file-button${node.index === selectedFileIndex ? " is-selected" : ""}`}
             draggable
             key={`file-${node.path}`}
@@ -133,18 +150,68 @@ export function WorkspaceFileTree({
             }}
             onDragEnd={() => setDropTarget(null)}
             onClick={() => onSelectFile(node.index)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelectFile(node.index);
+              }
+            }}
+            role="button"
             style={{ "--tree-depth": node.depth } as React.CSSProperties}
-            type="button"
+            tabIndex={0}
           >
             <span className={`tree-icon ${getFileIconClass(node.label)}`} aria-hidden="true">
               <FileGlyph fileName={node.label} />
             </span>
-            {node.label}
-          </button>
+            <span className="tree-node-label">{node.label}</span>
+            <TreeNodeMenu
+              disabledDelete={files.length <= 1}
+              onCreateFile={onCreateFile}
+              onCreateFolder={onCreateFolder}
+              onDelete={onDeleteFile}
+              onRename={onRenameFile}
+            />
+          </div>
         )
       )}
     </>
   );
+}
+
+function TreeNodeMenu({
+  disabledDelete,
+  disabledRename,
+  onCreateFile,
+  onCreateFolder,
+  onDelete,
+  onRename
+}: {
+  disabledDelete?: boolean;
+  disabledRename?: boolean;
+  onCreateFile?: () => void;
+  onCreateFolder?: () => void;
+  onDelete?: () => void;
+  onRename?: () => void;
+}) {
+  return (
+    <details className="tree-menu" onClick={(event) => event.stopPropagation()}>
+      <summary aria-label="Actions">...</summary>
+      <div>
+        <button disabled={!onCreateFile} onClick={onCreateFile} type="button">New file</button>
+        <button disabled={!onCreateFolder} onClick={onCreateFolder} type="button">New folder</button>
+        <button disabled={disabledRename || !onRename} onClick={onRename} type="button">Rename</button>
+        <button disabled={disabledDelete || !onDelete} onClick={onDelete} type="button">Delete</button>
+      </div>
+    </details>
+  );
+}
+
+function dedupeFilesForTree(files: WorkspaceFile[]) {
+  const byPath = new Map<string, WorkspaceFile & { index: number }>();
+  files.forEach((file, index) => {
+    if (!byPath.has(file.path)) byPath.set(file.path, { ...file, index });
+  });
+  return [...byPath.values()];
 }
 
 type DraggedTreeNode =

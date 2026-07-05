@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { runWorkspaceCode, type RunLog } from "@/services/codeRunner";
+import { resolveEditorLanguage } from "@/services/editorLanguages";
 import { WorkspaceFile } from "@/services/workspaceFiles";
 
 export function useTerminalRunner(selectedFile: WorkspaceFile | null) {
@@ -10,6 +11,11 @@ export function useTerminalRunner(selectedFile: WorkspaceFile | null) {
 
   async function runActiveFile() {
     if (!selectedFile || isRunningCode) return;
+    const language = resolveEditorLanguage(selectedFile.path);
+    if (!language.canRunInBrowser) {
+      setTerminalLogs([{ type: "info", text: language.runNote ?? `${language.displayName} needs the future backend sandbox to run.` }]);
+      return;
+    }
     setIsRunningCode(true);
     setTerminalLogs([{ type: "info", text: `Running ${selectedFile.path}...` }]);
     const result = await runWorkspaceCode(selectedFile.content);
@@ -22,6 +28,11 @@ export function useTerminalRunner(selectedFile: WorkspaceFile | null) {
 
   async function runFile(file: WorkspaceFile | null, label = "AI run") {
     if (!file || isRunningCode) return;
+    const language = resolveEditorLanguage(file.path);
+    if (!language.canRunInBrowser) {
+      setTerminalLogs([{ type: "info", text: language.runNote ?? `${language.displayName} needs the future backend sandbox to run.` }]);
+      return;
+    }
     setIsRunningCode(true);
     setTerminalLogs([{ type: "info", text: `${label}: running ${file.path}...` }]);
     const result = await runWorkspaceCode(file.content);

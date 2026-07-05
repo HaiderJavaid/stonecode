@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stonecode Git Branch Map</title>
+  <style>
+    :root {
+      --paper: #fbf6ea;
+      --ink: #2a2722;
+      --muted: #7b7164;
+      --line: #3b3730;
+      --green: #2e6d58;
+      --amber: #a45f20;
+      --blue: #425f9c;
+      --red: #a23a32;
+      --violet: #75539d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(42, 39, 34, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(42, 39, 34, 0.04) 1px, transparent 1px),
+        var(--paper);
+      background-size: 28px 28px;
+      font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", system-ui, sans-serif;
+    }
+
+    main {
+      width: min(1220px, calc(100vw - 24px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 5vw, 52px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      max-width: 72ch;
+      font-size: 16px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      max-width: 520px;
+    }
+
+    .pill {
+      border: 2px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(255,255,255,0.55);
+      font-size: 13px;
+      white-space: nowrap;
+      box-shadow: 3px 4px 0 rgba(42, 39, 34, 0.09);
+    }
+
+    .map {
+      width: 100%;
+      overflow: auto;
+      border: 3px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 251, 241, 0.74);
+      box-shadow: 8px 10px 0 rgba(42, 39, 34, 0.10);
+    }
+
+    svg {
+      display: block;
+      width: 1180px;
+      height: 760px;
+    }
+
+    .wire {
+      fill: none;
+      stroke: var(--line);
+      stroke-width: 3.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .wire.alt { stroke-dasharray: 9 8; }
+    .wire.stash { stroke: var(--violet); stroke-dasharray: 8 8; }
+    .wire.dirty { stroke: var(--red); stroke-dasharray: 6 8; }
+
+    .node rect {
+      fill: #fffaf0;
+      stroke: var(--line);
+      stroke-width: 2.8;
+      rx: 12;
+      filter: drop-shadow(4px 5px 0 rgba(42, 39, 34, 0.11));
+    }
+
+    .node.head rect { stroke: var(--green); }
+    .node.checkpoint rect { stroke: var(--amber); }
+    .node.work rect { stroke: var(--blue); }
+    .node.stash rect { stroke: var(--violet); }
+    .node.dirty rect { stroke: var(--red); fill: #fff1ee; }
+
+    text {
+      fill: var(--ink);
+      font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", system-ui, sans-serif;
+      font-size: 15px;
+    }
+
+    .title { font-size: 18px; font-weight: 700; }
+    .hash { fill: var(--muted); font-size: 13px; }
+    .small { fill: var(--muted); font-size: 12px; }
+
+    .branch-label {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .head-label { fill: var(--green); }
+    .checkpoint-label { fill: var(--amber); }
+    .work-label { fill: var(--blue); }
+    .stash-label { fill: var(--violet); }
+    .dirty-label { fill: var(--red); }
+
+    @media (max-width: 760px) {
+      header {
+        display: block;
+      }
+
+      .legend {
+        justify-content: flex-start;
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Stonecode Git Branch Map</h1>
+        <p>Simple sketch of where branches split and point right now. Snapshot: 2026-06-27 04:31 +08.</p>
+      </div>
+      <div class="legend">
+        <span class="pill">green = current branch</span>
+        <span class="pill">orange = checkpoint</span>
+        <span class="pill">blue = work branch</span>
+        <span class="pill">red = dirty files</span>
+        <span class="pill">purple = stash</span>
+      </div>
+    </header>
+
+    <section class="map" aria-label="Git branch diagram">
+      <svg viewBox="0 0 1180 760" role="img">
+        <title>Stonecode git branch diagram</title>
+
+        <!-- main vertical history -->
+        <path class="wire" d="M590 700 C590 655 590 635 590 600 C590 555 590 535 590 500 C590 455 590 435 590 400 C590 350 590 330 590 285 C590 240 590 220 590 180 C590 135 590 115 590 80" />
+
+        <!-- checkpoint branches from main history -->
+        <path class="wire alt" d="M590 670 C420 660 290 650 130 628" />
+        <path class="wire alt" d="M590 625 C430 616 300 600 130 578" />
+        <path class="wire alt" d="M590 580 C430 570 300 552 130 528" />
+        <path class="wire alt" d="M590 535 C430 525 300 505 130 478" />
+        <path class="wire alt" d="M590 490 C430 480 300 460 130 428" />
+        <path class="wire alt" d="M590 445 C430 435 300 415 130 378" />
+        <path class="wire alt" d="M590 400 C430 390 300 365 130 328" />
+        <path class="wire alt" d="M590 315 C430 305 300 285 130 258" />
+        <path class="wire alt" d="M590 260 C430 250 300 230 130 208" />
+
+        <!-- work branch and merge -->
+        <path class="wire" d="M590 355 C720 330 790 330 910 360" />
+        <path class="wire" d="M910 360 C785 390 725 390 590 370" />
+
+        <!-- stash branch -->
+        <path class="wire stash" d="M590 400 C760 425 845 455 1020 505" />
+
+        <!-- newer checkpoint-current floating above current head -->
+        <path class="wire alt" d="M590 80 C660 45 775 44 880 72" />
+
+        <!-- dirty worktree hanging from current branch -->
+        <path class="wire dirty" d="M590 80 C660 120 760 135 900 138" />
+
+        <!-- base and checkpoints -->
+        <g class="node checkpoint" transform="translate(70 604)">
+          <rect width="210" height="54"></rect>
+          <text class="title" x="16" y="23">initial app</text>
+          <text class="hash" x="16" y="42">b24df08 checkpoint/00</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 554)">
+          <rect width="250" height="54"></rect>
+          <text class="title" x="16" y="23">Supabase persistence</text>
+          <text class="hash" x="16" y="42">b426aeb checkpoint/01</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 504)">
+          <rect width="245" height="54"></rect>
+          <text class="title" x="16" y="23">auth docs</text>
+          <text class="hash" x="16" y="42">346c983 checkpoint/02</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 454)">
+          <rect width="290" height="54"></rect>
+          <text class="title" x="16" y="23">auth onboarding transition</text>
+          <text class="hash" x="16" y="42">962fe4d checkpoint/03</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 404)">
+          <rect width="275" height="54"></rect>
+          <text class="title" x="16" y="23">smooth dashboard reveal</text>
+          <text class="hash" x="16" y="42">2ca7aae checkpoint/04</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 354)">
+          <rect width="275" height="54"></rect>
+          <text class="title" x="16" y="23">global auth terminal</text>
+          <text class="hash" x="16" y="42">9350c05 checkpoint/05</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 304)">
+          <rect width="300" height="54"></rect>
+          <text class="title" x="16" y="23">persistent terminal reveal</text>
+          <text class="hash" x="16" y="42">9c5e457 checkpoint/06</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 234)">
+          <rect width="320" height="54"></rect>
+          <text class="title" x="16" y="23">persistence verifier</text>
+          <text class="hash" x="16" y="42">80f53b7 checkpoint/07</text>
+        </g>
+
+        <g class="node checkpoint" transform="translate(70 184)">
+          <rect width="310" height="54"></rect>
+          <text class="title" x="16" y="23">server plan reset</text>
+          <text class="hash" x="16" y="42">b8d6447 checkpoint/08</text>
+        </g>
+
+        <!-- mainline nodes -->
+        <g class="node" transform="translate(485 674)">
+          <rect width="210" height="48"></rect>
+          <text class="title" x="16" y="22">main line starts</text>
+          <text class="hash" x="16" y="39">b24df08</text>
+        </g>
+
+        <g class="node" transform="translate(480 574)">
+          <rect width="230" height="56"></rect>
+          <text class="title" x="16" y="23">course limits</text>
+          <text class="hash" x="16" y="43">0f8191a</text>
+        </g>
+
+        <g class="node" transform="translate(468 474)">
+          <rect width="255" height="56"></rect>
+          <text class="title" x="16" y="23">Stripe + billing sync</text>
+          <text class="hash" x="16" y="43">cbba9bb</text>
+        </g>
+
+        <g class="node" transform="translate(464 374)">
+          <rect width="265" height="56"></rect>
+          <text class="title" x="16" y="23">auth dashboard merge</text>
+          <text class="hash" x="16" y="43">d6bc39e</text>
+        </g>
+
+        <g class="node" transform="translate(462 274)">
+          <rect width="270" height="56"></rect>
+          <text class="title" x="16" y="23">AI workspace actions</text>
+          <text class="hash" x="16" y="43">142cd54</text>
+        </g>
+
+        <g class="node" transform="translate(452 174)">
+          <rect width="292" height="56"></rect>
+          <text class="title" x="16" y="23">guided onboarding flow</text>
+          <text class="hash" x="16" y="43">31e7bb5</text>
+        </g>
+
+        <g class="node head" transform="translate(432 54)">
+          <rect width="338" height="72"></rect>
+          <text class="title" x="18" y="25">current HEAD: setting-page-redesign</text>
+          <text class="hash" x="18" y="45">4a901bc also main, origin/main</text>
+          <text class="small" x="18" y="62">Update onboarding checkpoint metadata</text>
+        </g>
+
+        <!-- branch refs near head -->
+        <text class="branch-label head-label" x="790" y="82">main</text>
+        <text class="branch-label head-label" x="790" y="105">origin/main</text>
+        <text class="branch-label head-label" x="790" y="128">test-prompts-4a901bc</text>
+
+        <!-- work branch -->
+        <g class="node work" transform="translate(820 334)">
+          <rect width="285" height="70"></rect>
+          <text class="title" x="16" y="25">work/auth-transition-from-06</text>
+          <text class="hash" x="16" y="45">3202e2e</text>
+          <text class="small" x="16" y="61">merged back into main</text>
+        </g>
+
+        <!-- stash -->
+        <g class="node stash" transform="translate(900 480)">
+          <rect width="245" height="70"></rect>
+          <text class="title" x="16" y="25">stash@{0}</text>
+          <text class="hash" x="16" y="45">wip auth transition</text>
+          <text class="small" x="16" y="61">from 2026-06-21</text>
+        </g>
+
+        <!-- checkpoint current -->
+        <g class="node checkpoint" transform="translate(835 40)">
+          <rect width="270" height="64"></rect>
+          <text class="title" x="16" y="24">checkpoint-current</text>
+          <text class="hash" x="16" y="44">1184935</text>
+          <text class="small" x="16" y="58">ahead of current HEAD</text>
+        </g>
+
+        <!-- dirty state -->
+        <g class="node dirty" transform="translate(890 112)">
+          <rect width="245" height="72"></rect>
+          <text class="title dirty-label" x="16" y="25">dirty working tree</text>
+          <text class="hash" x="16" y="45">39 modified</text>
+          <text class="hash" x="128" y="45">19 untracked</text>
+          <text class="small" x="16" y="62">local files not committed</text>
+        </g>
+
+        <!-- notes -->
+        <text class="small" x="28" y="728">Read upward: older commits at bottom, current branch near top. Dashed orange lines are checkpoint refs.</text>
+      </svg>
+    </section>
+  </main>
+</body>
+</html>

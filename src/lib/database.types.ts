@@ -18,6 +18,11 @@ export type CourseRecord = {
   checkpoint: string;
   description: string | null;
   progress: number;
+  required_section_count: number;
+  languages?: string[] | null;
+  tags?: string[] | null;
+  course_content?: unknown | null;
+  content_generation_state?: "roadmap" | "first_chapter" | "full_course" | null;
   status: "active" | "archived";
   created_at: string;
   updated_at: string;
@@ -46,6 +51,8 @@ export type ChatMessageRecord = {
   role: "user" | "assistant";
   content: string;
   lesson_index: number | null;
+  message_kind: "chat" | "lesson-intro" | "exercise-hint";
+  generated_key: string | null;
   created_at: string;
 };
 

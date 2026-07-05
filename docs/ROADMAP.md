@@ -53,7 +53,7 @@ Status: done for paid-beta foundation; polish remains.
 - authenticated tutor endpoint. Done.
 - usage tracking. Done.
 - streaming. Done.
-- provider routing for OpenAI/OpenRouter. Done.
+- OpenAI Responses API routing for tutor, generation, and grading. Done.
 - direct AI file edits. Done.
 - safe active-file terminal execution. Done.
 - undo for last AI file-edit batch. Done.

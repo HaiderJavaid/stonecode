@@ -3,8 +3,11 @@ import { extractAiFileEdits, extractAiRunCommand, AiFileEdit } from "@/ai/fileEd
 import { requestTutorReplyStream } from "@/ai/tutorClient";
 import { useAuth } from "@/auth/AuthProvider";
 import { Course } from "@/data/courses";
+import { LessonStep } from "@/components/stonecode/lessonData";
+import { IndependentExercise } from "@/features/exercises/challengeData";
 import {
   createStoredMessage,
+  StoredChatMessage,
   StoredCourseState
 } from "@/services/courseStorage";
 import { createSupabaseChatMessage } from "@/services/supabaseCourseStorage";
@@ -29,8 +32,126 @@ export function useTutorChat({
   const isSupabaseBacked = isConfigured && Boolean(user);
 
   async function updateCourseChat(course: Course, message: string, lessonIndex: number) {
-    const userMessage = createStoredMessage("user", message, lessonIndex);
-    const assistantMessage = createStoredMessage("assistant", "", lessonIndex);
+    await streamTutorMessage({
+      course,
+      userMessage: message,
+      lessonIndex,
+      requestKind: "chat"
+    });
+  }
+
+  async function requestLessonIntro(course: Course, lessonIndex: number, lesson: LessonStep) {
+    const generatedKey = `lesson-intro:${lesson.sectionId ?? lessonIndex}`;
+    if ((storedState.chatByCourse[course.id] ?? []).some((message) => message.generatedKey === generatedKey)) return;
+    await streamTutorMessage({
+      course,
+      userMessage: `Generate the first teaching message for section ${lessonIndex + 1}: ${lesson.title}.`,
+      lessonIndex,
+      requestKind: "lesson_intro",
+      messageKind: "lesson-intro",
+      generatedKey,
+      persistUserMessage: false,
+      lesson: {
+        index: lessonIndex,
+        title: lesson.title,
+        label: lesson.label,
+        kind: lesson.kind,
+        sectionId: lesson.sectionId,
+        moduleId: lesson.moduleId,
+        topicId: lesson.topicId,
+        blockId: lesson.blockId,
+        blockKind: lesson.blockKind,
+        blockStepIndex: lesson.blockStepIndex,
+        blockStepCount: lesson.blockStepCount
+      }
+    });
+  }
+
+  async function requestExerciseHint(course: Course, exercise: IndependentExercise, question: string, code: string) {
+    const generatedKey = `exercise-hint:${exercise.id}:${getLocalDateKey()}`;
+    const existing = (storedState.chatByCourse[course.id] ?? []).find((message) => message.generatedKey === generatedKey);
+    if (existing?.content) return existing.content;
+    const reply = await streamTutorMessage({
+      course,
+      userMessage: question,
+      lessonIndex: undefined,
+      requestKind: "exercise_hint",
+      messageKind: "exercise-hint",
+      generatedKey,
+      persistUserMessage: false,
+      exercise: {
+        id: exercise.id,
+        title: exercise.title,
+        scenario: exercise.scenario,
+        acceptanceCriteria: exercise.acceptanceCriteria,
+        language: exercise.language,
+        topic: exercise.topic,
+        difficulty: exercise.difficulty,
+        xp: exercise.xp,
+        currentCode: code
+      }
+    });
+    return reply;
+  }
+
+  async function requestExerciseTemplate(course: Course, exercise: IndependentExercise, code: string) {
+    const currentFiles = storedState.workspaceFilesByCourse[course.id] ?? [];
+    return requestTutorReplyStream(
+      {
+        course,
+        files: currentFiles,
+        currentFile: currentFiles[active?.fileIndex ?? 0] ?? null,
+        recentMessages: storedState.chatByCourse[course.id] ?? [],
+        userMessage: "Create a concise fill-in template for this exercise answer.",
+        requestKind: "exercise_template",
+        exercise: {
+          id: exercise.id,
+          title: exercise.title,
+          scenario: exercise.scenario,
+          acceptanceCriteria: exercise.acceptanceCriteria,
+          language: exercise.language,
+          topic: exercise.topic,
+          difficulty: exercise.difficulty,
+          xp: exercise.xp,
+          currentCode: code
+        }
+      },
+      {
+        onDelta() {
+          // Template drafts are inserted into the composer, not the saved chat transcript.
+        }
+      }
+    );
+  }
+
+  async function streamTutorMessage({
+    course,
+    userMessage: message,
+    lessonIndex,
+    requestKind,
+    messageKind = "chat",
+    generatedKey = null,
+    persistUserMessage = true,
+    lesson,
+    exercise
+  }: {
+    course: Course;
+    userMessage: string;
+    lessonIndex?: number;
+    requestKind: "chat" | "lesson_intro" | "exercise_hint" | "exercise_template";
+    messageKind?: StoredChatMessage["messageKind"];
+    generatedKey?: string | null;
+    persistUserMessage?: boolean;
+    lesson?: Parameters<typeof requestTutorReplyStream>[0]["lesson"];
+    exercise?: Parameters<typeof requestTutorReplyStream>[0]["exercise"];
+  }) {
+    const existingGenerated = generatedKey
+      ? (storedState.chatByCourse[course.id] ?? []).find((entry) => entry.generatedKey === generatedKey)
+      : null;
+    if (existingGenerated?.content) return existingGenerated.content;
+
+    const userMessage = persistUserMessage ? createStoredMessage("user", message, lessonIndex) : null;
+    const assistantMessage = createStoredMessage("assistant", "", lessonIndex, { messageKind, generatedKey });
     const currentFiles = storedState.workspaceFilesByCourse[course.id] ?? [];
 
     setStoredState((current) => ({
@@ -39,12 +160,12 @@ export function useTutorChat({
         ...current.chatByCourse,
         [course.id]: [
           ...(current.chatByCourse[course.id] ?? []),
-          userMessage,
+          ...(userMessage ? [userMessage] : []),
           assistantMessage
         ]
       }
     }));
-    persistChatMessage(course.id, "user", message, lessonIndex);
+    if (userMessage) persistChatMessage(course.id, "user", message, lessonIndex, "chat", null);
     setTypingMessageId(assistantMessage.id);
 
     let reply: string;
@@ -54,8 +175,11 @@ export function useTutorChat({
           course,
           files: currentFiles,
           currentFile: currentFiles[active?.fileIndex ?? 0] ?? null,
-          recentMessages: [...(storedState.chatByCourse[course.id] ?? []), userMessage],
-          userMessage: message
+          recentMessages: [...(storedState.chatByCourse[course.id] ?? []), ...(userMessage ? [userMessage] : [])],
+          userMessage: message,
+          requestKind,
+          lesson,
+          exercise
         },
         {
           onDelta(chunk) {
@@ -121,13 +245,21 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
       }));
     }
 
-    persistChatMessage(course.id, "assistant", finalReply, lessonIndex);
+    persistChatMessage(course.id, "assistant", finalReply, lessonIndex, messageKind, generatedKey);
     setTypingMessageId(null);
+    return finalReply;
   }
 
-  function persistChatMessage(courseId: string, role: "user" | "assistant", content: string, lessonIndex: number) {
+  function persistChatMessage(
+    courseId: string,
+    role: "user" | "assistant",
+    content: string,
+    lessonIndex: number | undefined,
+    messageKind: StoredChatMessage["messageKind"] = "chat",
+    generatedKey: string | null = null
+  ) {
     if (!isSupabaseBacked) return;
-    createSupabaseChatMessage({ courseId, role, content, lessonIndex }).catch(() => {
+    createSupabaseChatMessage({ courseId, role, content, lessonIndex, messageKind, generatedKey }).catch(() => {
       // Local UI should keep working when persistence fails; reload will expose durable state.
     });
   }
@@ -156,9 +288,16 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
     typingMessageId,
     finishTyping,
     updateCourseChat,
+    requestLessonIntro,
+    requestExerciseHint,
+    requestExerciseTemplate,
     updateLessonView,
     updateLessonStep
   };
+}
+
+function getLocalDateKey() {
+  return new Date().toLocaleDateString("en-CA");
 }
 
 function formatFinalReply(reply: string, appliedCount: number, didRunFile: boolean) {
@@ -167,5 +306,5 @@ function formatFinalReply(reply: string, appliedCount: number, didRunFile: boole
   const notes = [];
   if (appliedCount) notes.push(`applied ${appliedCount} file edit${appliedCount === 1 ? "" : "s"}`);
   if (didRunFile) notes.push("ran the active file in the terminal");
-  return `${baseReply}\n\n_Stonecode ${notes.join(" and ")}._`;
+  return `${baseReply}\n\n_Tutor ${notes.join(" and ")}._`;
 }

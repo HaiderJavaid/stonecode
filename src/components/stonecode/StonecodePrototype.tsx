@@ -8,7 +8,9 @@ import { useSubscriptionState } from "@/hooks/useSubscriptionState";
 import { useTerminalRunner } from "@/hooks/useTerminalRunner";
 import { useTutorChat } from "@/hooks/useTutorChat";
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+
+const dashboardBootStorageKey = "stonecode.dashboardBooted.v1";
 
 export function StonecodePrototype({
   authRevealActive = false,
@@ -24,7 +26,10 @@ export function StonecodePrototype({
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [isFinalizingSetup, setIsFinalizingSetup] = useState(false);
-  const [isBooting, setIsBooting] = useState(true);
+  const [isBooting, setIsBooting] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.sessionStorage.getItem(dashboardBootStorageKey) !== "true";
+  });
   const [dashboardRevealReady, setDashboardRevealReady] = useState(!authRevealActive);
   const workspace = useCourseWorkspace();
   const subscriptionState = useSubscriptionState();
@@ -37,6 +42,7 @@ export function StonecodePrototype({
     onRunActiveFile: () => terminal.runFile(workspace.selectedFile, "AI")
   });
   const isSettingsView = settingsSection !== null;
+  const settingsReturnPath = workspace.active?.courseId ? `/courses/${workspace.active.courseId}` : "/dashboard";
 
   useEffect(() => {
     if (!authRevealActive) return;
@@ -65,14 +71,11 @@ export function StonecodePrototype({
   }, [authRevealActive, workspace.isWorkspaceReady]);
 
   useEffect(() => {
+    if (!isBooting) return;
     const frame = window.requestAnimationFrame(() => setIsBooting(false));
+    window.sessionStorage.setItem(dashboardBootStorageKey, "true");
     return () => window.cancelAnimationFrame(frame);
-  }, []);
-
-  async function handleSignOut() {
-    await auth.signOut();
-    navigate("/login", { replace: true });
-  }
+  }, [isBooting]);
 
   async function handleResetDemoState() {
     try {
@@ -97,7 +100,7 @@ export function StonecodePrototype({
 
   return (
     <main
-      className={`scene${workspace.active ? " has-panel" : ""}${authRevealActive ? " auth-reveal-active" : ""}${dashboardRevealReady ? " auth-dashboard-ready" : ""}${isBooting ? " is-booting" : ""}`}
+      className={`scene${workspace.active ? " has-panel" : ""}${isSettingsView ? " is-settings" : ""}${authRevealActive ? " auth-reveal-active" : ""}${dashboardRevealReady ? " auth-dashboard-ready" : ""}${isBooting ? " is-booting" : ""}`}
       aria-label="Stonecode programming tutor workspace"
       style={{ "--code-light": workspace.activeCourse?.light ?? 1 } as React.CSSProperties}
     >
@@ -106,10 +109,11 @@ export function StonecodePrototype({
       <div className="light light-b" aria-hidden="true" />
 
       <CourseWorkspace
-        active={isSettingsView ? null : workspace.active}
-        activeCourse={isSettingsView ? null : workspace.activeCourse}
-        activeFiles={isSettingsView ? [] : workspace.activeFiles}
-        activeFolders={isSettingsView ? [] : workspace.activeFolders}
+        active={workspace.active}
+        activeCourse={workspace.activeCourse}
+        activeFiles={workspace.activeFiles}
+        activeFolders={workspace.activeFolders}
+        activeLessonIndex={workspace.activeCourse ? workspace.storedState.lessonStepByCourse[workspace.activeCourse.id] ?? 0 : 0}
         isRunningCode={terminal.isRunningCode}
         onClearTerminal={terminal.clearTerminal}
         onCreateFile={workspace.createWorkspaceFile}
@@ -121,13 +125,18 @@ export function StonecodePrototype({
         onRenameFile={workspace.renameWorkspaceFile}
         onRun={terminal.runActiveFile}
         onSelectFile={workspace.selectFile}
+        onLessonNavigate={(lessonIndex) => {
+          if (!workspace.activeCourse) return;
+          tutor.updateLessonStep(workspace.activeCourse.id, lessonIndex);
+          tutor.updateLessonView(workspace.activeCourse.id, "resume");
+        }}
         planName={subscriptionState.subscription.planName}
-        selectedFile={isSettingsView ? null : workspace.selectedFile}
+        selectedFile={workspace.selectedFile}
         terminalLogs={terminal.terminalLogs}
         userEmail={auth.user?.email ?? "stonecode.dev"}
       />
 
-      {isSettingsView && settingsSection ? <SettingsScene section={settingsSection} /> : null}
+      {isSettingsView && settingsSection ? <SettingsScene returnPath={settingsReturnPath} section={settingsSection} /> : null}
 
       {!isSettingsView && (
         <aside className="side-note" aria-label="Figma order note">
@@ -139,21 +148,6 @@ export function StonecodePrototype({
         </aside>
       )}
 
-      <details className="session-menu">
-        <summary aria-label="Open profile menu">
-          <span>{auth.user?.email?.[0]?.toUpperCase() ?? "S"}</span>
-        </summary>
-        <nav aria-label="Profile menu">
-          <strong>{auth.user?.email ?? "Stonecode user"}</strong>
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/settings/overview">Settings</Link>
-          <Link to="/settings/profile">Profile</Link>
-          <Link to="/settings/billing">Billing</Link>
-          <Link to="/settings/usage">Usage</Link>
-          <Link to="/settings/support">Support</Link>
-          <button onClick={handleSignOut} type="button">Sign out</button>
-        </nav>
-      </details>
       {workspace.canUndoAiEdit && (
         <button className="session-logout ai-undo-edit" onClick={workspace.undoLastAiEdit} type="button">
           Undo AI edit
@@ -171,7 +165,12 @@ export function StonecodePrototype({
           onCardKeyDown={workspace.handleCardKey}
           onChat={tutor.updateCourseChat}
           onCloseCourse={workspace.closeCourse}
+          onExerciseHint={tutor.requestExerciseHint}
+          onExerciseTemplate={tutor.requestExerciseTemplate}
+          onGenerateChapter={workspace.generateCourseChapter}
+          onLoadExerciseFile={workspace.loadExerciseFile}
           onLessonIndexChange={tutor.updateLessonStep}
+          requestLessonIntro={tutor.requestLessonIntro}
           onOpenSetup={() => {
             setSetupError(null);
             setIsSetupOpen(true);

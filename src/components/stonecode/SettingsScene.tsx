@@ -1,8 +1,14 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { useSubscriptionState } from "@/hooks/useSubscriptionState";
 import { useUsageSummary } from "@/hooks/useUsageSummary";
+import { useProgression } from "@/hooks/useProgression";
+import {
+  equipProgressionTitle,
+  ProgressionHeatmapDay
+} from "@/services/progression";
+import { StoneSurface } from "@/components/stonecode/StoneSurface";
 
 export type StonecodeSettingsSection = "overview" | "profile" | "billing" | "usage" | "security" | "support";
 
@@ -22,38 +28,24 @@ const codingJourney = [
   { label: "HTML/CSS", streak: "11 day streak", progress: 0.72, note: "Layout, forms, responsive polish" }
 ];
 
-const overviewActivity = [
-  { title: "Asked tutor", detail: "Explain BFS complexity", age: "15m ago" },
-  { title: "Edited file", detail: "graph.ts", age: "48m ago" },
-  { title: "Ran code", detail: "queue.ts", age: "1h ago" },
-  { title: "Completed checkpoint", detail: "Trees and traversal", age: "Yesterday" }
-];
-
-export function SettingsScene({ section }: { section: StonecodeSettingsSection }) {
+export function SettingsScene({ section, returnPath = "/dashboard" }: { section: StonecodeSettingsSection; returnPath?: string }) {
   const auth = useAuth();
   const navigate = useNavigate();
   const { subscription, isLoading, error } = useSubscriptionState();
-  const { usage, isLoading: isUsageLoading, error: usageError } = useUsageSummary(section === "usage" || section === "overview");
+  const { usage, error: usageError } = useUsageSummary(section === "usage");
+  const {
+    progression,
+    isLoading: isProgressionLoading,
+    error: progressionError,
+    refresh: refreshProgression
+  } = useProgression();
+  const [languageFilter, setLanguageFilter] = useState("All");
   const [billingError, setBillingError] = useState<string | null>(null);
   const [isBillingActionPending, setIsBillingActionPending] = useState(false);
   const userEmail = auth.user?.email ?? "stonecode.dev";
   const joinedAt = auth.user?.created_at ? new Date(auth.user.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "Recently";
   const isVerified = Boolean(auth.user?.email_confirmed_at);
   const userInitial = userEmail[0]?.toUpperCase() ?? "S";
-  const monthlyUsage = useMemo(() => {
-    const tutorMessages = Math.max(usage.totalTutorMessages, 1);
-    const planCap = subscription.aiMessagesPerMonth > 0 ? subscription.aiMessagesPerMonth : tutorMessages;
-    const usageRatio = Math.min(tutorMessages / planCap, 1);
-    const successRatio = tutorMessages > 0 ? usage.statusCounts.success / tutorMessages : 0;
-    const blockedRatio = tutorMessages > 0 ? usage.statusCounts.blocked / tutorMessages : 0;
-
-    return [
-      { label: "Tutor messages", value: usage.totalTutorMessages, suffix: ` / ${subscription.aiMessagesPerMonth === 0 ? "Unlimited" : subscription.aiMessagesPerMonth}`, ratio: usageRatio },
-      { label: "Successful replies", value: usage.statusCounts.success, suffix: " completed", ratio: successRatio },
-      { label: "Blocked actions", value: usage.statusCounts.blocked, suffix: " guarded", ratio: blockedRatio }
-    ];
-  }, [subscription.aiMessagesPerMonth, usage]);
-
   async function handleSignOut() {
     await auth.signOut();
     navigate("/login", { replace: true });
@@ -103,9 +95,14 @@ export function SettingsScene({ section }: { section: StonecodeSettingsSection }
     }
   }
 
+  async function handleEquipTitle(badgeId: string) {
+    await equipProgressionTitle(badgeId);
+    await refreshProgression();
+  }
+
   return (
     <>
-      <aside className="settings-scene-nav settings-pane" aria-label="Settings navigation">
+      <StoneSurface as="aside" variant="side" className="settings-scene-nav settings-pane" aria-label="Settings navigation">
         <div className="settings-scene-brand">
           <div className="settings-scene-mark" aria-hidden="true">
             <StonecodeGlyph />
@@ -141,9 +138,9 @@ export function SettingsScene({ section }: { section: StonecodeSettingsSection }
             <span>{subscription.planName}</span>
           </div>
         </div>
-      </aside>
+      </StoneSurface>
 
-      <section className="settings-scene-main settings-pane" aria-label="Account overview">
+      <StoneSurface as="section" variant="main" className="settings-scene-main settings-pane" aria-label="Account overview">
         <header className="settings-scene-header">
           <div>
             <h1>{sectionTitleMap[section]}</h1>
@@ -163,87 +160,100 @@ export function SettingsScene({ section }: { section: StonecodeSettingsSection }
                     <div className="settings-profile-meta">
                       <small>Member since {joinedAt}</small>
                       {isVerified && <em>Email verified</em>}
+                      {progression.equippedTitle && <em>{progression.equippedTitle}</em>}
                     </div>
                   </div>
                 </div>
-                <button className="settings-quiet-button" type="button">Edit profile</button>
+                <button className="settings-quiet-button" onClick={() => navigate(returnPath)} type="button">Close</button>
+              </section>
+
+              <div className="settings-two-column">
+                <SolvedExercisesCard
+                  byDifficulty={progression.byDifficulty}
+                  isLoading={isProgressionLoading}
+                  solved={progression.solvedExercises}
+                />
+
+                <section className="settings-card progression-badge-card">
+                  <div className="settings-card-heading">
+                    <div>
+                      <span>Badges</span>
+                      <strong>{progression.badges.length}</strong>
+                    </div>
+                    <small>Earned titles</small>
+                  </div>
+                  {progression.badges.length ? (
+                    <div className="progression-badge">
+                      <div className="progression-badge-shape"><BadgeIcon /><span>01</span></div>
+                      <span>Most recent badge</span>
+                      <strong>{progression.badges.at(-1)?.title}</strong>
+                      <button
+                        disabled={progression.equippedBadgeId === progression.badges.at(-1)?.id}
+                        onClick={() => void handleEquipTitle(progression.badges.at(-1)?.id ?? "")}
+                        type="button"
+                      >
+                        {progression.equippedBadgeId === progression.badges.at(-1)?.id ? "Equipped" : "Use as title"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="progression-empty">
+                      <strong>No badges yet</strong>
+                      <span>Complete your first verified exercise to earn First Steps.</span>
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              <section className="settings-card progression-heatmap-card">
+                <div className="progression-heatmap-head">
+                  <div>
+                    <strong>{progression.solvedExercises}</strong>
+                    <span>accepted exercises in the last year</span>
+                  </div>
+                  <div className="progression-heatmap-stats">
+                    <span>Active days: <strong>{progression.heatmap.filter((day) => day.xp > 0).length}</strong></span>
+                    <span>Current streak: <strong>{progression.currentStreak}</strong></span>
+                    <select aria-label="Filter activity by language" onChange={(event) => setLanguageFilter(event.target.value)} value={languageFilter}>
+                      <option>All</option>
+                      {progression.languageXp.map((item) => <option key={item.language}>{item.language}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <ProgressionHeatmap days={progression.heatmap} language={languageFilter} />
               </section>
 
               <div className="settings-two-column">
                 <section className="settings-card">
                   <div className="settings-card-heading">
                     <div>
-                      <span>Current plan</span>
-                      <strong>{isLoading ? "Loading..." : subscription.planName}</strong>
+                      <span>Language XP</span>
+                      <strong>{progression.totalXp} XP</strong>
                     </div>
-                    <small>{subscription.status}</small>
                   </div>
-                  <p>{planCopy(subscription.plan)}</p>
-                  <div className="settings-inline-actions">
-                    <button disabled={isBillingActionPending} onClick={() => openCheckout("basic")} type="button">Basic</button>
-                    <button disabled={isBillingActionPending} onClick={() => openCheckout("pro")} type="button">Pro</button>
-                    <button disabled={isBillingActionPending || subscription.plan === "free"} onClick={openBillingPortal} type="button">Portal</button>
-                  </div>
+                  <LanguageXpList items={progression.languageXp} totalXp={progression.totalXp} />
                 </section>
 
-                <section className="settings-card">
+                <section className="settings-card progression-courses-card">
                   <div className="settings-card-heading">
                     <div>
-                      <span>Usage this month</span>
-                      <strong>{usage.totalTutorMessages}</strong>
+                      <span>Courses completed</span>
+                      <strong>{progression.completedCourses}</strong>
                     </div>
-                    <small>{isUsageLoading ? "Syncing..." : "Live"}</small>
+                    <TrophyIcon />
                   </div>
-                  <div className="settings-meter-list">
-                    {monthlyUsage.map((item) => (
-                      <UsageBar item={item} key={item.label} />
-                    ))}
+                  <div className="progression-empty compact">
+                    <strong>{progression.completedCourses ? "Course milestones recorded" : "No completed courses yet"}</strong>
+                    <span>Every required syllabus section must be completed.</span>
                   </div>
                 </section>
               </div>
-
-              <div className="settings-two-column">
-                <section className="settings-card">
-                  <div className="settings-card-heading">
-                    <div>
-                      <span>Coding journey</span>
-                      <strong>By language</strong>
-                    </div>
-                    <small>Static beta preview</small>
-                  </div>
-                  <div className="journey-list">
-                    {codingJourney.map((item) => (
-                      <div className="journey-row" key={item.label}>
-                        <div>
-                          <strong>{item.label}</strong>
-                          <span>{item.note}</span>
-                        </div>
-                        <small>{item.streak}</small>
-                        <div className="journey-meter"><i style={{ width: `${item.progress * 100}%` }} /></div>
-                      </div>
-                    ))}
-                  </div>
+              {progressionError && (
+                <section className="settings-card progression-error">
+                  <strong>Progression unavailable</strong>
+                  <span>{progressionError}</span>
+                  <button onClick={() => void refreshProgression()} type="button">Retry</button>
                 </section>
-
-                <section className="settings-card">
-                  <div className="settings-card-heading">
-                    <div>
-                      <span>Security shortcuts</span>
-                      <strong>Account controls</strong>
-                    </div>
-                  </div>
-                  <div className="security-shortcuts">
-                    <button className="settings-shortcut" type="button" onClick={() => navigate("/settings/security")}>
-                      <div><strong>Security</strong><span>Password reset and session control</span></div>
-                      <small>Open</small>
-                    </button>
-                    <button className="settings-shortcut" type="button" onClick={() => navigate("/settings/usage")}>
-                      <div><strong>Usage</strong><span>Track tutor requests and plan guardrails</span></div>
-                      <small>Open</small>
-                    </button>
-                  </div>
-                </section>
-              </div>
+              )}
             </>
           )}
 
@@ -370,48 +380,122 @@ export function SettingsScene({ section }: { section: StonecodeSettingsSection }
             </section>
           )}
         </div>
-      </section>
+      </StoneSurface>
 
-      <aside className="settings-scene-rail settings-pane" aria-label="Recent activity">
+      <StoneSurface as="aside" variant="card" className="settings-scene-rail settings-pane" aria-label="Progress summary">
         <div className="settings-rail-section">
           <div className="settings-card-heading">
             <div>
-              <span>Recent activity</span>
-              <strong>Last touches</strong>
+              <span>Your environment</span>
+              <strong>Stonecode</strong>
+            </div>
+            <button className="settings-rail-refresh" onClick={() => void refreshProgression()} type="button">Refresh</button>
+          </div>
+          <div className="settings-environment-header">
+            <div className="settings-environment-mark"><StonecodeGlyph /></div>
+            <div className="settings-environment-title">
+              <strong>stonecode</strong>
+              <span>v1.0.0 · {subscription.planName}</span>
             </div>
           </div>
-          <div className="settings-activity-list">
-            {overviewActivity.map((item) => (
-              <div className="settings-activity-row" key={`${item.title}-${item.age}`}>
-                <div className="settings-activity-icon" aria-hidden="true" />
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </div>
-                <small>{item.age}</small>
-              </div>
-            ))}
+          <div className="settings-environment-stats">
+            <EnvironmentStat label="Courses completed" value={progression.completedCourses} />
+            <EnvironmentStat label="Current streak" value={`${progression.currentStreak} days`} />
+            <EnvironmentStat label="Total XP" value={progression.totalXp} />
+            <EnvironmentStat label="Exercises solved" value={progression.solvedExercises} />
+            <EnvironmentStat label="Title" value={progression.equippedTitle ?? "Unranked"} />
           </div>
         </div>
 
         <div className="settings-rail-section">
-          <span className="settings-pane-label">This month</span>
-          <div className="settings-mini-metrics">
-            <UsageStat label="Messages" value={usage.totalTutorMessages} compact />
-            <UsageStat label="Success" value={usage.statusCounts.success} compact />
+          <span className="settings-pane-label">Sync status</span>
+          <div className="settings-sync-status">
+            <div className="settings-sync-icon">✓</div>
+            <div>
+              <strong>{progressionError ? "Sync needs attention" : "All changes synced"}</strong>
+              <span>{isProgressionLoading ? "Refreshing..." : progression.latestActivityAt ? "Progress saved" : "Ready"}</span>
+            </div>
           </div>
         </div>
-
-        <div className="settings-rail-section">
-          <span className="settings-pane-label">Storage</span>
-          <div className="settings-storage-row">
-            <strong>2.4 MB</strong>
-            <span>workspace files and notes</span>
-          </div>
-        </div>
-      </aside>
+      </StoneSurface>
     </>
   );
+}
+
+function SolvedExercisesCard({
+  byDifficulty,
+  isLoading,
+  solved
+}: {
+  byDifficulty: Record<"Beginner" | "Intermediate" | "Advanced", number>;
+  isLoading: boolean;
+  solved: number;
+}) {
+  const maximum = Math.max(...Object.values(byDifficulty), 1);
+  return (
+    <section className="settings-card progression-solved-card">
+      <div className="settings-card-heading">
+        <div><span>Solved exercises</span><strong>{isLoading ? "…" : solved}</strong></div>
+      </div>
+      <div className="progression-solved-layout">
+        <div className="progression-ring" style={{ "--ring-progress": `${Math.min(solved * 12, 100)}%` } as React.CSSProperties}>
+          <div><strong>{solved}</strong><span>Solved</span></div>
+        </div>
+        <div className="progression-difficulty-list">
+          {(Object.entries(byDifficulty) as Array<[keyof typeof byDifficulty, number]>).map(([label, value], index) => (
+            <div className="progression-difficulty" key={label}>
+              <div><span>{label}</span><strong>{value}</strong></div>
+              <i><b className={`tone-${index + 1}`} style={{ width: `${(value / maximum) * 100}%` }} /></i>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProgressionHeatmap({ days, language }: { days: ProgressionHeatmapDay[]; language: string }) {
+  return (
+    <div className="progression-heatmap-wrap">
+      <div className="progression-heatmap" role="img" aria-label={`Yearly XP activity for ${language}`}>
+        {days.map((day) => {
+          const xp = language === "All" ? day.xp : day.languages[language] ?? 0;
+          const band = xp <= 0 ? 0 : xp < 20 ? 1 : xp < 50 ? 2 : xp < 100 ? 3 : 4;
+          return <span className={`heat-band-${band}`} key={day.date} title={`${day.date}: ${xp} XP`} />;
+        })}
+      </div>
+      <div className="progression-heatmap-months">
+        {["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"].map((month) => <span key={month}>{month}</span>)}
+      </div>
+      <div className="progression-heatmap-legend"><span>Less</span>{[0, 1, 2, 3, 4].map((band) => <i className={`heat-band-${band}`} key={band} />)}<span>More</span></div>
+    </div>
+  );
+}
+
+function LanguageXpList({ items, totalXp }: { items: Array<{ language: string; xp: number }>; totalXp: number }) {
+  if (!items.length) return <div className="progression-empty compact"><strong>No language XP yet</strong><span>Verified exercises will appear here.</span></div>;
+  return (
+    <div className="progression-language-list">
+      {items.map((item) => (
+        <div key={item.language}>
+          <p><strong>{item.language}</strong><span>{item.xp} XP</span></p>
+          <i><b style={{ width: `${(item.xp / Math.max(totalXp, 1)) * 100}%` }} /></i>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EnvironmentStat({ label, value }: { label: string; value: number | string }) {
+  return <div><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function BadgeIcon() {
+  return <svg viewBox="0 0 24 24"><circle cx="12" cy="9" fill="none" r="4" stroke="currentColor" strokeWidth="1.6" /><path d="m9 13-1 7 4-2 4 2-1-7" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" /></svg>;
+}
+
+function TrophyIcon() {
+  return <svg className="progression-trophy" viewBox="0 0 24 24"><path d="M8 4h8v4a4 4 0 0 1-8 0V4Z" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M8 6H5v1a4 4 0 0 0 4 4M16 6h3v1a4 4 0 0 1-4 4M12 12v5M8 20h8M10 17h4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" /></svg>;
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -419,22 +503,6 @@ function Field({ label, value }: { label: string; value: string }) {
     <div className="settings-field-card">
       <span>{label}</span>
       <strong>{value}</strong>
-    </div>
-  );
-}
-
-function UsageBar({
-  item
-}: {
-  item: { label: string; value: number; suffix: string; ratio: number };
-}) {
-  return (
-    <div className="usage-bar">
-      <div className="usage-bar-copy">
-        <span>{item.label}</span>
-        <strong>{item.value}{item.suffix}</strong>
-      </div>
-      <div className="usage-bar-track"><i style={{ width: `${Math.max(item.ratio * 100, item.value > 0 ? 12 : 0)}%` }} /></div>
     </div>
   );
 }
@@ -470,7 +538,7 @@ function planCopy(plan: string) {
 }
 
 const sectionTitleMap: Record<StonecodeSettingsSection, string> = {
-  overview: "Account overview",
+  overview: "Progression overview",
   profile: "Profile",
   billing: "Billing",
   usage: "Usage",
@@ -479,7 +547,7 @@ const sectionTitleMap: Record<StonecodeSettingsSection, string> = {
 };
 
 const sectionDescriptionMap: Record<StonecodeSettingsSection, string> = {
-  overview: "Manage profile, subscription, streaks, and account controls without leaving the Stonecode scene.",
+  overview: "XP, streaks, activity, languages, completed courses, badges, and earned titles.",
   profile: "Learner identity, current focus, and workspace-facing defaults.",
   billing: "Plan state, upgrades, and billing portal access for the paid beta.",
   usage: "Tutor activity, usage guardrails, and practice trend snapshots.",

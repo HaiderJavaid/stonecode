@@ -3,35 +3,16 @@ import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, Extension } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import { drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { loadEditorLanguageExtension } from "@/services/editorLanguages";
 
 type StoneEditorProps = {
   filePath: string;
   value: string;
   onChange: (value: string) => void;
 };
-
-async function languageForPath(filePath: string): Promise<Extension> {
-  const normalizedPath = filePath.toLowerCase();
-
-  if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(normalizedPath)) {
-    const { javascript } = await import("@codemirror/lang-javascript");
-    return javascript({ jsx: /\.(jsx|tsx)$/.test(normalizedPath), typescript: /\.(ts|tsx)$/.test(normalizedPath) });
-  }
-  if (/\.pyw?$/.test(normalizedPath)) return (await import("@codemirror/lang-python")).python();
-  if (/\.html?$/.test(normalizedPath)) return (await import("@codemirror/lang-html")).html();
-  if (/\.css$/.test(normalizedPath)) return (await import("@codemirror/lang-css")).css();
-  if (/\.json$/.test(normalizedPath)) return (await import("@codemirror/lang-json")).json();
-  if (/\.(md|mdx)$/.test(normalizedPath)) return (await import("@codemirror/lang-markdown")).markdown();
-  if (/\.sql$/.test(normalizedPath)) return (await import("@codemirror/lang-sql")).sql();
-  if (/\.java$/.test(normalizedPath)) return (await import("@codemirror/lang-java")).java();
-  if (/\.(c|h|cc|cpp|cxx|hpp)$/.test(normalizedPath)) return (await import("@codemirror/lang-cpp")).cpp();
-  if (/\.php$/.test(normalizedPath)) return (await import("@codemirror/lang-php")).php();
-
-  return [];
-}
 
 const stoneHighlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: "rgba(150, 184, 242, 0.58)" },
@@ -78,7 +59,7 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
           background: "transparent",
           color: "rgba(218, 218, 212, 0.46)",
           fontFamily: "\"SF Mono\", \"IBM Plex Mono\", \"Roboto Mono\", ui-monospace, monospace",
-          fontSize: "clamp(7px, 0.68vw, 10px)"
+          fontSize: "clamp(9px, 0.78vw, 12px)"
         },
         ".cm-scroller": {
           height: "100%",
@@ -154,7 +135,7 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
   useEffect(() => {
     let isCancelled = false;
 
-    languageForPath(filePath).then((language) => {
+    loadEditorLanguageExtension(filePath).then((language) => {
       if (isCancelled || !viewRef.current) return;
       viewRef.current.dispatch({
         effects: languageCompartmentRef.current.reconfigure(language)

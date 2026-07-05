@@ -6,6 +6,8 @@ export type StoredChatMessage = {
   role: "user" | "assistant";
   content: string;
   lessonIndex?: number;
+  messageKind?: "chat" | "lesson-intro" | "exercise-hint";
+  generatedKey?: string | null;
 };
 
 export type StoredCourseState = {
@@ -75,12 +77,15 @@ export function clearCourseState(): void {
 export function createStoredMessage(
   role: StoredChatMessage["role"],
   content: string,
-  lessonIndex?: number
+  lessonIndex?: number,
+  options: Pick<StoredChatMessage, "messageKind" | "generatedKey"> = {}
 ): StoredChatMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     role,
     content,
-    lessonIndex
+    lessonIndex,
+    messageKind: options.messageKind ?? "chat",
+    generatedKey: options.generatedKey ?? null
   };
 }

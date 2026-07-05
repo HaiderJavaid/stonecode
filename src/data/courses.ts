@@ -15,6 +15,7 @@ export type Course = {
   languages: string[];
   tags: string[];
   syllabus: CourseSyllabusSection[];
+  courseContent?: GeneratedCourseContent | null;
 };
 
 export type CourseSyllabusSection = {
@@ -24,6 +25,123 @@ export type CourseSyllabusSection = {
   lessonIndex: number;
   hasChallenge: boolean;
 };
+
+export type GeneratedCourseContent = GeneratedCourseContentV1 | GeneratedCourseContentV2;
+
+export type GeneratedCourseContentV1 = {
+  schemaVersion: "course-content/v1";
+  title: string;
+  subject: string;
+  description: string;
+  languages: string[];
+  tags: string[];
+  generationDepth: "roadmap_first_chapter" | "full_course";
+  chapters: GeneratedCourseChapter[];
+};
+
+export type GeneratedCourseContentV2 = {
+  schemaVersion: "course-content/v2";
+  title: string;
+  subject: string;
+  description: string;
+  languages: string[];
+  tags: string[];
+  generationDepth: "full_course";
+  assessmentReview: GeneratedAssessmentReview;
+  courseBlueprint?: GeneratedCourseBlueprint;
+  ragSources?: GeneratedCourseRagSource[];
+  modules: GeneratedCourseModule[];
+};
+
+export type GeneratedAssessmentReview = {
+  strengths: string[];
+  gaps: string[];
+  suggestedModules: string[];
+};
+
+export type GeneratedCourseBlueprint = {
+  finalProject: {
+    title: string;
+    description: string;
+    capabilities: string[];
+  };
+  miniProjects: Array<{
+    title: string;
+    moduleId?: string;
+    topicId?: string;
+    blockKind?: string;
+    connectsTo: string;
+  }>;
+  conceptSequence: string[];
+  prerequisiteBridges: string[];
+  moduleGoals: Array<{
+    moduleId?: string;
+    goal: string;
+  }>;
+};
+
+export type GeneratedCourseRagSource = {
+  id: string;
+  title: string;
+  sourceType: string;
+  url?: string;
+};
+
+export type GeneratedCourseModule = {
+  id: string;
+  title: string;
+  summary: string;
+  order: number;
+  unlocked: boolean;
+  topics: GeneratedCourseTopic[];
+};
+
+export type GeneratedCourseTopic = {
+  id: string;
+  title: string;
+  summary: string;
+  order: number;
+  unlocked: boolean;
+  blocks: GeneratedCourseLearningBlock[];
+};
+
+export type GeneratedCourseLearningBlock = {
+  id: string;
+  kind: "theory" | "quiz" | "workshop" | "lab" | "project" | "review";
+  title: string;
+  summary: string;
+  order: number;
+  steps: GeneratedCourseStep[];
+};
+
+export type GeneratedCourseStep =
+  | { type: "theory" | "analogy" | "example" | "summary"; markdown: string }
+  | { type: "mcq"; prompt: string; options: string[]; correctOptionIndex: number; explanation: string }
+  | { type: "reflection"; prompt: string; rubric: string }
+  | { type: "workshop" | "lab" | "project"; language: string; filePath: string; prompt: string; starterCode: string; acceptanceCriteria: string[]; context?: string; requiresPreview?: boolean };
+
+export type GeneratedCourseChapter = {
+  id: string;
+  title: string;
+  summary: string;
+  order: number;
+  sections: GeneratedCourseSection[];
+};
+
+export type GeneratedCourseSection = {
+  id: string;
+  title: string;
+  summary: string;
+  order: number;
+  blocks: GeneratedCourseBlock[];
+};
+
+export type GeneratedCourseBlock =
+  | { type: "theory" | "extra_explanation"; markdown: string }
+  | { type: "mcq"; prompt: string; options: string[]; correctOptionIndex: number; explanation: string }
+  | { type: "chat_exercise"; prompt: string; rubric: string }
+  | { type: "code_exercise"; language: string; filePath: string; prompt: string; starterCode: string; acceptanceCriteria: string[] }
+  | { type: "canvas" | "code_showcase"; language?: string; markdown: string };
 
 export const starterCourseFiles: TopicFile[] = [
   {
@@ -39,6 +157,7 @@ export function createLearningCourse({
   languages,
   tags,
   syllabus,
+  courseContent,
   files = starterCourseFiles
 }: {
   title: string;
@@ -47,6 +166,7 @@ export function createLearningCourse({
   languages?: string[];
   tags?: string[];
   syllabus?: CourseSyllabusSection[];
+  courseContent?: GeneratedCourseContent | null;
   files?: TopicFile[];
 }): Course {
   const slug = title
@@ -69,10 +189,74 @@ export function createLearningCourse({
     files,
     lastMessage: "Start with your generated learning plan.",
     updatedAt: "Today",
-    languages: languages ?? metadata.languages,
-    tags: tags ?? metadata.tags,
-    syllabus: syllabus ?? metadata.syllabus
+    languages: courseContent?.languages ?? languages ?? metadata.languages,
+    tags: courseContent?.tags ?? tags ?? metadata.tags,
+    syllabus: courseContent ? buildSyllabusFromGeneratedContent(courseContent) : syllabus ?? metadata.syllabus,
+    courseContent: courseContent ?? null
   };
+}
+
+export function buildSyllabusFromGeneratedContent(content: GeneratedCourseContent): CourseSyllabusSection[] {
+  if (content.schemaVersion === "course-content/v2") return buildSyllabusFromGeneratedContentV2(content);
+
+  let lessonIndex = 0;
+  return content.chapters.flatMap((chapter, chapterIndex) =>
+    chapter.sections.flatMap((section) => {
+      const blocks = section.blocks.length ? section.blocks : [null];
+      return blocks.map((block, blockIndex) => ({
+        id: block ? `${section.id}:${blockIndex}` : section.id,
+        title: `${chapterIndex + 1}.${lessonIndex + 1} ${block ? blockTitle(section.title, block.type) : section.title}`,
+        summary: block ? blockSummary(section.summary, block.type) : section.summary,
+        lessonIndex: lessonIndex++,
+        hasChallenge: Boolean(block && (block.type === "mcq" || block.type === "chat_exercise" || block.type === "code_exercise"))
+      }));
+    })
+  );
+}
+
+function buildSyllabusFromGeneratedContentV2(content: GeneratedCourseContentV2): CourseSyllabusSection[] {
+  let lessonIndex = 0;
+  return content.modules.flatMap((module, moduleIndex) =>
+    module.topics.flatMap((topic, topicIndex) =>
+      topic.blocks.flatMap((block) =>
+        block.steps.map((step, stepIndex) => ({
+          id: `${module.id}:${topic.id}:${block.id}:${stepIndex}`,
+          title: `${moduleIndex + 1}.${topicIndex + 1} ${stepTitle(block.title, step.type)}`,
+          summary: stepSummary(block.summary, step.type),
+          lessonIndex: lessonIndex++,
+          hasChallenge: step.type === "mcq" || step.type === "reflection" || step.type === "workshop" || step.type === "lab" || step.type === "project"
+        }))
+      )
+    )
+  );
+}
+
+function stepTitle(blockTitleText: string, type: GeneratedCourseStep["type"]) {
+  if (type === "mcq") return `${blockTitleText} check`;
+  if (type === "reflection") return `${blockTitleText} written check`;
+  if (type === "workshop" || type === "lab" || type === "project") return `${blockTitleText} editor exercise`;
+  return blockTitleText;
+}
+
+function stepSummary(blockSummaryText: string, type: GeneratedCourseStep["type"]) {
+  if (type === "mcq") return "Answer a quick multiple-choice check before continuing.";
+  if (type === "reflection") return "Explain the idea in your own words for tutor review.";
+  if (type === "workshop" || type === "lab" || type === "project") return "Use the active IDE file as a whiteboard and submit runnable code.";
+  return blockSummaryText;
+}
+
+function blockTitle(sectionTitle: string, type: GeneratedCourseBlock["type"]) {
+  if (type === "mcq") return `${sectionTitle} check`;
+  if (type === "chat_exercise") return `${sectionTitle} written check`;
+  if (type === "code_exercise") return `${sectionTitle} editor exercise`;
+  return sectionTitle;
+}
+
+function blockSummary(sectionSummary: string, type: GeneratedCourseBlock["type"]) {
+  if (type === "mcq") return "Answer a quick multiple-choice check before continuing.";
+  if (type === "chat_exercise") return "Explain the idea in your own words for tutor review.";
+  if (type === "code_exercise") return "Use the active IDE file as a whiteboard and submit runnable code.";
+  return sectionSummary;
 }
 
 export function createDefaultCourseMetadata(subject: string): Pick<Course, "languages" | "tags" | "syllabus"> {

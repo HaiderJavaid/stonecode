@@ -1,8 +1,9 @@
 import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { AiFileEdit, applyAiFileEdits } from "@/ai/fileEditCommands";
-import { Course } from "@/data/courses";
+import { Course, GeneratedCourseContent, buildSyllabusFromGeneratedContent } from "@/data/courses";
+import { requestGeneratedChapter } from "@/services/courseGeneration";
 import {
   clearCourseState,
   defaultStoredCourseState,
@@ -24,13 +25,21 @@ import {
   saveSupabaseWorkspaceState
 } from "@/services/supabaseCourseStorage";
 import { ActiveState } from "@/components/stonecode/types";
+import { defaultFilePath } from "@/services/editorLanguages";
+
+const lastOpenCourseStorageKey = "stonecode.lastOpenCourseId.v1";
 
 export function useCourseWorkspace() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { isConfigured, user } = useAuth();
-  const [active, setActive] = useState<ActiveState | null>(null);
-  const [storedState, setStoredState] = useState<StoredCourseState>(() => loadCourseState());
+  const initialStateRef = useRef<StoredCourseState | null>(null);
+  if (!initialStateRef.current) initialStateRef.current = loadCourseState();
+  const [storedState, setStoredState] = useState<StoredCourseState>(() => initialStateRef.current ?? defaultStoredCourseState);
+  const [active, setActive] = useState<ActiveState | null>(() =>
+    resolveInitialActiveState(initialStateRef.current ?? defaultStoredCourseState, courseId, location.pathname)
+  );
   const [lastAiEditSnapshot, setLastAiEditSnapshot] = useState<{
     courseId: string;
     files: WorkspaceFile[];
@@ -126,11 +135,17 @@ export function useCourseWorkspace() {
   }, [isSupabaseBacked, user]);
 
   useEffect(() => {
-    const course = isRemoteLoaded || !isSupabaseBacked ? (courseId ? storedState.coursesById[courseId] : null) : null;
+    if (isSupabaseBacked && !isRemoteLoaded) return;
+    const fallbackCourseId = location.pathname.startsWith("/settings")
+      ? storedState.activeCourseId ?? readLastOpenCourseId()
+      : null;
+    const targetCourseId = courseId ?? fallbackCourseId;
+    const course = isRemoteLoaded || !isSupabaseBacked ? (targetCourseId ? storedState.coursesById[targetCourseId] : null) : null;
     if (course) {
       const files = storedState.workspaceFilesByCourse[course.id] ?? [];
       const fileIndex = Math.min(storedState.selectedFilesByCourse[course.id] ?? 0, Math.max(files.length - 1, 0));
       setActive({ courseId: course.id, fileIndex });
+      writeLastOpenCourseId(course.id);
       setStoredState((current) =>
         current.activeCourseId === course.id
           ? current
@@ -143,6 +158,7 @@ export function useCourseWorkspace() {
     }
 
     setActive(null);
+    if (!location.pathname.startsWith("/settings")) writeLastOpenCourseId(null);
     setStoredState((current) =>
       current.activeCourseId === null
         ? current
@@ -155,6 +171,8 @@ export function useCourseWorkspace() {
     courseId,
     isRemoteLoaded,
     isSupabaseBacked,
+    location.pathname,
+    storedState.activeCourseId,
     storedState.coursesById,
     storedState.selectedFilesByCourse,
     storedState.workspaceFilesByCourse
@@ -184,6 +202,7 @@ export function useCourseWorkspace() {
     const files = getCourseFiles(course);
     const fileIndex = Math.min(storedState.selectedFilesByCourse[course.id] ?? 0, Math.max(files.length - 1, 0));
     navigate(`/courses/${course.id}`);
+    writeLastOpenCourseId(course.id);
     setActive({ courseId: course.id, fileIndex });
     setStoredState((current) => ({
       ...current,
@@ -210,20 +229,22 @@ export function useCourseWorkspace() {
       }
     }));
     navigate(`/courses/${nextCourse.id}`);
+    writeLastOpenCourseId(nextCourse.id);
     setActive({ courseId: nextCourse.id, fileIndex: 0 });
   }
 
   function startProject(course: Course) {
-    const readme = createReadme(course);
     setStoredState((current) => ({
       ...current,
       workspaceFilesByCourse: {
         ...current.workspaceFilesByCourse,
-        [course.id]: [{ path: "README.md", content: readme }]
+        [course.id]: current.workspaceFilesByCourse[course.id]?.length
+          ? current.workspaceFilesByCourse[course.id]
+          : [{ path: defaultWhiteboardPath(course), content: "" }]
       },
       workspaceFoldersByCourse: {
         ...current.workspaceFoldersByCourse,
-        [course.id]: [{ path: "lessons" }, { path: "practice" }]
+        [course.id]: current.workspaceFoldersByCourse[course.id] ?? []
       },
       selectedFilesByCourse: {
         ...current.selectedFilesByCourse,
@@ -235,10 +256,12 @@ export function useCourseWorkspace() {
       }
     }));
     setActive({ courseId: course.id, fileIndex: 0 });
+    writeLastOpenCourseId(course.id);
   }
 
   function closeCourse() {
     navigate("/dashboard");
+    writeLastOpenCourseId(null);
     setActive(null);
     setStoredState((current) => ({
       ...current,
@@ -263,6 +286,57 @@ export function useCourseWorkspace() {
     withCourseFiles(activeCourse, (files) => ({
       files: files.map((file, index) => (index === active.fileIndex ? { ...file, content: nextValue } : file))
     }));
+  }
+
+  function loadExerciseFile(course: Course, path: string, content: string) {
+    const normalizedPath = normalizeWorkspacePath(path);
+    if (!normalizedPath) return;
+    let selectedIndex = 0;
+    withCourseFiles(course, (files) => {
+      const dedupedFiles = dedupeWorkspaceFiles(files);
+      const existingIndex = dedupedFiles.findIndex((file) => file.path === normalizedPath);
+      const activeIndex = active?.courseId === course.id ? active.fileIndex : storedState.selectedFilesByCourse[course.id] ?? 0;
+      selectedIndex = existingIndex >= 0 ? existingIndex : Math.min(Math.max(activeIndex, 0), Math.max(dedupedFiles.length - 1, 0));
+      return {
+        files: existingIndex >= 0
+          ? dedupedFiles.map((file, index) => (index === existingIndex ? { ...file, content } : file))
+          : dedupedFiles.length
+            ? dedupedFiles.map((file, index) => (index === selectedIndex ? { path: normalizedPath, content } : file))
+            : [{ path: normalizedPath, content }],
+        selectedIndex
+      };
+    });
+    setActive({ courseId: course.id, fileIndex: selectedIndex });
+  }
+
+  async function generateCourseChapter(course: Course, chapterIndex: number) {
+    if (!course.courseContent) return;
+    const result = await requestGeneratedChapter({
+      courseId: course.id,
+      content: course.courseContent,
+      chapterIndex
+    });
+    updateGeneratedCourseContent(course.id, result.content);
+  }
+
+  function updateGeneratedCourseContent(courseId: string, content: GeneratedCourseContent) {
+    setStoredState((current) => {
+      const course = current.coursesById[courseId];
+      if (!course) return current;
+      return {
+        ...current,
+        coursesById: {
+          ...current.coursesById,
+          [courseId]: {
+            ...course,
+            courseContent: content,
+            languages: content.languages,
+            tags: content.tags,
+            syllabus: buildSyllabusFromGeneratedContent(content)
+          }
+        }
+      };
+    });
   }
 
   function createWorkspaceFile() {
@@ -385,7 +459,7 @@ export function useCourseWorkspace() {
         files: getCourseFiles(course, current),
         selectedIndex: current.selectedFilesByCourse[course.id] ?? 0
       });
-      const result = applyAiFileEdits(getCourseFiles(course, current), edits);
+      const result = applyAiFileEdits(getCourseFiles(course, current), edits, current.selectedFilesByCourse[course.id] ?? 0);
       selectedIndex = result.selectedIndex;
       appliedCount = result.appliedCount;
 
@@ -435,6 +509,7 @@ export function useCourseWorkspace() {
     }
 
     clearCourseState();
+    writeLastOpenCourseId(null);
     setStoredState(defaultStoredCourseState);
     navigate("/dashboard");
     setActive(null);
@@ -474,6 +549,8 @@ export function useCourseWorkspace() {
     closeCourse,
     selectFile,
     updateFileContent,
+    loadExerciseFile,
+    generateCourseChapter,
     createWorkspaceFile,
     createWorkspaceFolder,
     renameWorkspaceFile,
@@ -488,22 +565,45 @@ export function useCourseWorkspace() {
   };
 }
 
+function dedupeWorkspaceFiles(files: WorkspaceFile[]) {
+  const byPath = new Map<string, WorkspaceFile>();
+  for (const file of files) {
+    if (!byPath.has(file.path)) byPath.set(file.path, file);
+  }
+  return [...byPath.values()];
+}
+
+function resolveInitialActiveState(state: StoredCourseState, routeCourseId: string | undefined, pathname: string): ActiveState | null {
+  const fallbackCourseId = pathname.startsWith("/settings")
+    ? state.activeCourseId ?? readLastOpenCourseId()
+    : null;
+  const targetCourseId = routeCourseId ?? fallbackCourseId;
+  if (!targetCourseId || !state.coursesById[targetCourseId]) return null;
+  const files = state.workspaceFilesByCourse[targetCourseId] ?? [];
+  const fileIndex = Math.min(state.selectedFilesByCourse[targetCourseId] ?? 0, Math.max(files.length - 1, 0));
+  return { courseId: targetCourseId, fileIndex };
+}
+
+function readLastOpenCourseId() {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(lastOpenCourseStorageKey);
+}
+
+function writeLastOpenCourseId(courseId: string | null) {
+  if (typeof window === "undefined") return;
+  if (courseId) {
+    window.sessionStorage.setItem(lastOpenCourseStorageKey, courseId);
+  } else {
+    window.sessionStorage.removeItem(lastOpenCourseStorageKey);
+  }
+}
+
 function getBaseName(path: string) {
   return path.split("/").at(-1) ?? path;
 }
 
-function createReadme(course: Course) {
-  return `# ${course.title}
-
-## Course Rules
-
-- Learn in small steps.
-- Ask for hints before full answers.
-- Generate files only when they serve the current lesson.
-- Keep notes in this README as the course evolves.
-
-## Goal
-
-${course.description}
-`;
+function defaultWhiteboardPath(course: Course) {
+  const language = course.languages[0] ?? course.subject;
+  const path = defaultFilePath(language);
+  return path.startsWith("main.") ? path.replace("main.", "whiteboard.") : path;
 }

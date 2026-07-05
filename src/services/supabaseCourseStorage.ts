@@ -1,5 +1,5 @@
 import { User } from "@supabase/supabase-js";
-import { Course, createDefaultCourseMetadata, starterCourseFiles } from "@/data/courses";
+import { Course, GeneratedCourseContent, buildSyllabusFromGeneratedContent, createDefaultCourseMetadata, starterCourseFiles } from "@/data/courses";
 import {
   ChatMessageRecord,
   CourseProgressRecord,
@@ -10,8 +10,13 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { StoredCourseState } from "@/services/courseStorage";
 import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
+import { resetProgression } from "@/services/progression";
 
-type SupabaseCourseDraft = Pick<Course, "title" | "subject" | "mode" | "checkpoint" | "description" | "progress">;
+type SupabaseCourseDraft = Pick<Course, "title" | "subject" | "mode" | "checkpoint" | "description" | "progress" | "syllabus" | "languages" | "tags"> & {
+  courseContent?: GeneratedCourseContent | null;
+};
+
+let chatMessageMetadataSupported: boolean | null = null;
 
 export async function loadSupabaseCourseState(user: User): Promise<StoredCourseState> {
   const client = requireSupabase();
@@ -70,7 +75,9 @@ export async function loadSupabaseCourseState(user: User): Promise<StoredCourseS
         id: message.id,
         role: message.role,
         content: message.content,
-        lessonIndex: message.lesson_index ?? undefined
+        lessonIndex: message.lesson_index ?? undefined,
+        messageKind: message.message_kind ?? "chat",
+        generatedKey: message.generated_key ?? null
       }
     ];
   });
@@ -103,18 +110,31 @@ export async function createSupabaseCourse(_user: User, draft: SupabaseCourseDra
     throw new Error(payload?.error ?? "Failed to create course.");
   }
 
-  return courseRecordToCourse(payload.course as CourseRecord);
+  const createdCourse = courseRecordToCourse(payload.course as CourseRecord);
+  if (draft.courseContent && !createdCourse.courseContent) {
+    return {
+      ...createdCourse,
+      languages: draft.languages,
+      tags: draft.tags,
+      syllabus: draft.syllabus,
+      courseContent: draft.courseContent
+    };
+  }
+  return createdCourse;
 }
 
 export async function resetSupabaseCourses(_user: User): Promise<void> {
   const token = await readAccessToken("reset courses");
 
-  const response = await fetch("/api/courses", {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  });
+  const [response] = await Promise.all([
+    fetch("/api/courses", {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    }),
+    resetProgression()
+  ]);
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -130,26 +150,93 @@ export async function saveSupabaseWorkspaceState(state: StoredCourseState): Prom
       syncWorkspaceFolders(courseId, state.workspaceFoldersByCourse[courseId] ?? []),
       upsertCourseProgress(courseId, {
         lessonIndex: state.lessonStepByCourse[courseId] ?? 0,
-        lessonView: state.lessonViewByCourse[courseId] ?? null,
+        lessonView: normalizePersistedLessonView(state.lessonViewByCourse[courseId] ?? null),
         selectedFilePath: (state.workspaceFilesByCourse[courseId] ?? [])[state.selectedFilesByCourse[courseId] ?? 0]?.path ?? null
       })
     ])
   );
 }
 
+function normalizePersistedLessonView(
+  view: StoredCourseState["lessonViewByCourse"][string]
+): CourseProgressRecord["lesson_view"] {
+  return view === "exercises" ? null : view;
+}
+
 export async function createSupabaseChatMessage({
   courseId,
   role,
   content,
-  lessonIndex
+  lessonIndex,
+  messageKind = "chat",
+  generatedKey = null
 }: {
   courseId: string;
   role: ChatMessageRecord["role"];
   content: string;
   lessonIndex?: number;
+  messageKind?: ChatMessageRecord["message_kind"];
+  generatedKey?: string | null;
 }): Promise<ChatMessageRecord> {
   const client = requireSupabase();
+  const payload = {
+    course_id: courseId,
+    role,
+    content,
+    lesson_index: lessonIndex ?? null,
+    message_kind: messageKind,
+    generated_key: generatedKey
+  };
+  if (chatMessageMetadataSupported === false) {
+    return insertBaseChatMessage({ courseId, role, content, lessonIndex, messageKind, generatedKey });
+  }
+
   const { data, error } = await client
+    .from("chat_messages")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (error && generatedKey && /duplicate|unique|23505/i.test(`${error.message} ${error.code ?? ""}`)) {
+    return {
+      id: generatedKey,
+      course_id: courseId,
+      role,
+      content,
+      lesson_index: lessonIndex ?? null,
+      message_kind: messageKind,
+      generated_key: generatedKey,
+      created_at: new Date().toISOString()
+    };
+  }
+
+  if (error && /message_kind|generated_key|schema cache|PGRST204/i.test(`${error.message} ${error.code ?? ""}`)) {
+    chatMessageMetadataSupported = false;
+    return insertBaseChatMessage({ courseId, role, content, lessonIndex, messageKind, generatedKey });
+  }
+
+  if (error) throw error;
+  chatMessageMetadataSupported = true;
+  return data as ChatMessageRecord;
+}
+
+async function insertBaseChatMessage({
+  courseId,
+  role,
+  content,
+  lessonIndex,
+  messageKind,
+  generatedKey
+}: {
+  courseId: string;
+  role: ChatMessageRecord["role"];
+  content: string;
+  lessonIndex?: number;
+  messageKind: ChatMessageRecord["message_kind"];
+  generatedKey: string | null;
+}): Promise<ChatMessageRecord> {
+  const client = requireSupabase();
+  const fallback = await client
     .from("chat_messages")
     .insert({
       course_id: courseId,
@@ -159,17 +246,33 @@ export async function createSupabaseChatMessage({
     })
     .select("*")
     .single();
-
-  if (error) throw error;
-  return data as ChatMessageRecord;
+  if (fallback.error && generatedKey && /duplicate|unique|23505/i.test(`${fallback.error.message} ${fallback.error.code ?? ""}`)) {
+    return {
+      id: generatedKey,
+      course_id: courseId,
+      role,
+      content,
+      lesson_index: lessonIndex ?? null,
+      message_kind: messageKind,
+      generated_key: generatedKey,
+      created_at: new Date().toISOString()
+    };
+  }
+  if (fallback.error) throw fallback.error;
+  return {
+    ...(fallback.data as ChatMessageRecord),
+    message_kind: messageKind,
+    generated_key: generatedKey
+  };
 }
 
 export async function syncWorkspaceFiles(courseId: string, files: WorkspaceFile[]): Promise<void> {
   const client = requireSupabase();
+  const uniqueFiles = dedupeByPath(files);
   const { data, error } = await client.from("workspace_files").select("path").eq("course_id", courseId);
   if (error) throw error;
 
-  const nextPaths = new Set(files.map((file) => file.path));
+  const nextPaths = new Set(uniqueFiles.map((file) => file.path));
   const removedPaths = ((data ?? []) as Pick<WorkspaceFileRecord, "path">[])
     .map((file) => file.path)
     .filter((path) => !nextPaths.has(path));
@@ -179,9 +282,9 @@ export async function syncWorkspaceFiles(courseId: string, files: WorkspaceFile[
     if (deleteError) throw deleteError;
   }
 
-  if (!files.length) return;
+  if (!uniqueFiles.length) return;
   const { error: upsertError } = await client.from("workspace_files").upsert(
-    files.map((file) => ({
+    uniqueFiles.map((file) => ({
       course_id: courseId,
       path: file.path,
       content: file.content,
@@ -194,10 +297,11 @@ export async function syncWorkspaceFiles(courseId: string, files: WorkspaceFile[
 
 export async function syncWorkspaceFolders(courseId: string, folders: WorkspaceFolder[]): Promise<void> {
   const client = requireSupabase();
+  const uniqueFolders = dedupeByPath(folders);
   const { data, error } = await client.from("workspace_folders").select("path").eq("course_id", courseId);
   if (error) throw error;
 
-  const nextPaths = new Set(folders.map((folder) => folder.path));
+  const nextPaths = new Set(uniqueFolders.map((folder) => folder.path));
   const removedPaths = ((data ?? []) as Pick<WorkspaceFolderRecord, "path">[])
     .map((folder) => folder.path)
     .filter((path) => !nextPaths.has(path));
@@ -207,9 +311,9 @@ export async function syncWorkspaceFolders(courseId: string, folders: WorkspaceF
     if (deleteError) throw deleteError;
   }
 
-  if (!folders.length) return;
+  if (!uniqueFolders.length) return;
   const { error: upsertError } = await client.from("workspace_folders").upsert(
-    folders.map((folder) => ({
+    uniqueFolders.map((folder) => ({
       course_id: courseId,
       path: folder.path,
       updated_at: new Date().toISOString()
@@ -217,6 +321,14 @@ export async function syncWorkspaceFolders(courseId: string, folders: WorkspaceF
     { onConflict: "course_id,path" }
   );
   if (upsertError) throw upsertError;
+}
+
+function dedupeByPath<T extends { path: string }>(items: T[]): T[] {
+  const byPath = new Map<string, T>();
+  for (const item of items) {
+    if (!byPath.has(item.path)) byPath.set(item.path, item);
+  }
+  return [...byPath.values()];
 }
 
 export async function upsertCourseProgress(
@@ -265,6 +377,7 @@ async function selectProgressByCourseIds(courseIds: string[]): Promise<CoursePro
 
 function courseRecordToCourse(record: CourseRecord): Course {
   const metadata = createDefaultCourseMetadata(record.subject);
+  const courseContent = isGeneratedCourseContent(record.course_content) ? record.course_content : null;
   return {
     id: record.id,
     title: record.title,
@@ -277,8 +390,19 @@ function courseRecordToCourse(record: CourseRecord): Course {
     files: starterCourseFiles,
     lastMessage: "Resume your learning workspace.",
     updatedAt: formatUpdatedAt(record.updated_at),
-    ...metadata
+    languages: courseContent?.languages ?? record.languages ?? metadata.languages,
+    tags: courseContent?.tags ?? record.tags ?? metadata.tags,
+    syllabus: courseContent ? buildSyllabusFromGeneratedContent(courseContent) : metadata.syllabus,
+    courseContent
   };
+}
+
+function isGeneratedCourseContent(value: unknown): value is GeneratedCourseContent {
+  if (!value || typeof value !== "object") return false;
+  const content = value as GeneratedCourseContent;
+  if (content.schemaVersion === "course-content/v1") return Array.isArray(content.chapters);
+  if (content.schemaVersion === "course-content/v2") return Array.isArray(content.modules);
+  return false;
 }
 
 function formatUpdatedAt(value: string): string {

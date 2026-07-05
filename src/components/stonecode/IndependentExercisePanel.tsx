@@ -1,160 +1,234 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Course } from "@/data/courses";
 import { PlanTier } from "@/lib/database.types";
-import { getIndependentExercises } from "@/features/exercises/challengeData";
-import {
-  completeExercise,
-  createExerciseSession,
-  ExerciseSession,
-  failExerciseAttempt,
-  normalizeExerciseDay,
-  requestExerciseHint,
-  skipExercise
-} from "@/features/exercises/exerciseSession";
+import { getIndependentExercises, IndependentExercise } from "@/features/exercises/challengeData";
+import { useProgression } from "@/hooks/useProgression";
+import { mutateExerciseProgression } from "@/services/progression";
+import { renderMarkdown } from "@/components/stonecode/markdown";
 
-export function IndependentExercisePanel({ course, plan }: { course: Course; plan: PlanTier }) {
+export function IndependentExercisePanel({
+  course,
+  plan,
+  activeCode,
+  onLoadExerciseFile,
+  requestExerciseHint,
+  requestExerciseTemplate
+}: {
+  course: Course;
+  plan: PlanTier;
+  activeCode: string;
+  onLoadExerciseFile: (path: string, content: string) => void;
+  requestExerciseHint: (exercise: IndependentExercise, question: string, code: string) => Promise<string>;
+  requestExerciseTemplate: (exercise: IndependentExercise, code: string) => Promise<string>;
+}) {
   const exercises = getIndependentExercises(course);
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const exercise = exercises[exerciseIndex % exercises.length];
-  const [code, setCode] = useState(exercise.starterCode);
   const [feedback, setFeedback] = useState("Run your solution when the acceptance criteria are covered.");
   const [hintReply, setHintReply] = useState<string | null>(null);
-  const [session, setSession] = useState<ExerciseSession>(() => loadSession(plan));
-  const dateKey = getLocalDateKey();
-  const currentSession = normalizeExerciseDay(session, dateKey);
-  const exerciseState = currentSession.exerciseStates[exercise.id];
-  const isComplete = Boolean(exerciseState?.completed);
-  const remaining = Math.max(currentSession.dailyCompletionLimit - currentSession.completedToday, 0);
+  const [hintDraft, setHintDraft] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const { progression, isLoading, error, refresh } = useProgression();
+  const exerciseState = progression.attempts.find(
+    (attempt) => attempt.source === "independent" && attempt.exercise_key === exercise.id
+  );
+  const isComplete = exerciseState?.status === "completed";
+  const dailyLimit = plan === "pro" ? 30 : plan === "basic" ? 10 : 2;
+  const remaining = Math.max(dailyLimit - progression.dailyState.completedCount, 0);
+  const exerciseFilePath = resolveExerciseFilePath(exercise);
 
   useEffect(() => {
-    saveSession(currentSession);
-  }, [currentSession]);
+    onLoadExerciseFile(exerciseFilePath, exercise.starterCode);
+  }, [exercise.id]);
 
-  function runExercise() {
-    const passes = exercise.requiredSnippets.every((snippet) => code.toLowerCase().includes(snippet.toLowerCase()));
+  async function runExercise() {
+    setIsPending(true);
     try {
-      const next = passes
-        ? completeExercise(currentSession, exercise.id, dateKey)
-        : failExerciseAttempt(currentSession, exercise.id, dateKey);
-      setSession(next);
-      setFeedback(
-        passes
-          ? `Passed. +${exercise.xp} XP recorded locally for this prototype.`
-          : "Not passing yet. Re-check every acceptance criterion and run again."
-      );
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Unable to record this run.");
+      const result = await mutateExerciseProgression({
+        action: "complete",
+        source: "independent",
+        exerciseKey: exercise.id,
+        courseId: course.id,
+        submission: { code: activeCode }
+      });
+      setFeedback(result.passed
+        ? result.awarded
+          ? `Passed. +${result.xp} XP saved.`
+          : "Previously completed. No duplicate XP awarded."
+        : result.feedback ?? "Not passing yet.");
+      await refresh();
+    } catch (caughtError) {
+      setFeedback(caughtError instanceof Error ? caughtError.message : "Unable to record this run.");
+    } finally {
+      setIsPending(false);
     }
   }
 
   function moveNext() {
     const nextIndex = (exerciseIndex + 1) % exercises.length;
     const nextExercise = exercises[nextIndex];
-    const wasCompleted = Boolean(currentSession.exerciseStates[nextExercise.id]?.completed);
+    const wasCompleted = progression.attempts.some(
+      (attempt) => attempt.source === "independent" && attempt.exercise_key === nextExercise.id && attempt.status === "completed"
+    );
     setExerciseIndex(nextIndex);
-    setCode(nextExercise.starterCode);
     setFeedback(wasCompleted ? "Previously completed. Continue when you want another scenario." : "New scenario loaded. Run your solution when ready.");
     setHintReply(null);
+    setHintDraft("");
   }
 
-  function handleSkip() {
+  async function handleSkip() {
     if (isComplete) {
       moveNext();
       return;
     }
+    setIsPending(true);
     try {
-      setSession(skipExercise(currentSession, dateKey));
+      await mutateExerciseProgression({
+        action: "skip",
+        source: "independent",
+        exerciseKey: exercise.id,
+        courseId: course.id
+      });
+      await refresh();
       moveNext();
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Unable to skip this exercise.");
+    } catch (caughtError) {
+      setFeedback(caughtError instanceof Error ? caughtError.message : "Unable to skip this exercise.");
+    } finally {
+      setIsPending(false);
     }
   }
 
-  function submitHint(event: FormEvent<HTMLFormElement>) {
+  async function submitHint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const question = String(data.get("hint") ?? "").trim();
     if (!question) return;
+    setIsPending(true);
     try {
-      setSession(requestExerciseHint(currentSession, exercise.id, dateKey));
-      setHintReply(`${exercise.hint} Your question was: “${question}”`);
-      event.currentTarget.reset();
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Hint unavailable.");
+      await mutateExerciseProgression({
+        action: "hint",
+        source: "independent",
+        exerciseKey: exercise.id,
+        courseId: course.id
+      });
+      const reply = await requestExerciseHint(exercise, question, activeCode);
+      setHintReply(reply);
+      setHintDraft("");
+      await refresh();
+    } catch (caughtError) {
+      setFeedback(caughtError instanceof Error ? caughtError.message : "Hint unavailable.");
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  async function fillExerciseTemplate() {
+    setIsPending(true);
+    try {
+      const template = await requestExerciseTemplate(exercise, activeCode);
+      setHintDraft(template.trim() || buildExerciseTemplatePlaceholder(exercise));
+    } catch {
+      setHintDraft(buildExerciseTemplatePlaceholder(exercise));
+    } finally {
+      setIsPending(false);
     }
   }
 
   return (
-    <div className="independent-exercise-panel">
-      <header>
-        <div>
-          <span>Independent exercise</span>
-          <strong>{exercise.title}</strong>
+    <div className="lesson-panel ai-chat-panel independent-exercise-panel">
+      <div className="chat-canvas-head">
+        <div className="lesson-progress-copy">
+          <span>{isLoading ? "Syncing" : `${remaining}/${dailyLimit} left`}</span>
         </div>
-        <small>{remaining}/{currentSession.dailyCompletionLimit} completions left today</small>
-      </header>
-      <div className="exercise-meta exercise-session-meta">
-        <span>{exercise.language}</span>
-        <span>{exercise.topic}</span>
-        <span>{exercise.difficulty}</span>
-        <strong>+{exercise.xp} XP</strong>
+        <div className="lesson-progress-track" aria-label={`${remaining} exercise completions left today`}>
+          <i style={{ width: `${Math.min((remaining / Math.max(dailyLimit, 1)) * 100, 100)}%` }} />
+        </div>
+        <div className="exercise-meta exercise-meta-inline" aria-label="Generated exercise tags">
+          <span>{exercise.language || "AI topic"}</span>
+          <span>{exercise.difficulty || "Level pending"}</span>
+          <button aria-label="Fill exercise answer template" className="xp-template-button" disabled={isPending || Boolean(exerciseState?.hint_used)} onClick={fillExerciseTemplate} type="button">
+            EXP
+          </button>
+        </div>
       </div>
-      <section className="exercise-brief">
-        <p>{exercise.scenario}</p>
-        <ul>{exercise.acceptanceCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>
-      </section>
-      <textarea
-        aria-label="Exercise code"
-        className="exercise-code"
-        onChange={(event) => setCode(event.target.value)}
-        spellCheck={false}
-        value={code}
-      />
-      <p className={`exercise-feedback${isComplete ? " is-success" : ""}`}>{feedback}</p>
-      <form className="exercise-hint" onSubmit={submitHint}>
-        {hintReply && <p>{hintReply}</p>}
-        <div>
-          <input
-            aria-label="Ask for one hint"
-            disabled={Boolean(exerciseState?.hintUsed)}
-            name="hint"
-            placeholder={exerciseState?.hintUsed ? "Hint used for this exercise" : "Ask one focused hint question"}
-          />
-          <button disabled={Boolean(exerciseState?.hintUsed)} type="submit">Hint</button>
+
+      <div className="ai-chat-scroll" aria-label={`${exercise.title} exercise chat`}>
+        <div className="ai-message assistant-message ai-response">
+          <h1>{exercise.title}</h1>
+          <h2>Task</h2>
+          <p>{exercise.scenario}</p>
+          <h2>Acceptance</h2>
+          <ul>{exercise.acceptanceCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>
         </div>
-      </form>
-      <div className="exercise-controls">
-        <button onClick={runExercise} type="button">Run</button>
-        <button disabled={!isComplete && currentSession.skipUsedToday} onClick={handleSkip} type="button">
-          {isComplete ? "Next" : currentSession.skipUsedToday ? "Skip used today" : "Skip"}
-        </button>
+        <div className="exercise-editor-note">
+          <strong>Code in the middle editor</strong>
+          <p>Starter loaded at <code>{exerciseFilePath}</code>. Use Run/Submit here after editing the center IDE.</p>
+        </div>
+        <p className={`exercise-feedback${isComplete ? " is-success" : ""}`}>{feedback}</p>
+        {error && <p className="exercise-feedback">{error}</p>}
+        {hintReply && (
+          <div className="ai-message assistant-message ai-response">
+            {renderMarkdown(hintReply)}
+          </div>
+        )}
+      </div>
+
+      <div className="chat-dock">
+        <div className="quick-action-label">Quick actions</div>
+        <div className="reply-suggestions" aria-label="Suggested replies">
+          <button disabled={isPending || Boolean(exerciseState?.hint_used)} onClick={() => setHintDraft("Can you give me one small hint about the next step?")} type="button">
+            {exerciseState?.hint_used ? "Hint used today" : "Ask for a hint"}
+          </button>
+          <button disabled={isPending || Boolean(exerciseState?.hint_used)} onClick={fillExerciseTemplate} type="button">
+            EXP
+          </button>
+        </div>
+        <form className="chat-compose" onSubmit={submitHint}>
+          <textarea
+            aria-label="Ask for one hint"
+            disabled={isPending || Boolean(exerciseState?.hint_used)}
+            name="hint"
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder={exerciseState?.hint_used ? "Hint used today" : "Ask one focused hint question"}
+            rows={2}
+            value={hintDraft}
+            onChange={(event) => setHintDraft(event.currentTarget.value)}
+          />
+          <button disabled={isPending || Boolean(exerciseState?.hint_used)} type="submit">Hint</button>
+        </form>
+        <div className="lesson-controls exercise-controls">
+          <button disabled={isPending} onClick={runExercise} type="button">Run</button>
+          <button disabled={isPending || (!isComplete && progression.dailyState.skipUsed)} onClick={handleSkip} type="button">
+            {isComplete ? "Next" : progression.dailyState.skipUsed ? "Skip used today" : "Skip"}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function getLocalDateKey() {
-  const date = new Date();
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+export function buildExerciseTemplatePlaceholder(exercise: IndependentExercise) {
+  return [
+    `I am working on: ${exercise.title}`,
+    "",
+    "What I tried:",
+    "- [write the code or idea you tried]",
+    "",
+    "Where I am stuck:",
+    "- [describe the exact error, failed check, or confusing step]",
+    "",
+    "Acceptance I am checking:",
+    ...exercise.acceptanceCriteria.map((criterion) => `- ${criterion}: [pass/fail/unsure]`)
+  ].join("\n");
 }
 
-function loadSession(plan: PlanTier): ExerciseSession {
-  const fallback = createExerciseSession(plan, getLocalDateKey());
-  if (typeof window === "undefined") return fallback;
-  try {
-    const value = window.localStorage.getItem("stonecode.exerciseSession.v1");
-    if (!value) return fallback;
-    return {
-      ...normalizeExerciseDay(JSON.parse(value) as ExerciseSession, getLocalDateKey()),
-      dailyCompletionLimit: fallback.dailyCompletionLimit
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function saveSession(session: ExerciseSession) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem("stonecode.exerciseSession.v1", JSON.stringify(session));
+function resolveExerciseFilePath(exercise: IndependentExercise) {
+  const extension = exercise.language.toLowerCase().includes("python") ? "py" : exercise.language.toLowerCase().includes("css") ? "css" : "js";
+  return `practice/${exercise.id}.${extension}`;
 }

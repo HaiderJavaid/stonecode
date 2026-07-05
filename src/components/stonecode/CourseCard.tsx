@@ -1,11 +1,33 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { lessonSteps } from "@/components/stonecode/lessonData";
+import { resolveCourseLessonSteps } from "@/components/stonecode/lessonData";
 import { renderMarkdown } from "@/components/stonecode/markdown";
 import { CourseCardProps } from "@/components/stonecode/types";
-import { useTypedText } from "@/hooks/useTypedText";
 import { CourseHome } from "@/components/stonecode/CourseHome";
-import { CourseRoadmap } from "@/components/stonecode/CourseRoadmap";
 import { IndependentExercisePanel } from "@/components/stonecode/IndependentExercisePanel";
+import { useTypedText } from "@/hooks/useTypedText";
+import { useProgression } from "@/hooks/useProgression";
+import {
+  completeCourseSection,
+  mutateExerciseProgression
+} from "@/services/progression";
+import { StoneSurface } from "@/components/stonecode/StoneSurface";
+
+const coursePanelRevealStorageKey = "stonecode.coursePanelRevealed.v1";
+const lessonIntroAnimationStorageKey = "stonecode.lessonIntroAnimated.v1";
+
+function getLessonIntroAnimationKey(key: string) {
+  return `${lessonIntroAnimationStorageKey}:${key}`;
+}
+
+function readLessonIntroAnimated(key: string) {
+  if (typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(getLessonIntroAnimationKey(key)) === "true";
+}
+
+function markLessonIntroAnimated(key: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(getLessonIntroAnimationKey(key), "true");
+}
 
 export function CourseCard({
   active,
@@ -14,12 +36,19 @@ export function CourseCard({
   course,
   cardIndex,
   chatMessages,
+  activeFileContent,
   fileCount,
   lessonIndex,
+  progress,
   view,
   onOpen,
   onBack,
   onChat,
+  requestLessonIntro,
+  onExerciseHint,
+  onExerciseTemplate,
+  onGenerateChapter,
+  onLoadExerciseFile,
   onLessonIndexChange,
   onViewChange,
   onStartProject,
@@ -28,24 +57,65 @@ export function CourseCard({
   typingMessageId,
   plan
 }: CourseCardProps) {
-  const lesson = lessonSteps[lessonIndex];
-  const [panelContentReady, setPanelContentReady] = useState(false);
+  const courseLessonSteps = useMemo(() => resolveCourseLessonSteps(course), [course]);
+  const safeLessonIndex = Math.min(lessonIndex, Math.max(courseLessonSteps.length - 1, 0));
+  const lesson = courseLessonSteps[safeLessonIndex];
+  const initialPanelReady = Boolean(active && view && hasCoursePanelRevealed(course.id, view));
+  const [panelContentReady, setPanelContentReady] = useState(initialPanelReady);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
+  const [gradingFeedback, setGradingFeedback] = useState<string | null>(null);
+  const [gradingPassed, setGradingPassed] = useState<boolean | null>(null);
+  const [editorExerciseFeedback, setEditorExerciseFeedback] = useState<string | null>(null);
+  const [editorExercisePassed, setEditorExercisePassed] = useState(false);
+  const [editorCriteriaStatus, setEditorCriteriaStatus] = useState<Array<{ label: string; passed: boolean }>>([]);
+  const [criteriaCollapsed, setCriteriaCollapsed] = useState(false);
+  const [isGrading, setIsGrading] = useState(false);
+  const [completedExerciseKeys, setCompletedExerciseKeys] = useState<string[]>([]);
+  const { progression, refresh: refreshProgression } = useProgression(active && view === "resume");
+  const stableLessonKey = lesson.sectionId ?? `${safeLessonIndex}`;
+  const lessonAnimationKey = `${course.id}:${stableLessonKey}:intro`;
+  const [introAnimationDone, setIntroAnimationDone] = useState(() => readLessonIntroAnimated(lessonAnimationKey));
   const canvasMessages = useMemo(
     () => chatMessages.filter((message) => message.lessonIndex === lessonIndex),
     [chatMessages, lessonIndex]
   );
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const requestedIntroKeysRef = useRef<Set<string>>(new Set());
+  const requestedChapterGenerationRef = useRef<Set<string>>(new Set());
+  const loadedCodeExerciseKeysRef = useRef<Set<string>>(new Set());
+  const lessonIntroKey = `lesson-intro:${stableLessonKey}`;
+  const lessonIntroMessage = useMemo(
+    () => canvasMessages.find((message) => message.generatedKey === lessonIntroKey && message.role === "assistant") ?? null,
+    [canvasMessages, lessonIntroKey]
+  );
+  const conversationMessages = useMemo(
+    () => canvasMessages.filter((message) => message.generatedKey !== lessonIntroKey),
+    [canvasMessages, lessonIntroKey]
+  );
   const typingMessage = useMemo(
-    () => canvasMessages.find((message) => message.id === typingMessageId && message.role === "assistant"),
-    [canvasMessages, typingMessageId]
+    () => conversationMessages.find((message) => message.id === typingMessageId && message.role === "assistant"),
+    [conversationMessages, typingMessageId]
   );
   const isProjectStarted = fileCount > 0;
-  const shouldAnimateLesson = active && view === "resume" && panelContentReady;
-  const { typedText: typedLessonContent } = useTypedText(panelContentReady ? lesson.tutor : "", {
-    enabled: shouldAnimateLesson
+  const lessonIntroText = lessonIntroMessage?.content || lesson.tutor || "## Preparing your lesson\nYour personal AI Tutor is generating this section from your course and workspace context.";
+  const shouldAnimateIntro = Boolean(active && view === "resume" && panelContentReady && lessonIntroText && !introAnimationDone);
+  const {
+    typedText: typedLessonIntroText,
+    isTyping: isLessonIntroTyping
+  } = useTypedText(lessonIntroText, {
+    delayMs: 160,
+    enabled: shouldAnimateIntro,
+    maxTicks: 220,
+    minFrameMs: 24,
+    onComplete: () => {
+      markLessonIntroAnimated(lessonAnimationKey);
+      setIntroAnimationDone(true);
+    }
   });
-  const typedLessonMarkup = useMemo(() => renderMarkdown(typedLessonContent), [typedLessonContent]);
+  const lessonIntroMarkup = useMemo(
+    () => renderMarkdown(shouldAnimateIntro ? typedLessonIntroText : lessonIntroText),
+    [lessonIntroText, shouldAnimateIntro, typedLessonIntroText]
+  );
   const typingMessageMarkup = useMemo(
     () => (panelContentReady && typingMessage ? renderMarkdown(typingMessage.content) : null),
     [panelContentReady, typingMessage]
@@ -53,17 +123,17 @@ export function CourseCard({
   const renderedAssistantMessages = useMemo(() => {
     if (!panelContentReady) return new Map();
     return new Map(
-      canvasMessages
+      conversationMessages
         .filter((message) => message.role === "assistant" && message.id !== typingMessageId)
         .map((message) => [message.id, renderMarkdown(message.content)])
     );
-  }, [canvasMessages, panelContentReady, typingMessageId]);
+  }, [conversationMessages, panelContentReady, typingMessageId]);
 
   useEffect(() => {
     const scrollElement = chatScrollRef.current;
     if (!scrollElement) return;
     scrollElement.scrollTop = scrollElement.scrollHeight;
-  }, [canvasMessages, typingMessage?.content]);
+  }, [conversationMessages, typingMessage?.content, lessonIntroMessage?.content]);
 
   useEffect(() => {
     if (!typingMessageId) onTypingComplete();
@@ -72,13 +142,57 @@ export function CourseCard({
   useEffect(() => {
     setPanelContentReady(false);
     setSelectedOptionIndex(null);
+    const existingCompletion = getCompletedLessonState();
+    setGradingFeedback(existingCompletion && lesson.kind !== "terminal-exercise" ? "Completed earlier." : null);
+    setGradingPassed(existingCompletion && lesson.kind !== "terminal-exercise" ? true : null);
+    setEditorExerciseFeedback(existingCompletion && lesson.kind === "terminal-exercise" ? "Completed earlier." : null);
+    setEditorExercisePassed(existingCompletion && lesson.kind === "terminal-exercise");
+    setEditorCriteriaStatus(buildInitialCriteriaStatus(lesson.codeExercise?.acceptanceCriteria));
+    setCriteriaCollapsed(false);
+    setIntroAnimationDone(readLessonIntroAnimated(lessonAnimationKey));
     if (!active || !view) return;
+    if (hasCoursePanelRevealed(course.id, view)) {
+      setPanelContentReady(true);
+      return;
+    }
 
-    const timer = window.setTimeout(() => setPanelContentReady(true), 460);
+    const timer = window.setTimeout(() => {
+      markCoursePanelRevealed(course.id, view);
+      setPanelContentReady(true);
+    }, 460);
     return () => window.clearTimeout(timer);
-  }, [active, course.id, view]);
+  }, [active, course.id, lessonAnimationKey, lesson.kind, stableLessonKey, view]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (!active || view !== "resume" || !panelContentReady) return;
+    if (course.courseContent) return;
+    if (lesson.generatedBlocks) return;
+    if (lessonIntroMessage) return;
+    if (requestedIntroKeysRef.current.has(lessonIntroKey)) return;
+    requestedIntroKeysRef.current.add(lessonIntroKey);
+    void requestLessonIntro(safeLessonIndex, lesson);
+  }, [active, lesson, safeLessonIndex, lessonIntroKey, lessonIntroMessage, requestLessonIntro, panelContentReady, view]);
+
+  useEffect(() => {
+    if (!active || view !== "resume" || !panelContentReady) return;
+    if (!course.courseContent || course.courseContent.schemaVersion !== "course-content/v1" || !lesson.chapterId || !lesson.generatedBlocks || lesson.generatedBlocks.length > 0) return;
+    const chapterIndex = course.courseContent.chapters.findIndex((chapter) => chapter.id === lesson.chapterId);
+    if (chapterIndex < 0) return;
+    const requestKey = `${course.id}:${chapterIndex}`;
+    if (requestedChapterGenerationRef.current.has(requestKey)) return;
+    requestedChapterGenerationRef.current.add(requestKey);
+    void onGenerateChapter(chapterIndex);
+  }, [active, course.courseContent, course.id, lesson.chapterId, lesson.generatedBlocks?.length, onGenerateChapter, panelContentReady, view]);
+
+  useEffect(() => {
+    if (!active || view !== "resume" || !panelContentReady || !lesson.codeExercise) return;
+    const loadKey = `${course.id}:${stableLessonKey}:${lesson.codeExercise.filePath}`;
+    if (loadedCodeExerciseKeysRef.current.has(loadKey)) return;
+    loadedCodeExerciseKeysRef.current.add(loadKey);
+    onLoadExerciseFile(lesson.codeExercise.filePath, lesson.codeExercise.starterCode);
+  }, [active, course.id, lesson.codeExercise, onLoadExerciseFile, panelContentReady, stableLessonKey, view]);
+
+  async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
@@ -88,16 +202,153 @@ export function CourseCard({
     form.reset();
   }
 
+  async function handleWrittenExerciseSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const message = String(formData.get("message") ?? "").trim();
+    if (!message) return;
+    setIsGrading(true);
+    setGradingPassed(null);
+    try {
+      const chatExercise = lesson.generatedBlocks?.find((block) => block.type === "chat_exercise");
+      const result = await mutateExerciseProgression({
+        action: "complete",
+        source: "course-chat",
+        exerciseKey: getExerciseKey(lesson, "chat"),
+        courseId: course.id,
+        submission: {
+          answer: message,
+          prompt: chatExercise?.type === "chat_exercise" ? chatExercise.prompt : lesson.title,
+          rubric: chatExercise?.type === "chat_exercise" ? chatExercise.rubric : undefined
+        }
+      });
+      setGradingPassed(Boolean(result.passed));
+      setGradingFeedback(result.passed
+        ? result.awarded
+          ? `${result.feedback} +${result.xp} XP saved.`
+          : `${result.feedback} Already completed; no duplicate XP.`
+        : result.feedback ?? "Not quite. Review the correction, then continue.");
+      if (result.passed) {
+        markLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "chat"));
+        void refreshProgression();
+      }
+    } catch (caughtError) {
+      setGradingPassed(false);
+      setGradingFeedback(caughtError instanceof Error ? caughtError.message : "Unable to grade this answer.");
+    } finally {
+      setIsGrading(false);
+    }
+  }
+
   function sendSuggestion(message: string) {
     onChat(message, lessonIndex);
   }
 
   function moveLesson(direction: -1 | 1) {
-    onLessonIndexChange(Math.min(Math.max(lessonIndex + direction, 0), lessonSteps.length - 1));
+    const targetLesson = courseLessonSteps[safeLessonIndex + direction] ?? null;
+    if (direction === 1 && targetLesson?.moduleId && lesson.moduleId && targetLesson.moduleId !== lesson.moduleId) return;
+    if (direction === 1) {
+      const currentSection = lesson.sectionId
+        ? course.syllabus.find((section) => section.id === lesson.sectionId)
+        : course.syllabus.find((section) => section.lessonIndex === safeLessonIndex);
+      if (currentSection) void completeCourseSection(course.id, currentSection.id);
+    }
+    onLessonIndexChange(Math.min(Math.max(safeLessonIndex + direction, 0), courseLessonSteps.length - 1));
   }
 
-  const lessonProgress = ((lessonIndex + 1) / lessonSteps.length) * 100;
+  async function gradeMultipleChoice(index: number) {
+    setSelectedOptionIndex(index);
+    setIsGrading(true);
+    try {
+      const result = await mutateExerciseProgression({
+        action: "complete",
+        source: "course-mcq",
+        exerciseKey: getExerciseKey(lesson, "mcq"),
+        courseId: course.id,
+        submission: { answerIndex: index }
+      });
+      setGradingPassed(Boolean(result.passed));
+      setGradingFeedback(result.passed
+        ? result.awarded
+          ? `Correct. +${result.xp} XP saved.`
+          : "Correct. Previously completed; no duplicate XP."
+        : result.feedback ?? "Not quite.");
+      if (result.passed) {
+        markLessonExerciseCompleted("course-mcq", getExerciseKey(lesson, "mcq"));
+        void refreshProgression();
+      }
+    } catch (caughtError) {
+      setGradingFeedback(caughtError instanceof Error ? caughtError.message : "Unable to grade this answer.");
+    } finally {
+      setIsGrading(false);
+    }
+  }
+
+  async function submitEditorExercise() {
+    const code = activeFileContent.trim();
+    if (!code) {
+      setEditorExerciseFeedback("The starter should appear in the middle editor. If it is still empty, go back and reopen this step.");
+      return;
+    }
+    setIsGrading(true);
+    try {
+      const result = await mutateExerciseProgression({
+        action: "complete",
+        source: "course-chat",
+        exerciseKey: getExerciseKey(lesson, "code"),
+        courseId: course.id,
+        submission: { code, prompt: lesson.codeExercise?.prompt }
+      });
+      setEditorCriteriaStatus(evaluateAcceptanceCriteria(code, lesson.codeExercise?.acceptanceCriteria ?? [], Boolean(result.passed)));
+      setEditorExercisePassed(Boolean(result.passed));
+      setEditorExerciseFeedback(result.passed
+        ? result.awarded
+          ? `${result.feedback ?? "Editor exercise verified."} +${result.xp} XP saved.`
+          : `${result.feedback ?? "Editor exercise verified."} Already completed; no duplicate XP.`
+        : result.feedback ?? "Not enough yet. Update the middle editor so the task is runnable before submitting.");
+      if (result.passed) {
+        markLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "code"));
+        void refreshProgression();
+      }
+    } catch (caughtError) {
+      setEditorExerciseFeedback(caughtError instanceof Error ? caughtError.message : "Unable to grade editor code.");
+    } finally {
+      setIsGrading(false);
+    }
+  }
+
+  function handleEditorExercisePrimaryAction() {
+    if (editorExercisePassed || getCompletedLessonState()) {
+      moveLesson(1);
+      return;
+    }
+    void submitEditorExercise();
+  }
+
+  const blockStepIndex = lesson.blockStepIndex ?? safeLessonIndex;
+  const blockStepCount = lesson.blockStepCount ?? courseLessonSteps.length;
+  const lessonProgress = ((blockStepIndex + 1) / Math.max(blockStepCount, 1)) * 100;
   const selectedOption = selectedOptionIndex === null ? null : lesson.options?.[selectedOptionIndex] ?? null;
+  const nextLesson = courseLessonSteps[safeLessonIndex + 1] ?? null;
+  const nextCrossesModule = Boolean(nextLesson?.moduleId && lesson.moduleId && nextLesson.moduleId !== lesson.moduleId);
+  const nextStartsNewBlock = Boolean(nextLesson?.blockId && lesson.blockId && nextLesson.blockId !== lesson.blockId);
+  const nextStartsNewTopic = Boolean(nextLesson?.topicId && lesson.topicId && nextLesson.topicId !== lesson.topicId);
+  const nextStartsNewChapter = Boolean(
+    (nextLesson?.chapterId && lesson.chapterId && nextLesson.chapterId !== lesson.chapterId) ||
+    nextStartsNewTopic
+  );
+  const lessonIntroReady = !isLessonIntroTyping;
+  const currentExerciseCompleted = getCompletedLessonState();
+  const nextDisabled = nextCrossesModule || isLessonIntroTyping || isGrading || (
+    lesson.kind === "multiple-choice"
+      ? gradingPassed === null && !currentExerciseCompleted
+      : lesson.kind === "chat-exercise"
+        ? gradingPassed === null && !currentExerciseCompleted
+        : lesson.kind === "terminal-exercise"
+          ? !editorExercisePassed && !currentExerciseCompleted
+          : false
+  );
 
   const cardClassName = [
     "shadow-card",
@@ -110,7 +361,9 @@ export function CourseCard({
     .join(" ");
 
   return (
-    <article
+    <StoneSurface
+      as="article"
+      variant="card"
       aria-expanded={active}
       className={cardClassName}
       data-course-id={course.id}
@@ -139,9 +392,9 @@ export function CourseCard({
       <div className="card-summary">
         <p>{course.description}</p>
         <div className="progress">
-          <i style={{ width: `${course.progress}%` }} />
+          <i style={{ width: `${progress}%` }} />
         </div>
-        <span className="percent">{course.progress}%</span>
+        <span className="percent">{progress}%</span>
       </div>
       <div className="card-detail">
         {active ? (
@@ -150,7 +403,6 @@ export function CourseCard({
             isProjectStarted={isProjectStarted}
             lessonIndex={lessonIndex}
             onExercises={() => onViewChange("exercises")}
-            onRoadmap={() => onViewChange("progress")}
             onStartOrResume={() => {
               if (isProjectStarted) onViewChange("resume");
               else onStartProject(course);
@@ -175,38 +427,31 @@ export function CourseCard({
             <div className="lesson-panel ai-chat-panel">
               <div className="chat-canvas-head">
                 <div className="lesson-progress-copy">
-                  <span>Section {lessonIndex + 1} / {lessonSteps.length}</span>
+                  <span>Step {blockStepIndex + 1} / {blockStepCount} in this block</span>
                   <span>{Math.round(lessonProgress)}%</span>
                 </div>
-                <div className="lesson-progress-track" aria-label={`${Math.round(lessonProgress)}% course progress`}>
+                <div className="lesson-progress-track" aria-label={`${Math.round(lessonProgress)}% block progress`}>
                   <i style={{ width: `${lessonProgress}%` }} />
                 </div>
-                <span>{lesson.label}</span>
-                <strong>{lesson.title}</strong>
-                {lesson.xp && (
-                  <div className="exercise-meta">
-                    <span>{lesson.language}</span>
-                    <span>{lesson.difficulty}</span>
-                    <strong>+{lesson.xp} XP</strong>
-                  </div>
-                )}
+                <LessonContentMeta lesson={lesson} showXp={isExerciseLesson(lesson)} />
               </div>
               <div className="ai-chat-scroll" aria-label={`${lesson.label} conversation`} ref={chatScrollRef}>
                 <div className="ai-message assistant-message ai-response">
-                  {typedLessonMarkup}
-                  {typedLessonContent.length < lesson.tutor.length && <span className="typing-caret" />}
+                  {lessonIntroMarkup}
+                  {(isLessonIntroTyping || lessonIntroMessage?.id === typingMessageId) && <span className="typing-caret" />}
                 </div>
-                {lesson.kind === "multiple-choice" && (
-                  <div className="lesson-options" aria-label="Answer choices">
+                {lesson.kind === "multiple-choice" && lessonIntroReady && (
+                  <div className="lesson-options is-entering" aria-label="Answer choices">
                     {lesson.options?.map((option, index) => (
                       <button
                         className={[
                           selectedOptionIndex === index ? "is-selected" : "",
-                          selectedOptionIndex !== null && option.correct ? "is-correct" : "",
-                          selectedOptionIndex === index && !option.correct ? "is-incorrect" : ""
+                          selectedOptionIndex === index && gradingPassed === true ? "is-correct" : "",
+                          selectedOptionIndex === index && gradingPassed === false ? "is-incorrect" : ""
                         ].filter(Boolean).join(" ")}
                         key={option.label}
-                        onClick={() => setSelectedOptionIndex(index)}
+                        disabled={isGrading}
+                        onClick={() => void gradeMultipleChoice(index)}
                         type="button"
                       >
                         <span>{String.fromCharCode(65 + index)}</span>
@@ -214,15 +459,13 @@ export function CourseCard({
                       </button>
                     ))}
                     {selectedOption && (
-                      <p className={`option-feedback${selectedOption.correct ? " is-correct" : ""}`}>
-                        {selectedOption.correct
-                          ? `Correct. This answer mutates the original array and earns ${lesson.xp} XP.`
-                          : "Not quite. Look for the operation that changes the existing array instead of returning a new one."}
+                      <p className={`option-feedback${gradingPassed ? " is-correct" : ""}`}>
+                        {gradingFeedback ?? (isGrading ? "Checking answer..." : "Choose an answer to continue.")}
                       </p>
                     )}
                   </div>
                 )}
-                {canvasMessages.map((message) => (
+                {conversationMessages.map((message) => (
                   <div className={`ai-message ${message.role === "assistant" ? "assistant-message ai-response" : "user-message"}`} key={message.id}>
                     {message.role === "assistant" ? (
                       <>
@@ -236,54 +479,241 @@ export function CourseCard({
                 ))}
               </div>
               <div className="chat-dock">
-                <div className="quick-action-label">Quick actions</div>
-                <div className="reply-suggestions" aria-label="Suggested replies">
-                  {lesson.suggestions.map((suggestion) => (
-                    <button key={suggestion} onClick={() => sendSuggestion(suggestion)} type="button">
-                      {suggestion}
+                {(lesson.kind === "theory" || lesson.kind === "canvas") && (
+                  <>
+                    <div className="quick-action-label">Quick actions</div>
+                    <div className="reply-suggestions" aria-label="Suggested replies">
+                      {lesson.suggestions.map((suggestion) => (
+                        <button key={suggestion} disabled={isLessonIntroTyping} onClick={() => sendSuggestion(suggestion)} type="button">
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {lesson.kind === "chat-exercise" && lessonIntroReady && (
+                  <form className="chat-compose written-exercise-form is-entering" onSubmit={handleWrittenExerciseSubmit}>
+                    <textarea
+                      aria-label="Written exercise answer"
+                      name="message"
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                      placeholder="Answer this checkpoint..."
+                      rows={2}
+                    />
+                    <button disabled={isGrading} type="submit">{isGrading ? "Grading..." : "Check"}</button>
+                  </form>
+                )}
+                {lesson.kind === "chat-exercise" && gradingFeedback && (
+                  <p className={`option-feedback${gradingPassed ? " is-correct" : ""}`}>{gradingFeedback}</p>
+                )}
+                {lesson.codeExercise && (
+                  <div className="editor-exercise-actions">
+                    <div className={`editor-exercise-checklist${criteriaCollapsed ? " is-collapsed" : ""}`} aria-label="MVP checklist">
+                      <button
+                        aria-expanded={!criteriaCollapsed}
+                        className="checklist-toggle"
+                        onClick={() => setCriteriaCollapsed((current) => !current)}
+                        type="button"
+                      >
+                        <strong>MVP checklist</strong>
+                        <span>{criteriaCollapsed ? "Show checklist" : "Hide checklist"}</span>
+                      </button>
+                      {!criteriaCollapsed && editorCriteriaStatus.map((criterion) => (
+                        <span className={criterion.passed ? "is-passed" : ""} key={criterion.label}>
+                          <i aria-hidden="true">{criterion.passed ? "ok" : "-"}</i>
+                          {criterion.label}
+                        </span>
+                      ))}
+                    </div>
+                    {lesson.codeExercise.requiresPreview && (
+                      <p className="option-feedback">Use the editor Visual view to inspect the result before submitting.</p>
+                    )}
+                    <button disabled={isGrading} onClick={handleEditorExercisePrimaryAction} type="button">
+                      {isGrading ? "Checking..." : editorExercisePassed || currentExerciseCompleted ? "Submit and next" : "Check"}
                     </button>
-                  ))}
-                </div>
-                <form className="chat-compose" onSubmit={handleSubmit}>
-                  <textarea
-                    aria-label="Chat message"
-                    name="message"
-                    onKeyDown={(event) => {
-                      event.stopPropagation();
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        event.currentTarget.form?.requestSubmit();
-                      }
-                    }}
-                    placeholder="Ask a follow-up or answer the exercise..."
-                    rows={2}
-                  />
-                  <button type="submit">Send</button>
-                </form>
+                    {editorExerciseFeedback && <p className="option-feedback">{editorExerciseFeedback}</p>}
+                  </div>
+                )}
+                {(lesson.kind === "theory" || lesson.kind === "canvas") && (
+                  <form className="chat-compose" onSubmit={handleChatSubmit}>
+                    <textarea
+                      aria-label="Chat message"
+                      name="message"
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                      placeholder="Ask a follow-up..."
+                      rows={2}
+                    />
+                    <button disabled={isGrading || isLessonIntroTyping} type="submit">{isGrading ? "Grading..." : "Send"}</button>
+                  </form>
+                )}
                 <div className="lesson-controls">
-                  <button disabled={lessonIndex === 0} onClick={() => moveLesson(-1)} type="button">Prev</button>
-                  <button disabled={lessonIndex === lessonSteps.length - 1} onClick={() => moveLesson(1)} type="button">
-                    {lessonIndex === lessonSteps.length - 1 ? "Next topic" : "Next section"}
+                  <button disabled={safeLessonIndex === 0} onClick={() => moveLesson(-1)} type="button">Prev</button>
+                  <button className={nextStartsNewChapter ? "next-chapter-button" : ""} disabled={nextDisabled} onClick={() => moveLesson(1)} type="button">
+                    {getNextButtonLabel({ nextCrossesModule, nextLesson, nextStartsNewBlock, nextStartsNewChapter })}
                   </button>
                 </div>
               </div>
             </div>
           )}
-          {panelContentReady && view === "progress" && (
-            <CourseRoadmap
-              course={course}
-              lessonIndex={lessonIndex}
-              onSelectSection={(nextLessonIndex) => {
-                onLessonIndexChange(nextLessonIndex);
-                onViewChange("resume");
-              }}
-            />
-          )}
           {panelContentReady && view === "exercises" && (
-            <IndependentExercisePanel course={course} plan={plan} />
+            <IndependentExercisePanel
+              activeCode={activeFileContent}
+              course={course}
+              onLoadExerciseFile={onLoadExerciseFile}
+              plan={plan}
+              requestExerciseHint={onExerciseHint}
+              requestExerciseTemplate={onExerciseTemplate}
+            />
           )}
         </div>
       )}
-    </article>
+    </StoneSurface>
   );
+
+  function getCompletedLessonState() {
+    if (lesson.kind === "multiple-choice") return isLessonExerciseCompleted("course-mcq", getExerciseKey(lesson, "mcq"));
+    if (lesson.kind === "chat-exercise") return isLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "chat"));
+    if (lesson.kind === "terminal-exercise") return isLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "code"));
+    return false;
+  }
+
+  function isLessonExerciseCompleted(source: "course-mcq" | "course-chat", exerciseKey: string) {
+    const localKey = getCompletedExerciseStorageKey(course.id, source, exerciseKey);
+    return completedExerciseKeys.includes(localKey) || progression.attempts.some((attempt) =>
+      attempt.source === source &&
+      (attempt.exercise_key === exerciseKey || attempt.exercise_key === `${course.id}:${exerciseKey}`) &&
+      attempt.status === "completed"
+    );
+  }
+
+  function markLessonExerciseCompleted(source: "course-mcq" | "course-chat", exerciseKey: string) {
+    const localKey = getCompletedExerciseStorageKey(course.id, source, exerciseKey);
+    setCompletedExerciseKeys((current) => current.includes(localKey) ? current : [...current, localKey]);
+  }
+}
+
+function getNextButtonLabel({
+  nextCrossesModule,
+  nextLesson,
+  nextStartsNewBlock,
+  nextStartsNewChapter
+}: {
+  nextCrossesModule: boolean;
+  nextLesson: ReturnType<typeof resolveCourseLessonSteps>[number] | null;
+  nextStartsNewBlock: boolean;
+  nextStartsNewChapter: boolean;
+}) {
+  if (!nextLesson) return "Finish course";
+  if (nextCrossesModule) return "Module complete";
+  if (nextStartsNewChapter) return "Next topic";
+  if (nextStartsNewBlock) return "Next block";
+  return "Next section";
+}
+
+function buildInitialCriteriaStatus(criteria: string[] | undefined) {
+  return (criteria ?? []).map((label) => ({ label, passed: false }));
+}
+
+function evaluateAcceptanceCriteria(code: string, criteria: string[], forcePassed: boolean) {
+  return criteria.map((label) => ({
+    label,
+    passed: forcePassed || evaluateSingleCriterion(code, label)
+  }));
+}
+
+function evaluateSingleCriterion(code: string, criterion: string) {
+  const normalizedCode = code.toLowerCase();
+  const normalizedCriterion = criterion.toLowerCase();
+  const outputCount = (
+    code.match(/console\.(log|write|writeline)\s*\(|print\s*\(|system\.out\.println|std::cout|printf\s*\(|fmt\.println|println!|puts\s+|echo\s+/gi) ?? []
+  ).length;
+  const functionCallCount = countCallsToDefinedFunctions(code);
+
+  if (!code.trim()) return false;
+  if (/(second|two|2|both|twice)/.test(normalizedCriterion) && /(function|method|call)/.test(normalizedCriterion)) return functionCallCount >= 2;
+  if (/(second|two|2|both|twice)/.test(normalizedCriterion) && /(output|print|log|show|visible|result|call)/.test(normalizedCriterion)) return outputCount >= 2;
+  if (/function|method|named/.test(normalizedCriterion)) {
+    return /(function\s+\w+|=>|def\s+\w+|class\s+\w+|static\s+\w+|func\s+\w+|fn\s+\w+)/i.test(code);
+  }
+  if (/print|log|output|visible|show|readable|result/.test(normalizedCriterion)) return outputCount > 0 || normalizedCode.includes("return ");
+  if (/decision|if|choice/.test(normalizedCriterion)) return /\bif\b|\?|switch|match\s+/i.test(code);
+  if (/value|variable|stores|named/.test(normalizedCriterion)) return /(const|let|var|=|def\s+\w+|string\s+\w+|int\s+\w+|auto\s+\w+)/i.test(code);
+  if (/one file|simple file|same file/.test(normalizedCriterion)) return true;
+  return code.trim().length > 24;
+}
+
+function countCallsToDefinedFunctions(code: string) {
+  const definitionNames = Array.from(code.matchAll(/\b(?:function|def|func|fn)\s+([A-Za-z_]\w*)\s*\(|\bstatic\s+\w+\s+([A-Za-z_]\w*)\s*\(/gi))
+    .map((match) => match[1] || match[2])
+    .filter(Boolean);
+  return definitionNames.reduce((total, name) => {
+    const callMatches = code.match(new RegExp(`\\b${escapeRegExp(name)}\\s*\\(`, "g")) ?? [];
+    return total + Math.max(0, callMatches.length - 1);
+  }, 0);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function LessonContentMeta({
+  lesson,
+  showXp
+}: {
+  lesson: ReturnType<typeof resolveCourseLessonSteps>[number];
+  showXp: boolean;
+}) {
+  const tags = [
+    lesson.label || "AI section",
+    lesson.language || "AI topic",
+    lesson.difficulty || "Level pending"
+  ];
+
+  return (
+    <div className="exercise-meta exercise-meta-inline lesson-content-meta" aria-label="Generated lesson tags">
+      {tags.map((tag) => <span key={tag}>{tag}</span>)}
+      {showXp && <span>{lesson.xp ? `+${lesson.xp} XP` : "XP pending"}</span>}
+    </div>
+  );
+}
+
+function isExerciseLesson(lesson: ReturnType<typeof resolveCourseLessonSteps>[number]) {
+  return lesson.kind === "chat-exercise" || lesson.kind === "multiple-choice" || lesson.kind === "terminal-exercise";
+}
+
+function getExerciseKey(lesson: ReturnType<typeof resolveCourseLessonSteps>[number], type: "mcq" | "chat" | "code") {
+  if (!lesson.sectionId && type === "mcq") return "choose-an-operation";
+  if (!lesson.sectionId && type === "chat") return "explain-edge-cases";
+  if (lesson.blockId && typeof lesson.blockStepIndex === "number") return `${lesson.blockId}:${lesson.blockStepIndex}:${type}`;
+  return `${lesson.sectionId ?? lesson.title}:${type}`;
+}
+
+function getCoursePanelRevealKey(courseId: string, view: string) {
+  return `${coursePanelRevealStorageKey}:${courseId}:${view}`;
+}
+
+function hasCoursePanelRevealed(courseId: string, view: string | null) {
+  if (!view || typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(getCoursePanelRevealKey(courseId, view)) === "true";
+}
+
+function markCoursePanelRevealed(courseId: string, view: string) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(getCoursePanelRevealKey(courseId, view), "true");
+}
+
+function getCompletedExerciseStorageKey(courseId: string, source: "course-mcq" | "course-chat", exerciseKey: string) {
+  return `${courseId}:${source}:${exerciseKey}`;
 }

@@ -24,27 +24,14 @@ assert.deepEqual(events, [
   }
 ]);
 
-const openRouterEvents = [];
-const openRouterParser = createSseEventParser((event) => openRouterEvents.push(event));
-openRouterParser.push('data: {"choices":[{"delta":{"content":"Hi"}}]}\r\n\r\n');
-openRouterParser.push("data: [DONE]\r\n\r\n");
-
-assert.equal(extractTutorStreamDelta("openrouter", openRouterEvents[0]), "Hi");
-assert.equal(isTutorStreamDone("openrouter", openRouterEvents[1]), true);
-
-const openRouterConfig = resolveTutorProviderConfig({
-  LLM_PROVIDER: "openrouter",
-  OPENROUTER_API_KEY: "test-key",
-  OPENROUTER_MODEL: "test/model:free"
+const openAiConfig = resolveTutorProviderConfig({
+  OPENAI_API_KEY: "test-openai-key"
 });
-assert.equal(openRouterConfig.provider, "openrouter");
-assert.equal(openRouterConfig.model, "test/model:free");
-assert.equal(openRouterConfig.apiKey, "test-key");
+assert.equal(openAiConfig.provider, "openai");
+assert.equal(openAiConfig.model, "gpt-5.4-mini");
+assert.equal(openAiConfig.apiKey, "test-openai-key");
 
-const missingOpenRouterConfig = resolveTutorProviderConfig({
-  LLM_PROVIDER: "openrouter",
-  OPENROUTER_API_KEY: "test-key"
-});
-assert.equal(missingOpenRouterConfig.error, "OPENROUTER_MODEL is not configured on the server.");
+const missingOpenAiConfig = resolveTutorProviderConfig({});
+assert.equal(missingOpenAiConfig.error, "OPENAI_API_KEY is not configured on the server.");
 
 console.log("response stream checks passed");

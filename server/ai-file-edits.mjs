@@ -17,7 +17,7 @@ export function extractAiFileEdits(reply) {
   return { displayReply, edits };
 }
 
-export function applyAiFileEdits(files, edits) {
+export function applyAiFileEdits(files, edits, preferredIndex = 0) {
   let nextFiles = files;
   let selectedPath = null;
 
@@ -32,7 +32,13 @@ export function applyAiFileEdits(files, edits) {
       continue;
     }
 
-    nextFiles = [...nextFiles, { path, content: edit.content }];
+    if (nextFiles.length) {
+      const targetIndex = Math.min(Math.max(preferredIndex, 0), nextFiles.length - 1);
+      nextFiles = nextFiles.map((file, index) => (index === targetIndex ? { path, content: edit.content } : file));
+      continue;
+    }
+
+    nextFiles = [{ path, content: edit.content }];
   }
 
   const selectedIndex = selectedPath ? nextFiles.findIndex((file) => file.path === selectedPath) : -1;

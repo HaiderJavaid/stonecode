@@ -33,9 +33,10 @@ assert.equal(applied.selectedIndex, 0);
 assert.equal(applied.appliedCount, 1);
 
 const created = applyAiFileEdits(applied.files, [{ path: "/notes/new.md", content: "New" }]);
-assert.equal(created.files.length, 3);
-assert.equal(created.files[2].path, "notes/new.md");
-assert.equal(created.selectedIndex, 2);
+assert.equal(created.files.length, 2);
+assert.equal(created.files[0].path, "notes/new.md");
+assert.equal(created.files[0].content, "New");
+assert.equal(created.selectedIndex, 0);
 
 const runCommand = extractAiRunCommand("Run it.\n```STONECODE_RUN_ACTIVE_FILE\n```\nDone.");
 assert.equal(runCommand.shouldRunActiveFile, true);

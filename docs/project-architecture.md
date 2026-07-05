@@ -10,7 +10,7 @@
 - Node HTTP app server
 - Supabase client/schema scaffold
 - Stripe server endpoint scaffold
-- LLM provider adapters for OpenAI/OpenRouter tutor streaming
+- OpenAI Responses API adapter for tutor streaming
 
 ## Current Entry Points
 
@@ -37,16 +37,16 @@
 
 ## Workspace Source Map
 
-- `CourseWorkspace`: file panel + IDE + terminal surface.
+- `CourseWorkspace`: file panel + IDE + terminal surface + Code/Visual editor preview toggle.
 - `DashboardPage`: course launcher/cards.
 - `CourseCard`: course details/progress/tutor panel.
-- `FilePanel` and `WorkspaceFileTree`: workspace navigation.
-- `RunTerminal`: browser Worker run output.
+- `FilePanel` and `WorkspaceFileTree`: course tree navigation and file navigation.
+- `RunTerminal`: browser Worker run output for browser-runnable JavaScript only.
+- `editorLanguages`: shared editor language registry for syntax loading, generated file defaults, visual preview support, and run capability.
 - `useCourseWorkspace`: active course, files, folders, local persistence.
 - `useTutorChat`: tutor requests, chat messages, AI file-edit parsing, and AI run triggers.
 - `useTerminalRunner`: safe active-file browser Worker execution state.
 - `CourseHome`: finalized-course overview and primary navigation.
-- `CourseRoadmap`: real syllabus section navigation.
 - `IndependentExercisePanel`: direct-practice interaction.
 - `exerciseSession`: local daily allowance and per-exercise state until backend enforcement exists.
 
@@ -60,11 +60,11 @@ Supabase Auth
 -> Supabase-backed course/files/folders/chat/progress storage
 -> local fallback only when Supabase is unavailable
 -> CodeMirror editor
--> browser Worker terminal
+-> browser Worker terminal for JavaScript / visual preview for HTML, CSS, and browser JavaScript
 -> useTutorChat
 -> /api/tutor
 -> LLM provider adapter
--> OpenAI Responses API or OpenRouter Chat Completions
+-> OpenAI Responses API
 -> optional AI file edit blocks applied to workspace state
 -> optional active-file browser Worker run trigger
 -> usage_events
@@ -87,10 +87,13 @@ Supabase Auth
 ## API Routes
 
 - `POST /api/tutor`
+- `POST /api/course-generation/preview`
+- `POST /api/course-generation/chapter`
+- `POST /api/course-generation/commit`
 - `POST /api/courses`
 - `DELETE /api/courses`
 - `POST /api/billing/checkout`
 - `POST /api/billing/portal`
 - `POST /api/stripe/webhook`
 
-Billing and tutor provider routes require env vars before live use. Tutor provider routing is selected with `LLM_PROVIDER=openai|openrouter`.
+Billing and tutor provider routes require env vars before live use. Tutor calls use `OPENAI_API_KEY` and optional `OPENAI_MODEL`.
