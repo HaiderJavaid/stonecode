@@ -66,9 +66,11 @@ export function App() {
         <Route element={<RequireAuth><StonecodePrototype settingsSection="profile" /></RequireAuth>} path="/settings/profile" />
         <Route element={<Navigate replace to="/settings/security" />} path="/settings/account" />
         <Route element={<RequireAuth><StonecodePrototype settingsSection="billing" /></RequireAuth>} path="/settings/billing" />
-        <Route element={<RequireAuth><StonecodePrototype settingsSection="usage" /></RequireAuth>} path="/settings/usage" />
+        <Route element={<Navigate replace to="/settings/security" />} path="/settings/api-keys" />
+        <Route element={<Navigate replace to="/settings/overview" />} path="/settings/usage" />
         <Route element={<RequireAuth><StonecodePrototype settingsSection="security" /></RequireAuth>} path="/settings/security" />
-        <Route element={<RequireAuth><StonecodePrototype settingsSection="support" /></RequireAuth>} path="/settings/support" />
+        <Route element={<Navigate replace to="/settings/profile" />} path="/settings/preferences" />
+        <Route element={<Navigate replace to="/support" />} path="/settings/support" />
         <Route element={<LegalPage type="privacy" />} path="/privacy" />
         <Route element={<LegalPage type="terms" />} path="/terms" />
         <Route element={<SupportPage />} path="/support" />

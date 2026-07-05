@@ -24,6 +24,7 @@ export type CourseSyllabusSection = {
   summary: string;
   lessonIndex: number;
   hasChallenge: boolean;
+  challengeKey?: string;
 };
 
 export type GeneratedCourseContent = GeneratedCourseContentV1 | GeneratedCourseContentV2;
@@ -285,21 +286,24 @@ export function createDefaultCourseMetadata(subject: string): Pick<Course, "lang
         title: "Reason about edge cases",
         summary: "Explain behavior clearly before implementing a fix.",
         lessonIndex: 1,
-        hasChallenge: true
+        hasChallenge: true,
+        challengeKey: "course-empty-array"
       },
       {
         id: "choose-an-operation",
         title: "Choose the right operation",
         summary: "Compare alternatives and identify their side effects.",
         lessonIndex: 2,
-        hasChallenge: true
+        hasChallenge: true,
+        challengeKey: "course-array-mutation"
       },
       {
         id: "build-and-run",
         title: "Build and run a solution",
         summary: "Implement a focused feature and verify it in the terminal.",
         lessonIndex: 3,
-        hasChallenge: true
+        hasChallenge: true,
+        challengeKey: "course-queue-terminal"
       },
       {
         id: "visual-review",

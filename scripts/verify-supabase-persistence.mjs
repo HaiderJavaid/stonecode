@@ -59,6 +59,7 @@ try {
     client.from("profiles").upsert({
       id: userId,
       email,
+      timezone: "Asia/Kuala_Lumpur",
       updated_at: new Date().toISOString()
     }),
     "upsert profiles row"
@@ -73,7 +74,19 @@ try {
       mode: "project",
       checkpoint: "verify-live-schema",
       description: "Temporary verification course",
-      progress: 0
+      progress: 0,
+      languages: ["JavaScript"],
+      tags: ["Verification"],
+      syllabus: [
+        {
+          id: "verify",
+          title: "Verify",
+          summary: "Verify progression persistence.",
+          lessonIndex: 0,
+          hasChallenge: true,
+          challengeKey: "verify-course"
+        }
+      ]
     })
     .select("id,title")
     .single();
@@ -129,6 +142,74 @@ try {
     updated_at: new Date().toISOString()
   });
 
+  const courseAttemptArgs = {
+    p_user_id: userId,
+    p_course_id: courseId,
+    p_challenge_key: "verify-course",
+    p_scope_key: `course:${courseId}:verify:verify-course`,
+    p_section_id: "verify",
+    p_source: "course",
+    p_language: "JavaScript",
+    p_topic: "Verification",
+    p_difficulty: "Beginner",
+    p_xp: 20,
+    p_accepted: true,
+    p_plan: "free"
+  };
+  const firstCourseAttempt = await admin.rpc("record_challenge_attempt", courseAttemptArgs);
+  const duplicateCourseAttempt = await admin.rpc("record_challenge_attempt", courseAttemptArgs);
+  if (firstCourseAttempt.error || duplicateCourseAttempt.error) {
+    throw new Error(`Progression attempt RPC failed: ${firstCourseAttempt.error?.message ?? duplicateCourseAttempt.error?.message}`);
+  }
+  if (firstCourseAttempt.data?.xpAwarded !== 20 || duplicateCourseAttempt.data?.xpAwarded !== 0) {
+    throw new Error("Duplicate challenge completion awarded XP.");
+  }
+
+  const hintArgs = {
+    p_user_id: userId,
+    p_course_id: courseId,
+    p_challenge_key: "verify-hint",
+    p_scope_key: `course:${courseId}:verify:verify-hint`,
+    p_section_id: "verify",
+    p_source: "course",
+    p_language: "JavaScript",
+    p_topic: "Verification",
+    p_difficulty: "Beginner"
+  };
+  const firstHint = await admin.rpc("record_challenge_hint", hintArgs);
+  const duplicateHint = await admin.rpc("record_challenge_hint", hintArgs);
+  if (firstHint.error || !duplicateHint.error) throw new Error("Hint RPC did not enforce one hint per challenge.");
+
+  const firstSkip = await admin.rpc("record_challenge_skip", { p_user_id: userId });
+  const duplicateSkip = await admin.rpc("record_challenge_skip", { p_user_id: userId });
+  if (firstSkip.error || !duplicateSkip.error) throw new Error("Skip RPC did not enforce one daily skip.");
+
+  const independentAttempts = await Promise.all(
+    ["a", "b", "c"].map((suffix) =>
+      admin.rpc("record_challenge_attempt", {
+        ...courseAttemptArgs,
+        p_course_id: courseId,
+        p_challenge_key: `verify-independent-${suffix}`,
+        p_scope_key: `independent:global:verify-${suffix}`,
+        p_section_id: null,
+        p_source: "independent",
+        p_xp: 5
+      })
+    )
+  );
+  if (independentAttempts.filter((result) => !result.error).length !== 2) {
+    throw new Error("Concurrent Free completion limit was not enforced atomically.");
+  }
+
+  await expectOk(
+    admin.from("course_completions").upsert({ user_id: userId, course_id: courseId }),
+    "upsert course_completions"
+  );
+  await expectOk(
+    admin.from("user_badges").upsert({ user_id: userId, badge_key: "first-steps" }),
+    "upsert user_badges"
+  );
+
   const roundTrip = {
     courses: await countRows(client, "courses", "id", courseId),
     workspace_files: await countRows(client, "workspace_files", "course_id", courseId),
@@ -149,7 +230,11 @@ try {
           ok: false,
           error: compactError(progressWrite.error)
         }
-      : await countRows(client, "course_progress", "course_id", courseId)
+      : await countRows(client, "course_progress", "course_id", courseId),
+    challenge_progress: await countRows(client, "challenge_progress", "user_id", userId),
+    daily_exercise_usage: await countRows(client, "daily_exercise_usage", "user_id", userId),
+    course_completions: await countRows(client, "course_completions", "user_id", userId),
+    user_badges: await countRows(client, "user_badges", "user_id", userId)
   };
 
   console.log(
@@ -187,7 +272,11 @@ async function checkSchemaCache() {
     "chat_messages",
     "course_progress",
     "subscriptions",
-    "usage_events"
+    "usage_events",
+    "challenge_progress",
+    "daily_exercise_usage",
+    "course_completions",
+    "user_badges"
   ];
 
   const results = [];
