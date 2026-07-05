@@ -26,7 +26,7 @@ Stonecode is moving from prototype to focused paid beta:
 - tutor calls are auth-gated, usage-tracked, streamed, and run through the OpenAI Responses API with `OPENAI_API_KEY` and optional `OPENAI_MODEL`.
 - tutor UI includes generated lesson intros, chat-answer exercises, MCQ, terminal exercise, visual canvas demo states, and AI exercise hints.
 - current course setup/generation flow is assessment-first `course-content/v2`.
-- hierarchy is Course -> Modules -> Topics -> Blocks -> Steps, with full structure generated after adaptive assessment and modules 1 and 2 filled.
+- hierarchy is Course -> Modules -> Topics -> Blocks -> Steps, with full structure generated after adaptive assessment and module 1 filled.
 - left panel has Modules and Files tabs; course step tiles navigate the right-panel lesson conversation, and files/folders stay in Files with per-item overflow menus.
 - generated block kinds are explicit: `theory`, `quiz`, `workshop`, `lab`, `project`, and `review`.
 - assessment MCQs can include course-shaping language/library/tool preferences; those answers are not graded as right/wrong.

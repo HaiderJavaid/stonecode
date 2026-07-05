@@ -6,19 +6,19 @@ export function validateGeneratedCourseQuality(content) {
     const hasPracticalBlock = (module.topics ?? []).some((topic) =>
       (topic.blocks ?? []).some((block) => ["workshop", "lab", "project"].includes(block.kind))
     );
-    if (moduleIndex < 2 && !hasPracticalBlock) {
+    if (moduleIndex === 0 && !hasPracticalBlock) {
       warnings.push(createWarning("loaded_module_missing_practical_block", `modules[${moduleIndex}] has no workshop, lab, or project block.`));
     }
 
     for (const [topicIndex, topic] of (module.topics ?? []).entries()) {
       const topicPath = `modules[${moduleIndex}].topics[${topicIndex}]`;
       const hasTheory = (topic.blocks ?? []).some((block) => block.kind === "theory");
-      if (moduleIndex < 2 && !hasTheory) {
+      if (moduleIndex === 0 && !hasTheory) {
         warnings.push(createWarning("topic_missing_theory", `${topicPath} has no theory block.`));
       }
 
       const hasInteractiveBlock = (topic.blocks ?? []).some((block) => ["quiz", "workshop", "lab", "project"].includes(block.kind));
-      if (moduleIndex < 2 && !hasInteractiveBlock) {
+      if (moduleIndex === 0 && !hasInteractiveBlock) {
         warnings.push(createWarning("topic_missing_interactive_block", `${topicPath} has no quiz, workshop, lab, or project block.`));
       }
 

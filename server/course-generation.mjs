@@ -970,8 +970,8 @@ Return JSON matching the course-content/v2 shape, but keep step arrays empty or 
 
 Required plan:
 - Choose the natural number of modules for the subject and assessment gaps. Do not target a fixed module count.
-- Modules 1 and 2 are unlocked and planned in detail with enough topics to teach the early path properly.
-- Modules 3 and later are locked outline modules.
+- Module 1 is unlocked and planned in detail with enough topics to teach the first path properly.
+- Modules 2 and later are locked outline modules until the first module proves the system quality.
 - Every topic plans intentional block kinds using only: theory, quiz, workshop, lab, project, review.
 - Start each topic with theory.
 - Do not force every topic into the same rhythm.
@@ -1074,7 +1074,7 @@ export function buildAssessmentCourseContentPrompt({ subject, answers = [], asse
 
 Loaded content phase.
 
-Use the course outline as the fixed plan when provided. Preserve module/topic/block ids and titles unless they are invalid. Fully write loaded content for modules 1 and 2. Keep later modules as locked shell outlines.
+Use the course outline as the fixed plan when provided. Preserve module/topic/block ids and titles unless they are invalid. Fully write loaded content for module 1 only. Keep later modules as locked shell outlines.
 
 Course outline:
 ${JSON.stringify(courseOutline ?? {}).slice(0, 6000)}
@@ -1160,7 +1160,7 @@ Rules:
 - Each loaded module should include at least one practical workshop, lab, or project block.
 - A lab block is usually one lab step, but it must stay kind "lab".
 - A project block must stay kind "project".
-- Module 1 and 2 content should be fully loaded.
+- Only module 1 content should be fully loaded during initial course generation.
 - Keep later-module outline content out of this response.
 - Every topic must start with a theory block.
 - Use the learner context and assessment review as binding personalization input.
@@ -1206,7 +1206,7 @@ export function createGeneratedCourseSkeletonFromOutline(outline, { subject = "P
         title: topicTitle,
         summary: trimText(topic?.summary, "Generated topic outline."),
         order: topicIndex,
-        unlocked: moduleIndex < 2 && module?.locked !== true && module?.status !== "locked",
+        unlocked: moduleIndex === 0 && module?.locked !== true && module?.status !== "locked",
         blocks
       };
     });
@@ -1215,14 +1215,14 @@ export function createGeneratedCourseSkeletonFromOutline(outline, { subject = "P
       title,
       summary: trimText(module?.summary, "Generated module outline."),
       order: moduleIndex,
-      unlocked: moduleIndex < 2 && module?.locked !== true && module?.status !== "locked",
+      unlocked: moduleIndex === 0 && module?.locked !== true && module?.status !== "locked",
       topics: topics.length ? topics : [
         {
           id: `${moduleId}-outline`,
           title: "Outline",
           summary: "Locked outline.",
           order: 0,
-          unlocked: moduleIndex < 2,
+          unlocked: moduleIndex === 0,
           blocks: [{
             id: `${moduleId}-outline-review`,
             kind: "review",
@@ -1404,7 +1404,8 @@ Return only JSON matching:
 Rules:
 - Generate a complete top-level curriculum like a freeCodeCamp index, with as many modules as the subject and learner gaps naturally need.
 - Use the Course blueprint as the hidden spine for the whole syllabus. The course should secretly lead to the final project; each workshop/lab/project should contribute a mini-function, behavior, or capability used later.
-- Fully load modules 1 and 2 with enough chapters/topics to teach the early path properly. Each loaded chapter/topic should contain intentional blocks and visible numbered steps.
+- Fully load module 1 with enough chapters/topics to teach the first path properly. Each loaded chapter/topic should contain intentional blocks and visible numbered steps.
+- Keep modules 2 and later as locked outline shells for later high-quality generation after module 1 is validated.
 - Modules 3 and later must appear in the left panel as locked shell buttons with outline-level chapters only.
 - Every block must include a "kind" field: "theory", "quiz", "workshop", "lab", "project", or "review".
 - Start each new topic/chapter with a theory block before any quiz, workshop, lab, or project.
@@ -1739,13 +1740,13 @@ function normalizeModule(module, moduleIndex, defaultLanguageInfo = courseLangua
     title,
     summary: trimText(module?.summary, "Generated module."),
     order: moduleIndex,
-    unlocked: moduleIndex < 2,
+    unlocked: moduleIndex === 0,
     topics
   };
 }
 
 function ensureLoadedModulePracticalBlock(topics, moduleId, moduleTitle, moduleIndex, defaultLanguageInfo) {
-  if (moduleIndex >= 2 || !topics.length) return topics;
+  if (moduleIndex !== 0 || !topics.length) return topics;
   const hasPracticalBlock = topics.some((topic) =>
     topic.blocks.some((block) => ["workshop", "lab", "project"].includes(block.kind))
   );
@@ -1780,13 +1781,13 @@ function normalizeTopic(topic, topicIndex, moduleId, moduleIndex = 0, defaultLan
     title,
     summary,
     order: topicIndex,
-    unlocked: moduleIndex < 2,
+    unlocked: moduleIndex === 0,
     blocks
   };
 }
 
 function ensureLoadedTopicInteractiveBlock(blocks, topicId, topicTitle, topicSummary, moduleIndex) {
-  if (moduleIndex >= 2) return blocks;
+  if (moduleIndex !== 0) return blocks;
   if (blocks.some((block) => ["quiz", "workshop", "lab", "project"].includes(block.kind))) return blocks;
   return [
     ...blocks,

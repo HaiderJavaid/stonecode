@@ -42,7 +42,7 @@ Active implementation direction:
 - Generated course block kinds are explicit: `theory`, `quiz`, `workshop`, `lab`, `project`, and `review`.
 - Assessment MCQs can include course-shaping language/library/tool preferences; those answers customize the course and are not graded.
 - Course generation now avoids a fixed concept -> analogy -> example template, keeps assessment recommendations visible in the generated modules, and normalizes MCQ answer positions away from A/B bias.
-- Course generation now fully loads/unlocks modules 1 and 2, leaves later modules as locked shell buttons, and requires exercise context/checklists tied to the just-taught topic.
+- Course generation now fully loads/unlocks module 1, leaves later modules as locked shell buttons, and requires exercise context/checklists tied to the just-taught topic.
 - Editor language support is centralized in `src/services/editorLanguages.ts`; syntax/file defaults cover JS/TS/Python/HTML/CSS/SQL/Java/C/C++/C#/Go/Rust/PHP/Ruby/Swift/shell/YAML/XML/Vue/Svelte-style files. Browser Run remains JavaScript-only until a backend sandbox exists.
 - Course challenges remain unlimited and affect course completion.
 - Independent exercises use different scenarios, are locally limited by plan for the initial UI, and do not affect course completion.

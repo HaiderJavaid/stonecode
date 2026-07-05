@@ -274,7 +274,7 @@ const outlinePrompt = buildAssessmentCourseOutlinePrompt({
 });
 assert.ok(outlinePrompt.includes("Course outline phase"), "outline prompt should identify outline phase");
 assert.ok(outlinePrompt.includes("Do not write full lesson markdown"), "outline prompt should not generate loaded teaching content");
-assert.ok(outlinePrompt.includes("Modules 1 and 2"), "outline prompt should plan loaded modules");
+assert.ok(outlinePrompt.includes("Module 1"), "outline prompt should plan only the first loaded module");
 assert.ok(outlinePrompt.includes("Do not target a fixed module count"), "outline prompt should avoid fixed module counts");
 assert.ok(outlinePrompt.includes("kind"), "outline prompt should still plan block kinds");
 assert.ok(outlinePrompt.includes("Course blueprint"), "outline prompt must receive hidden course blueprint context");
@@ -394,7 +394,8 @@ assert.equal(groupedWarnings.get(1).length, 1, "module 1 warnings should group t
 assert.ok(coursePrompt.includes("Learner generation context"));
 assert.ok(coursePrompt.includes("Retrieved course-generation context"));
 assert.ok(coursePrompt.includes('Every block must include a "kind" field'));
-assert.ok(coursePrompt.includes("Fully load modules 1 and 2"));
+assert.ok(coursePrompt.includes("Fully load module 1"));
+assert.ok(coursePrompt.includes("Keep modules 2 and later as locked outline shells"));
 assert.ok(coursePrompt.includes('A "theory" block may contain only theory, analogy, example, summary, and optional mcq steps.'));
 assert.ok(coursePrompt.includes('A "quiz" block must contain only mcq steps and should have 4 to 10 MCQ steps'));
 assert.ok(coursePrompt.includes("Single MCQ checks belong inside theory blocks"));
@@ -431,6 +432,8 @@ assert.ok(!theorySample.includes('"type":"lab"'));
 const normalizedV2 = normalizeGeneratedCourseContent(assessmentCourse);
 assert.equal(normalizedV2.schemaVersion, "course-content/v2");
 assert.ok(normalizedV2.assessmentReview.suggestedModules.length > 0);
+assert.equal(normalizedV2.modules[0].unlocked, true, "module 1 should be unlocked");
+assert.equal(normalizedV2.modules[1].unlocked, false, "module 2 should stay locked until generated later");
 
 const qualityWarnings = validateGeneratedCourseQuality({
   schemaVersion: "course-content/v2",
@@ -1049,7 +1052,7 @@ assert.ok(!normalizedCppStep.starterCode.includes("console.log"));
 assert.ok(normalizedCppStep.context.length > 20);
 assert.ok(normalizedCppStep.acceptanceCriteria.length >= 2);
 assert.equal(normalizedLanguageCourse.modules[0].unlocked, true);
-assert.equal(normalizedLanguageCourse.modules[1].unlocked, true);
+assert.equal(normalizedLanguageCourse.modules[1].unlocked, false);
 assert.equal(normalizedLanguageCourse.modules[2].unlocked, false);
 
 const javaCourse = createFallbackGeneratedCourseFromAssessment({

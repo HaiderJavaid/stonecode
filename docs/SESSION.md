@@ -29,7 +29,7 @@ The local dirty tree contains the current v2 generated-course milestone:
 - Left panel defaults to generated course Modules view; Files remains a separate tab.
 - Module detail renders chapters/topics, blocks, and compact numbered step tiles.
 - Step tiles navigate directly to the matching right-panel lesson conversation.
-- Modules 1 and 2 are generated/unlocked for QA; modules 3+ stay locked shell buttons.
+- Module 1 is generated/unlocked for QA; modules 2+ stay locked shell buttons.
 - Lesson progress now tracks the current block and Next labels distinguish section, block, topic, and module boundary.
 - Workshop/lab/project exercises include context plus dynamic MVP checklists.
 - Workshop prompts now require tutorial-style steps: what is being built, why, what code to write, syntax reminders/examples, and what the starter code does before independent labs.

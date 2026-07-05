@@ -47,7 +47,7 @@ done:
   - module list is compact title-only buttons; module detail renders chapter/topic, block, and compact numbered step tiles
   - course tree step tiles now navigate the right-panel lesson conversation; locked module shell buttons are disabled
   - course tree now auto-expands and highlights the active module, topic/block, and current step as the learner progresses
-  - generated courses now fully load/unlock modules 1 and 2, while modules 3+ remain locked shell buttons
+  - generated courses now fully load/unlock module 1, while modules 2+ remain locked shell buttons
   - course lesson progress bar now tracks steps inside the current block, with Next section/block/topic labels and no auto-advance across modules
   - workshop/lab/project steps now include context and MVP acceptance checklists; editor submissions update a dynamic checklist
   - workshop prompts now require FreeCodeCamp-style tutorial guidance before learner action, including many tiny numbered steps, syntax reminders/examples, exact step code, and explanation of important lines
@@ -88,7 +88,7 @@ verification:
 next:
   - apply pending Supabase migrations, then rerun migration-related verifiers
   - run authenticated QA: login -> add learning course -> subject -> readiness -> assessment with Skip -> review -> generate course -> Modules tree -> theory -> quiz -> workshop -> lab -> refresh persistence
-  - create a fresh generated course and verify module count, first-two-module depth, block kinds, tree navigation, and locked later modules
+  - create a fresh generated course and verify module count, first-module depth, block kinds, tree navigation, and locked later modules
   - add OpenAI model router env roles for low, medium, high, reasoning, grader, and embedding
   - add static-first RAG abstraction for curriculum patterns, prerequisites, course content, exercise bank, rubrics, official docs, and style
   - harden generated code-exercise grading with server-side rubrics/tests

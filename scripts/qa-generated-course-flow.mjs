@@ -102,7 +102,7 @@ try {
   writeArtifact("course-outline.raw.json", outline);
 
   const skeleton = createGeneratedCourseSkeletonFromOutline(outline, { subject, assessmentReview: report.review, courseBlueprint, ragSources: retrievedContext });
-  for (let moduleIndex = 0; moduleIndex < Math.min(2, skeleton.modules.length); moduleIndex += 1) {
+  for (let moduleIndex = 0; moduleIndex < Math.min(1, skeleton.modules.length); moduleIndex += 1) {
     const modulePrompt = buildAssessmentModuleContentPrompt({
       subject,
       answers: report.answers,

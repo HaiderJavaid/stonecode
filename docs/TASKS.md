@@ -50,7 +50,7 @@
 - [x] Add server-side assessment stabilization so skipped/repeated prerequisite loops turn into bridge/course-shaping questions.
 - [x] Generate and save the course immediately after assessment review/synthesis completes.
 - [x] Insert prerequisite modules based on assessment gaps and course-shaping preferences.
-- [x] Generate full course structure and fully fill the first two modules.
+- [x] Generate full course structure and fully fill the first module.
 - [x] Add explicit generated block kinds: `theory`, `quiz`, `workshop`, `lab`, `project`, and `review`.
 - [x] Keep one-off MCQ checks inside theory blocks and reserve quiz blocks for multi-question exam-style checkpoints.
 - [x] Require generated teaching to assume zero programming/syntax knowledge unless assessment proves otherwise.
@@ -64,7 +64,7 @@
 - [x] Replace left-panel toolbar with `Modules` and `Files` tabs.
 - [x] Render Modules tab as expandable modules -> topics -> blocks -> steps, with locked/upcoming steps greyed out.
 - [x] Make course tree step tiles navigate the right-panel lesson conversation.
-- [x] Keep modules 3+ as locked shell buttons until module unlocking/lazy generation is implemented.
+- [x] Keep modules 2+ as locked shell buttons until module unlocking/lazy generation is implemented.
 - [x] Add block-level lesson progress and Next section/block/topic/module-boundary labels.
 - [x] Keep current files/folders tree in Files tab.
 - [x] Move file/folder actions into per-item triple-dot dropdown menus.

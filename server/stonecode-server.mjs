@@ -625,7 +625,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
           courseBlueprint,
           ragSources: retrievedContext
         });
-        for (let moduleIndex = 0; moduleIndex < Math.min(2, skeleton.modules.length); moduleIndex += 1) {
+        for (let moduleIndex = 0; moduleIndex < Math.min(1, skeleton.modules.length); moduleIndex += 1) {
           const modulePrompt = buildAssessmentModuleContentPrompt({ subject, answers, assessmentReview, courseOutline, courseBlueprint, retrievedContext, moduleIndex });
           const moduleResult = await requestCourseGenerationJson({ config: providerConfig, prompt: modulePrompt, maxTokens: 6500 });
           if (!moduleResult.ok) throw new Error(moduleResult.error ?? `Module ${moduleIndex + 1} generation failed.`);
