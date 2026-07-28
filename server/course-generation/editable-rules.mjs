@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
-const editableCourseGenerationRulesUrl = new URL("../../docs/AI_COURSE_GENERATION_RULES.md", import.meta.url);
+const projectRoot = resolve(process.env.STONECODE_ROOT ?? process.cwd());
+const editableCourseGenerationRulesPath = join(projectRoot, "docs", "AI_COURSE_GENERATION_RULES.md");
 
 export function readEditableCourseGenerationRules() {
   try {
-    return readFileSync(editableCourseGenerationRulesUrl, "utf8").trim();
+    return readFileSync(editableCourseGenerationRulesPath, "utf8").trim();
   } catch {
     return "";
   }

@@ -19,6 +19,7 @@
 - `src/App.tsx` owns routes.
 - `src/components/stonecode/StonecodePrototype.tsx` is the routed workspace shell.
 - `server/stonecode-server.mjs` serves the app and API routes.
+- `netlify/functions/api.mjs` adapts Netlify Function requests to the same server API dispatcher for production `/api/*` routes.
 
 ## Active Product Routes
 
@@ -120,6 +121,8 @@ Supabase Auth
 Billing and tutor provider routes require env vars before live use. Tutor calls use `OPENAI_API_KEY` and optional `OPENAI_MODEL`.
 
 Free-plan tutor and generation calls instead use the current user's OpenAI key from `user_ai_credentials`. The secret is AES-256-GCM encrypted with `AI_CREDENTIAL_ENCRYPTION_KEY`, is only readable through the server service role, and is never returned by the credential API.
+
+On Netlify, `/api/*` must redirect to `/.netlify/functions/api/:splat` before the SPA fallback. Required production backend env includes `SUPABASE_SERVICE_ROLE_KEY`, `AI_CREDENTIAL_ENCRYPTION_KEY`, `OPENAI_API_KEY`, Stripe server keys, and the browser-safe Supabase `VITE_*` values.
 
 Signup confirmation uses Supabase `verifyOtp` with an eight-digit email code, then immediately starts the authenticated sign-in-style transition to `/dashboard`. The dashboard no longer opens plan or credential UI automatically. Free users encounter the encrypted OpenAI-key gate only when invoking Start learning or another AI-backed action; its Pro action opens `/onboarding`, which reads server subscription state, starts Stripe checkout, and polls webhook-backed subscription state before paid dashboard entry. The canonical hosted Supabase template is `supabase/templates/confirmation.html` and must expose `{{ .Token }}`.
 

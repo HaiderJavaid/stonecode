@@ -1,7 +1,6 @@
 import { createServer as createHttpServer } from "node:http";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { canCreateActiveCourse, canGenerateExperience, normalizePlanTier, resolvePlanLimit } from "./plan-limits.mjs";
 import { formatSubscriptionState } from "./subscription-state.mjs";
 import { createSseEventParser } from "./response-stream.mjs";
@@ -92,8 +91,9 @@ import {
   resolveSkillMetadata
 } from "./skill-taxonomy.mjs";
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const isDev = process.argv.includes("--dev") || process.env.NODE_ENV !== "production";
+const root = resolve(process.env.STONECODE_ROOT ?? process.cwd());
+const invokedScript = process.argv[1] ? normalize(resolve(process.argv[1])) : "";
+const isMain = /(^|[/\\])server[/\\]stonecode-server\.mjs$/.test(invokedScript);
 const port = Number(readCliOption("--port") ?? process.env.PORT ?? 5174);
 const host = readCliOption("--host") ?? process.env.HOST ?? "127.0.0.1";
 const maxRequestBytes = 180_000;
@@ -112,77 +112,97 @@ const mimeTypes = {
   ".txt": "text/plain; charset=utf-8"
 };
 
-let vite;
-if (isDev) {
-  const { createServer } = await import("vite");
-  vite = await createServer({
-    appType: "spa",
-    root,
-    server: { middlewareMode: true }
-  });
-}
-
-const server = createHttpServer(async (request, response) => {
+export async function handleStonecodeApiRequest(request, response) {
   try {
     if (request.url?.startsWith("/api/tutor")) {
       await handleTutorRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/courses")) {
       await handleCourseRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/course-generation")) {
       await handleCourseGenerationRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/learning")) {
       await handleLearningRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/execution")) {
       await handleExecutionRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/subscription")) {
       await handleSubscriptionRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/ai-credentials/openai")) {
       await handleOpenAiCredentialRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/usage")) {
       await handleUsageRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/progression")) {
       await handleProgressionRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/billing/checkout")) {
       await handleCheckoutRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/billing/portal")) {
       await handleBillingPortalRequest(request, response);
-      return;
+      return true;
     }
 
     if (request.url?.startsWith("/api/stripe/webhook")) {
       await handleStripeWebhook(request, response);
-      return;
+      return true;
     }
+
+    return false;
+  } catch (error) {
+    sendJson(response, 500, {
+      error: error instanceof Error ? error.message : "Unexpected server error."
+    });
+    return true;
+  }
+}
+
+if (isMain) {
+  startLocalServer();
+}
+
+async function startLocalServer() {
+  const isDev = process.argv.includes("--dev") || process.env.NODE_ENV !== "production";
+  let vite = null;
+  if (isDev) {
+    const importDevDependency = Function("specifier", "return import(specifier)");
+    const { createServer } = await importDevDependency("vite");
+    vite = await createServer({
+      appType: "spa",
+      root,
+      server: { middlewareMode: true }
+    });
+  }
+
+  const server = createHttpServer(async (request, response) => {
+    const handledApi = await handleStonecodeApiRequest(request, response);
+    if (handledApi) return;
 
     if (vite) {
       vite.middlewares(request, response);
@@ -190,16 +210,12 @@ const server = createHttpServer(async (request, response) => {
     }
 
     serveStatic(request, response);
-  } catch (error) {
-    sendJson(response, 500, {
-      error: error instanceof Error ? error.message : "Unexpected server error."
-    });
-  }
-});
+  });
 
-server.listen(port, host, () => {
-  console.log(`Stonecode server ready at http://${host}:${port}`);
-});
+  server.listen(port, host, () => {
+    console.log(`Stonecode server ready at http://${host}:${port}`);
+  });
+}
 
 async function handleExecutionRequest(request, response) {
   const auth = await readAuthenticatedUser(request, response);

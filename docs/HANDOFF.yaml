@@ -44,6 +44,7 @@ done:
   - the dashboard learning list stretches to the Settings boundary; its empty state is one full-height black card with centered copy and a Start learning action
   - public landing retains its wall grain, grid, and vignette plus the login card's frosted border/background/blur/shadow treatment for navigation and landing cards; the hero cutout has rounded outer clipping, and its middle CodeMirror editor now matches the real workspace with tabs directly above one editor shell and no extra surrounding StoneSurface
   - public landing panels use 1240ms transitions with 340ms text/media/card staggering and replay after fully leaving the viewport; the sticky frosted navbar stays visible while scrolling, and SideRays animate in last behind the completed hero sequence without a boundary flash
+  - production Netlify now routes `/api/*` to a catch-all Netlify Function that reuses the existing Stonecode server API dispatcher, so subscription/progression/usage/billing/credential endpoints no longer fall through to the SPA HTML fallback
   - public pricing now offers Free and $9 Pro only; Free has complete-path/all-mode access through a server-encrypted user OpenAI key, while Pro includes Stonecode-managed AI; legacy Basic records remain supported
   - course and guided-project discovery now captures the learner's relevant prior knowledge before presenting an optional prerequisite check near the end
   - optional assessment is capped at three questions; skipping goes directly to the editable review using the learner's declared background
