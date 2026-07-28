@@ -36,6 +36,19 @@ Each project ticket includes:
 - Verification command or safe Stonecode verification path
 - Security note when relevant
 
+## Whiteboard Detours
+
+Use whiteboard-style explanations for deep dives that should not disturb the main `course`.
+
+When starting a detour:
+
+1. Record the current resume point in the reply.
+2. Explore with disposable notes, examples, or scratch code.
+3. Review the result.
+4. Return to the saved resume point.
+
+Starting and ending a detour are save checkpoints.
+
 ## Leetcode-Styled Problems
 
 Use coding exercises relevant to the chosen subject, not random puzzles.
@@ -48,16 +61,3 @@ For each problem:
 4. Review correctness, edge cases, complexity, and readability.
 5. Show solution only when requested or after the learner attempts it.
 6. Track patterns learned at checkpoints.
-
-## Whiteboard Detours
-
-Use whiteboard-style explanations for deep dives that should not disturb the main course.
-
-When starting a detour:
-
-1. Record the current resume point in the reply.
-2. Explore with disposable notes, examples, or scratch code.
-3. Review the result.
-4. Return to the saved resume point.
-
-Starting and ending a detour are save checkpoints.

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { resolveCourseLessonSteps } from "@/components/stonecode/lessonData";
+import { LessonCodeExercise, resolveCourseLessonSteps } from "@/components/stonecode/lessonData";
 import { renderMarkdown } from "@/components/stonecode/markdown";
 import { CourseCardProps } from "@/components/stonecode/types";
 import { CourseHome } from "@/components/stonecode/CourseHome";
@@ -11,6 +11,9 @@ import {
   mutateExerciseProgression
 } from "@/services/progression";
 import { StoneSurface } from "@/components/stonecode/StoneSurface";
+import { buildWorkshopEditorDiagnostics } from "@/services/editorDiagnostics";
+import { normalizeWorkspacePath } from "@/services/workspaceFiles";
+import { learningExperienceLabel } from "@/data/courses";
 
 const coursePanelRevealStorageKey = "stonecode.coursePanelRevealed.v1";
 const lessonIntroAnimationStorageKey = "stonecode.lessonIntroAnimated.v1";
@@ -37,6 +40,7 @@ export function CourseCard({
   cardIndex,
   chatMessages,
   activeFileContent,
+  workspaceFiles,
   fileCount,
   lessonIndex,
   progress,
@@ -49,6 +53,8 @@ export function CourseCard({
   onExerciseTemplate,
   onGenerateChapter,
   onLoadExerciseFile,
+  onLoadExerciseWorkspace,
+  onEditorDiagnosticsChange,
   onLessonIndexChange,
   onViewChange,
   onStartProject,
@@ -60,6 +66,9 @@ export function CourseCard({
   const courseLessonSteps = useMemo(() => resolveCourseLessonSteps(course), [course]);
   const safeLessonIndex = Math.min(lessonIndex, Math.max(courseLessonSteps.length - 1, 0));
   const lesson = courseLessonSteps[safeLessonIndex];
+  const exerciseFileContent = lesson.codeExercise
+    ? workspaceFiles.find((file) => normalizeWorkspacePath(file.path) === normalizeWorkspacePath(lesson.codeExercise?.filePath ?? ""))?.content ?? ""
+    : activeFileContent;
   const initialPanelReady = Boolean(active && view && hasCoursePanelRevealed(course.id, view));
   const [panelContentReady, setPanelContentReady] = useState(initialPanelReady);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
@@ -68,8 +77,10 @@ export function CourseCard({
   const [editorExerciseFeedback, setEditorExerciseFeedback] = useState<string | null>(null);
   const [editorExercisePassed, setEditorExercisePassed] = useState(false);
   const [editorCriteriaStatus, setEditorCriteriaStatus] = useState<Array<{ label: string; passed: boolean }>>([]);
-  const [criteriaCollapsed, setCriteriaCollapsed] = useState(false);
+  const [criteriaCollapsed, setCriteriaCollapsed] = useState(true);
   const [isGrading, setIsGrading] = useState(false);
+  const [isGeneratingNextSegment, setIsGeneratingNextSegment] = useState(false);
+  const [segmentGenerationError, setSegmentGenerationError] = useState<string | null>(null);
   const [completedExerciseKeys, setCompletedExerciseKeys] = useState<string[]>([]);
   const { progression, refresh: refreshProgression } = useProgression(active && view === "resume");
   const stableLessonKey = lesson.sectionId ?? `${safeLessonIndex}`;
@@ -83,6 +94,7 @@ export function CourseCard({
   const requestedIntroKeysRef = useRef<Set<string>>(new Set());
   const requestedChapterGenerationRef = useRef<Set<string>>(new Set());
   const loadedCodeExerciseKeysRef = useRef<Set<string>>(new Set());
+  const repairedExerciseWorkspaceKeysRef = useRef<Set<string>>(new Set());
   const lessonIntroKey = `lesson-intro:${stableLessonKey}`;
   const lessonIntroMessage = useMemo(
     () => canvasMessages.find((message) => message.generatedKey === lessonIntroKey && message.role === "assistant") ?? null,
@@ -133,7 +145,7 @@ export function CourseCard({
     const scrollElement = chatScrollRef.current;
     if (!scrollElement) return;
     scrollElement.scrollTop = scrollElement.scrollHeight;
-  }, [conversationMessages, typingMessage?.content, lessonIntroMessage?.content]);
+  }, [conversationMessages, editorExerciseFeedback, isGrading, typingMessage?.content, lessonIntroMessage?.content]);
 
   useEffect(() => {
     if (!typingMessageId) onTypingComplete();
@@ -148,7 +160,8 @@ export function CourseCard({
     setEditorExerciseFeedback(existingCompletion && lesson.kind === "terminal-exercise" ? "Completed earlier." : null);
     setEditorExercisePassed(existingCompletion && lesson.kind === "terminal-exercise");
     setEditorCriteriaStatus(buildInitialCriteriaStatus(lesson.codeExercise?.acceptanceCriteria));
-    setCriteriaCollapsed(false);
+    setCriteriaCollapsed(true);
+    onEditorDiagnosticsChange([]);
     setIntroAnimationDone(readLessonIntroAnimated(lessonAnimationKey));
     if (!active || !view) return;
     if (hasCoursePanelRevealed(course.id, view)) {
@@ -161,7 +174,11 @@ export function CourseCard({
       setPanelContentReady(true);
     }, 460);
     return () => window.clearTimeout(timer);
-  }, [active, course.id, lessonAnimationKey, lesson.kind, stableLessonKey, view]);
+  }, [active, course.id, lessonAnimationKey, lesson.kind, onEditorDiagnosticsChange, stableLessonKey, view]);
+
+  useEffect(() => {
+    onEditorDiagnosticsChange([]);
+  }, [exerciseFileContent, onEditorDiagnosticsChange]);
 
   useEffect(() => {
     if (!active || view !== "resume" || !panelContentReady) return;
@@ -187,10 +204,23 @@ export function CourseCard({
   useEffect(() => {
     if (!active || view !== "resume" || !panelContentReady || !lesson.codeExercise) return;
     const loadKey = `${course.id}:${stableLessonKey}:${lesson.codeExercise.filePath}`;
-    if (loadedCodeExerciseKeysRef.current.has(loadKey)) return;
+    const workspaceFiles = mergeExerciseWorkspaceFiles(lesson.codeExercise);
+    if (loadedCodeExerciseKeysRef.current.has(loadKey) || hasExerciseStarterLoaded(loadKey)) {
+      if (workspaceFiles.length > 1 && !repairedExerciseWorkspaceKeysRef.current.has(loadKey)) {
+        repairedExerciseWorkspaceKeysRef.current.add(loadKey);
+        onLoadExerciseWorkspace(workspaceFiles, lesson.codeExercise.filePath, false);
+      }
+      return;
+    }
     loadedCodeExerciseKeysRef.current.add(loadKey);
-    onLoadExerciseFile(lesson.codeExercise.filePath, lesson.codeExercise.starterCode);
-  }, [active, course.id, lesson.codeExercise, onLoadExerciseFile, panelContentReady, stableLessonKey, view]);
+    const replaceExisting = lesson.codeExercise.exerciseKind !== "workshop" || (lesson.blockStepIndex ?? 0) === 0;
+    if (workspaceFiles.length > 1) {
+      onLoadExerciseWorkspace(workspaceFiles, lesson.codeExercise.filePath, replaceExisting);
+    } else {
+      onLoadExerciseFile(lesson.codeExercise.filePath, lesson.codeExercise.starterCode, replaceExisting);
+    }
+    markExerciseStarterLoaded(loadKey);
+  }, [active, course.id, lesson.codeExercise, onLoadExerciseFile, onLoadExerciseWorkspace, panelContentReady, stableLessonKey, view]);
 
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -217,6 +247,7 @@ export function CourseCard({
         source: "course-chat",
         exerciseKey: getExerciseKey(lesson, "chat"),
         courseId: course.id,
+        usesPracticeAllowance: course.experienceType === "exercise",
         submission: {
           answer: message,
           prompt: chatExercise?.type === "chat_exercise" ? chatExercise.prompt : lesson.title,
@@ -266,6 +297,7 @@ export function CourseCard({
         source: "course-mcq",
         exerciseKey: getExerciseKey(lesson, "mcq"),
         courseId: course.id,
+        usesPracticeAllowance: course.experienceType === "exercise",
         submission: { answerIndex: index }
       });
       setGradingPassed(Boolean(result.passed));
@@ -286,11 +318,12 @@ export function CourseCard({
   }
 
   async function submitEditorExercise() {
-    const code = activeFileContent.trim();
+    const code = exerciseFileContent.trim();
     if (!code) {
       setEditorExerciseFeedback("The starter should appear in the middle editor. If it is still empty, go back and reopen this step.");
       return;
     }
+    onEditorDiagnosticsChange([]);
     setIsGrading(true);
     try {
       const result = await mutateExerciseProgression({
@@ -298,6 +331,7 @@ export function CourseCard({
         source: "course-chat",
         exerciseKey: getExerciseKey(lesson, "code"),
         courseId: course.id,
+        usesPracticeAllowance: course.experienceType === "exercise",
         submission: { code, prompt: lesson.codeExercise?.prompt }
       });
       setEditorCriteriaStatus(evaluateAcceptanceCriteria(code, lesson.codeExercise?.acceptanceCriteria ?? [], Boolean(result.passed)));
@@ -307,6 +341,9 @@ export function CourseCard({
           ? `${result.feedback ?? "Editor exercise verified."} +${result.xp} XP saved.`
           : `${result.feedback ?? "Editor exercise verified."} Already completed; no duplicate XP.`
         : result.feedback ?? "Not enough yet. Update the middle editor so the task is runnable before submitting.");
+      if (!result.passed && lesson.codeExercise?.exerciseKind === "workshop" && lesson.codeExercise.resultCode) {
+        onEditorDiagnosticsChange(buildWorkshopEditorDiagnostics(code, lesson.codeExercise.resultCode, lesson.codeExercise.filePath));
+      }
       if (result.passed) {
         markLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "code"));
         void refreshProgression();
@@ -332,6 +369,11 @@ export function CourseCard({
   const selectedOption = selectedOptionIndex === null ? null : lesson.options?.[selectedOptionIndex] ?? null;
   const nextLesson = courseLessonSteps[safeLessonIndex + 1] ?? null;
   const nextCrossesModule = Boolean(nextLesson?.moduleId && lesson.moduleId && nextLesson.moduleId !== lesson.moduleId);
+  const projectMilestones = course.courseContent?.schemaVersion === "guided-project-content/v1" ? course.courseContent.milestones : null;
+  const nextProjectMilestoneIndex = projectMilestones && lesson.moduleId
+    ? projectMilestones.findIndex((milestone, index) => index > projectMilestones.findIndex((item) => item.id === lesson.moduleId) && !milestone.unlocked)
+    : -1;
+  const canGenerateNextProjectMilestone = Boolean(nextCrossesModule && projectMilestones && nextProjectMilestoneIndex >= 0);
   const nextStartsNewBlock = Boolean(nextLesson?.blockId && lesson.blockId && nextLesson.blockId !== lesson.blockId);
   const nextStartsNewTopic = Boolean(nextLesson?.topicId && lesson.topicId && nextLesson.topicId !== lesson.topicId);
   const nextStartsNewChapter = Boolean(
@@ -340,20 +382,25 @@ export function CourseCard({
   );
   const lessonIntroReady = !isLessonIntroTyping;
   const currentExerciseCompleted = getCompletedLessonState();
-  const nextDisabled = nextCrossesModule || isLessonIntroTyping || isGrading || (
-    lesson.kind === "multiple-choice"
-      ? gradingPassed === null && !currentExerciseCompleted
-      : lesson.kind === "chat-exercise"
-        ? gradingPassed === null && !currentExerciseCompleted
-        : lesson.kind === "terminal-exercise"
-          ? !editorExercisePassed && !currentExerciseCompleted
-          : false
+  const editorExerciseComplete = editorExercisePassed || currentExerciseCompleted;
+  const nextDisabled = isLessonIntroTyping || isGrading || isGeneratingNextSegment || (
+    lesson.kind === "terminal-exercise"
+      ? editorExerciseComplete && nextCrossesModule && !canGenerateNextProjectMilestone
+      : (nextCrossesModule && !canGenerateNextProjectMilestone) || (
+        lesson.kind === "multiple-choice"
+          ? gradingPassed === null && !currentExerciseCompleted
+          : lesson.kind === "chat-exercise"
+            ? gradingPassed === null && !currentExerciseCompleted
+            : false
+      )
   );
+  const hasLessonXp = typeof lesson.xp === "number" && lesson.xp > 0;
 
   const cardClassName = [
     "shadow-card",
     active ? "is-active" : "",
     active && (view === "resume" || view === "exercises") ? "has-chat-canvas" : "",
+    active && view === "resume" && hasLessonXp ? "is-exercise-step" : "",
     hidden ? "is-hidden" : "",
     hidden ? `is-${hiddenDirection}` : ""
   ]
@@ -376,7 +423,7 @@ export function CourseCard({
       tabIndex={hidden ? -1 : 0}
     >
       <div className="card-top">
-        <h2>{course.title}</h2>
+        <div><span className={`experience-type-badge is-${course.experienceType}`}>{learningExperienceLabel(course.experienceType)}</span><h2>{course.title}</h2></div>
         <button
           className="card-back"
           onClick={(event) => {
@@ -402,7 +449,6 @@ export function CourseCard({
             course={course}
             isProjectStarted={isProjectStarted}
             lessonIndex={lessonIndex}
-            onExercises={() => onViewChange("exercises")}
             onStartOrResume={() => {
               if (isProjectStarted) onViewChange("resume");
               else onStartProject(course);
@@ -411,7 +457,7 @@ export function CourseCard({
         ) : (
           <>
             <div className="course-meta">
-              <span>{course.mode}</span>
+              <span>{learningExperienceLabel(course.experienceType)}</span>
               <span>{course.checkpoint}</span>
               <span>{course.updatedAt}</span>
             </div>
@@ -419,7 +465,7 @@ export function CourseCard({
         )}
       </div>
       {active && view && (
-        <div className={`selection-panel${view === "resume" ? " is-chat-canvas" : ""}${panelContentReady ? " is-content-ready" : ""}`} onClick={(event) => event.stopPropagation()}>
+        <div className={`selection-panel${view === "resume" ? " is-chat-canvas" : ""}${panelContentReady ? " is-content-ready" : ""}${view === "resume" && hasLessonXp ? " is-exercise-step" : ""}`} onClick={(event) => event.stopPropagation()}>
           <button className="selection-back" onClick={() => onViewChange(null)} type="button">
             Back
           </button>
@@ -433,7 +479,7 @@ export function CourseCard({
                 <div className="lesson-progress-track" aria-label={`${Math.round(lessonProgress)}% block progress`}>
                   <i style={{ width: `${lessonProgress}%` }} />
                 </div>
-                <LessonContentMeta lesson={lesson} showXp={isExerciseLesson(lesson)} />
+                <LessonContentMeta lesson={lesson} showXp={hasLessonXp} />
               </div>
               <div className="ai-chat-scroll" aria-label={`${lesson.label} conversation`} ref={chatScrollRef}>
                 <div className="ai-message assistant-message ai-response">
@@ -477,13 +523,23 @@ export function CourseCard({
                     )}
                   </div>
                 ))}
+                {lesson.codeExercise && (isGrading || editorExerciseFeedback || lesson.codeExercise.requiresPreview || lesson.codeExercise.requiresTerminal) && (
+                  <div className={`ai-message assistant-message workshop-check-message${editorExerciseComplete ? " is-correct" : ""}`} aria-live="polite">
+                    <strong>{lesson.codeExercise.filePath} · {isGrading ? "checking" : editorExerciseFeedback ? "check result" : "workspace note"}</strong>
+                    {isGrading && <p>Checking the current editor code against this step.</p>}
+                    {!isGrading && editorExerciseFeedback && <p>{editorExerciseFeedback}</p>}
+                    {lesson.codeExercise.requiresPreview && <p>Use Visual to inspect the synchronized project scene. This preview updates without running Terminal.</p>}
+                    {lesson.codeExercise.requiresTerminal && <p>Use Terminal to run {lesson.codeExercise.filePath} and inspect its output.</p>}
+                  </div>
+                )}
+                {segmentGenerationError && <div className="ai-message assistant-message workshop-check-message"><strong>Milestone generation</strong><p>{segmentGenerationError}</p></div>}
               </div>
               <div className="chat-dock">
                 {(lesson.kind === "theory" || lesson.kind === "canvas") && (
                   <>
                     <div className="quick-action-label">Quick actions</div>
                     <div className="reply-suggestions" aria-label="Suggested replies">
-                      {lesson.suggestions.map((suggestion) => (
+                      {lesson.suggestions.slice(0, 3).map((suggestion) => (
                         <button key={suggestion} disabled={isLessonIntroTyping} onClick={() => sendSuggestion(suggestion)} type="button">
                           {suggestion}
                         </button>
@@ -513,32 +569,54 @@ export function CourseCard({
                   <p className={`option-feedback${gradingPassed ? " is-correct" : ""}`}>{gradingFeedback}</p>
                 )}
                 {lesson.codeExercise && (
-                  <div className="editor-exercise-actions">
+                  <>
                     <div className={`editor-exercise-checklist${criteriaCollapsed ? " is-collapsed" : ""}`} aria-label="MVP checklist">
                       <button
+                        aria-label={criteriaCollapsed ? "Show MVP checklist" : "Hide MVP checklist"}
                         aria-expanded={!criteriaCollapsed}
                         className="checklist-toggle"
                         onClick={() => setCriteriaCollapsed((current) => !current)}
                         type="button"
                       >
-                        <strong>MVP checklist</strong>
-                        <span>{criteriaCollapsed ? "Show checklist" : "Hide checklist"}</span>
+                        <svg aria-hidden="true" viewBox="0 0 12 7">
+                          <path d="M1 6 6 1l5 5" />
+                        </svg>
                       </button>
-                      {!criteriaCollapsed && editorCriteriaStatus.map((criterion) => (
-                        <span className={criterion.passed ? "is-passed" : ""} key={criterion.label}>
-                          <i aria-hidden="true">{criterion.passed ? "ok" : "-"}</i>
-                          {criterion.label}
-                        </span>
+                      <div className="checklist-content">
+                        <strong>MVP checklist</strong>
+                        {editorCriteriaStatus.map((criterion) => (
+                          <span className={criterion.passed ? "is-passed" : ""} key={criterion.label}>
+                            <i aria-hidden="true">{criterion.passed ? "ok" : "-"}</i>
+                            {criterion.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="quick-action-label">Quick actions</div>
+                    <div className="reply-suggestions" aria-label="Suggested replies">
+                      {lesson.suggestions.slice(0, 3).map((suggestion) => (
+                        <button key={suggestion} disabled={isLessonIntroTyping} onClick={() => sendSuggestion(suggestion)} type="button">
+                          {suggestion}
+                        </button>
                       ))}
                     </div>
-                    {lesson.codeExercise.requiresPreview && (
-                      <p className="option-feedback">Use the editor Visual view to inspect the result before submitting.</p>
-                    )}
-                    <button disabled={isGrading} onClick={handleEditorExercisePrimaryAction} type="button">
-                      {isGrading ? "Checking..." : editorExercisePassed || currentExerciseCompleted ? "Submit and next" : "Check"}
-                    </button>
-                    {editorExerciseFeedback && <p className="option-feedback">{editorExerciseFeedback}</p>}
-                  </div>
+                    <form className="chat-compose" onSubmit={handleChatSubmit}>
+                      <textarea
+                        aria-label="Chat message"
+                        name="message"
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter" && !event.shiftKey) {
+                            event.preventDefault();
+                            event.currentTarget.form?.requestSubmit();
+                          }
+                        }}
+                        placeholder="Ask a follow-up..."
+                        rows={2}
+                      />
+                      <button disabled={isLessonIntroTyping} type="submit">Send</button>
+                    </form>
+                  </>
                 )}
                 {(lesson.kind === "theory" || lesson.kind === "canvas") && (
                   <form className="chat-compose" onSubmit={handleChatSubmit}>
@@ -560,8 +638,23 @@ export function CourseCard({
                 )}
                 <div className="lesson-controls">
                   <button disabled={safeLessonIndex === 0} onClick={() => moveLesson(-1)} type="button">Prev</button>
-                  <button className={nextStartsNewChapter ? "next-chapter-button" : ""} disabled={nextDisabled} onClick={() => moveLesson(1)} type="button">
-                    {getNextButtonLabel({ nextCrossesModule, nextLesson, nextStartsNewBlock, nextStartsNewChapter })}
+                  <button
+                    className={nextStartsNewChapter ? "next-chapter-button" : ""}
+                    disabled={nextDisabled}
+                    onClick={canGenerateNextProjectMilestone ? () => void generateNextProjectMilestone() : lesson.codeExercise ? handleEditorExercisePrimaryAction : () => moveLesson(1)}
+                    type="button"
+                  >
+                    {isGeneratingNextSegment
+                      ? "Generating milestone..."
+                      : canGenerateNextProjectMilestone
+                        ? "Generate next milestone"
+                        : lesson.codeExercise
+                      ? isGrading
+                        ? "Checking..."
+                        : editorExerciseComplete
+                          ? nextCrossesModule ? "Module complete" : "Next section"
+                          : "Check"
+                      : getNextButtonLabel({ nextCrossesModule, nextLesson, nextStartsNewBlock, nextStartsNewChapter })}
                   </button>
                 </div>
               </div>
@@ -587,6 +680,20 @@ export function CourseCard({
     if (lesson.kind === "chat-exercise") return isLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "chat"));
     if (lesson.kind === "terminal-exercise") return isLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "code"));
     return false;
+  }
+
+  async function generateNextProjectMilestone() {
+    if (nextProjectMilestoneIndex < 0) return;
+    setIsGeneratingNextSegment(true);
+    setSegmentGenerationError(null);
+    try {
+      await onGenerateChapter(nextProjectMilestoneIndex);
+      onLessonIndexChange(Math.min(safeLessonIndex + 1, courseLessonSteps.length));
+    } catch (error) {
+      setSegmentGenerationError(error instanceof Error ? error.message : "Could not generate the next milestone. Your files were preserved.");
+    } finally {
+      setIsGeneratingNextSegment(false);
+    }
   }
 
   function isLessonExerciseCompleted(source: "course-mcq" | "course-chat", exerciseKey: string) {
@@ -620,6 +727,19 @@ function getNextButtonLabel({
   if (nextStartsNewChapter) return "Next topic";
   if (nextStartsNewBlock) return "Next block";
   return "Next section";
+}
+
+function mergeExerciseWorkspaceFiles(exercise: LessonCodeExercise) {
+  const byPath = new Map(
+    (exercise.workspaceFiles ?? []).map((file) => [file.path, file])
+  );
+  byPath.set(exercise.filePath, {
+    ...byPath.get(exercise.filePath),
+    path: exercise.filePath,
+    content: exercise.starterCode,
+    editable: true
+  });
+  return [...byPath.values()];
 }
 
 function buildInitialCriteriaStatus(criteria: string[] | undefined) {
@@ -682,15 +802,11 @@ function LessonContentMeta({
   ];
 
   return (
-    <div className="exercise-meta exercise-meta-inline lesson-content-meta" aria-label="Generated lesson tags">
-      {tags.map((tag) => <span key={tag}>{tag}</span>)}
-      {showXp && <span>{lesson.xp ? `+${lesson.xp} XP` : "XP pending"}</span>}
+    <div className={`exercise-meta exercise-meta-inline lesson-content-meta${showXp ? " is-exercise-meta" : ""}`} aria-label="Generated lesson tags">
+      {tags.map((tag, index) => <span className={showXp && index === 1 ? "exercise-category-tag" : undefined} key={tag}>{tag}</span>)}
+      {showXp && <strong className="exercise-xp-badge">{lesson.xp ? `+${lesson.xp} XP` : "XP pending"}</strong>}
     </div>
   );
-}
-
-function isExerciseLesson(lesson: ReturnType<typeof resolveCourseLessonSteps>[number]) {
-  return lesson.kind === "chat-exercise" || lesson.kind === "multiple-choice" || lesson.kind === "terminal-exercise";
 }
 
 function getExerciseKey(lesson: ReturnType<typeof resolveCourseLessonSteps>[number], type: "mcq" | "chat" | "code") {
@@ -716,4 +832,16 @@ function markCoursePanelRevealed(courseId: string, view: string) {
 
 function getCompletedExerciseStorageKey(courseId: string, source: "course-mcq" | "course-chat", exerciseKey: string) {
   return `${courseId}:${source}:${exerciseKey}`;
+}
+
+function getExerciseStarterStorageKey(loadKey: string) {
+  return `stonecode.exerciseStarterLoaded.v1:${loadKey}`;
+}
+
+function hasExerciseStarterLoaded(loadKey: string) {
+  return typeof window !== "undefined" && window.localStorage.getItem(getExerciseStarterStorageKey(loadKey)) === "true";
+}
+
+function markExerciseStarterLoaded(loadKey: string) {
+  if (typeof window !== "undefined") window.localStorage.setItem(getExerciseStarterStorageKey(loadKey), "true");
 }

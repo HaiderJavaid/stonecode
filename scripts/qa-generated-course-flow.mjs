@@ -7,8 +7,10 @@ import {
   buildAssessmentQuestionPrompt,
   buildAssessmentReviewPrompt,
   buildGeneratedModuleRepairPrompt,
+  buildGeneratedTopicRepairPrompt,
   createGeneratedCourseSkeletonFromOutline,
   extractGeneratedModuleFromResponse,
+  extractGeneratedTopicFromResponse,
   createFallbackAssessmentReview,
   normalizeAssessmentQuestion,
   normalizeGeneratedCourseContent,
@@ -19,7 +21,9 @@ import {
 import { requestCourseGenerationJson, resolveTutorProviderConfig } from "../server/llm-providers.mjs";
 import {
   groupGeneratedCourseWarningsByModule,
+  groupGeneratedCourseWarningsByTopic,
   hasBlockingGeneratedCourseQualityWarnings,
+  hasRepairableGeneratedCourseQualityWarnings,
   validateGeneratedCourseQuality
 } from "../server/course-generation-quality.mjs";
 
@@ -133,32 +137,47 @@ try {
   report.metrics = collectCourseMetrics(content);
   writeArtifact("generated-course.pre-repair.json", content);
   writeArtifact("quality-warnings.pre-repair.json", qualityWarnings);
-  if (hasBlockingGeneratedCourseQualityWarnings(qualityWarnings)) {
+  if (hasRepairableGeneratedCourseQualityWarnings(qualityWarnings)) {
     report.phases.push({ phase: "quality-check-before-repair", ok: false, warningCount: qualityWarnings.length });
-    const repairedModules = [...(content.modules ?? [])];
-    for (const [moduleIndex, moduleWarnings] of groupGeneratedCourseWarningsByModule(qualityWarnings).entries()) {
-      const module = repairedModules[moduleIndex];
-      if (!module) continue;
-      const repairPrompt = buildGeneratedModuleRepairPrompt({ subject, module, moduleIndex, qualityWarnings: moduleWarnings });
-      const repairResult = await requestCourseGenerationJson({ config: providerConfig, prompt: repairPrompt, maxTokens: 6500 });
-      const rawRepair = parseJsonObjectOrThrow(repairResult, `module ${moduleIndex + 1} repair`);
-      writeArtifact(`repair-module-${moduleIndex + 1}.raw.json`, rawRepair);
-      repairedModules[moduleIndex] = extractGeneratedModuleFromResponse(rawRepair, module, moduleIndex);
+    for (let repairPass = 0; repairPass < 2 && hasRepairableGeneratedCourseQualityWarnings(qualityWarnings); repairPass += 1) {
+      const repairedModules = [...(content.modules ?? [])];
+      for (const [moduleIndex, moduleWarnings] of groupGeneratedCourseWarningsByModule(qualityWarnings).entries()) {
+        const module = repairedModules[moduleIndex];
+        if (!module) continue;
+        const topicWarningGroups = groupGeneratedCourseWarningsByTopic(moduleWarnings, moduleIndex);
+        const scopedWarnings = new Set([...topicWarningGroups.values()].flat());
+        const hasModuleLevelWarnings = moduleWarnings.some((warning) => !scopedWarnings.has(warning));
+
+        if (hasModuleLevelWarnings || topicWarningGroups.size === 0) {
+          const repairPrompt = buildGeneratedModuleRepairPrompt({ subject, module, moduleIndex, qualityWarnings: moduleWarnings });
+          const repairResult = await requestCourseGenerationJson({ config: providerConfig, prompt: repairPrompt, maxTokens: 7500 });
+          const rawRepair = parseJsonObjectOrThrow(repairResult, `module ${moduleIndex + 1} repair`);
+          writeArtifact(`repair-pass-${repairPass + 1}-module-${moduleIndex + 1}.raw.json`, rawRepair);
+          repairedModules[moduleIndex] = extractGeneratedModuleFromResponse(rawRepair, module, moduleIndex);
+          continue;
+        }
+
+        const repairedTopics = [...(module.topics ?? [])];
+        await Promise.all([...topicWarningGroups.entries()].map(async ([topicIndex, topicWarnings]) => {
+          const topic = repairedTopics[topicIndex];
+          if (!topic) return;
+          const repairPrompt = buildGeneratedTopicRepairPrompt({ subject, topic, moduleIndex, topicIndex, qualityWarnings: topicWarnings });
+          const repairResult = await requestCourseGenerationJson({ config: providerConfig, prompt: repairPrompt, maxTokens: 5000 });
+          const rawRepair = parseJsonObjectOrThrow(repairResult, `module ${moduleIndex + 1}, topic ${topicIndex + 1} repair`);
+          writeArtifact(`repair-pass-${repairPass + 1}-module-${moduleIndex + 1}-topic-${topicIndex + 1}.raw.json`, rawRepair);
+          repairedTopics[topicIndex] = extractGeneratedTopicFromResponse(rawRepair, topic, topicIndex, topicWarnings);
+        }));
+        repairedModules[moduleIndex] = { ...module, topics: repairedTopics };
+      }
+      content = normalizeGeneratedCourseContent({ ...content, modules: repairedModules });
+      qualityWarnings = validateGeneratedCourseQuality(content);
       report.phases.push({
-        phase: `repair-module-${moduleIndex + 1}`,
-        ok: true,
-        source: "ai",
-        warningCount: moduleWarnings.length
+        phase: `quality-check-after-repair-${repairPass + 1}`,
+        ok: !hasBlockingGeneratedCourseQualityWarnings(qualityWarnings),
+        warningCount: qualityWarnings.length,
+        source: "local"
       });
     }
-    content = normalizeGeneratedCourseContent({ ...content, modules: repairedModules });
-    qualityWarnings = validateGeneratedCourseQuality(content);
-    report.phases.push({
-      phase: "quality-check-after-repair",
-      ok: !hasBlockingGeneratedCourseQualityWarnings(qualityWarnings),
-      warningCount: qualityWarnings.length,
-      source: "local"
-    });
   } else {
     report.phases.push({ phase: "quality-check-before-repair", ok: true, warningCount: qualityWarnings.length });
   }

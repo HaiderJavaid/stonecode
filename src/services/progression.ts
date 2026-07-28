@@ -29,6 +29,25 @@ export type ProgressionSummary = {
   solvedExercises: number;
   byDifficulty: Record<"Beginner" | "Intermediate" | "Advanced", number>;
   languageXp: Array<{ language: string; xp: number }>;
+  skillBreakdown: Array<{
+    skill: string;
+    parentLanguage: string | null;
+    solvedCount: number;
+    xp: number;
+    percentage: number;
+  }>;
+  achievements: Array<{
+    id: string;
+    title: string;
+    description: string;
+    currentXp: number;
+    requiredXp: number;
+    qualifyingCompletions: number;
+    requiredCompletions: number;
+    languageXp: number;
+    requiredLanguageXp: number;
+    earned: boolean;
+  }>;
   heatmap: ProgressionHeatmapDay[];
   currentStreak: number;
   longestStreak: number;
@@ -50,6 +69,8 @@ export const emptyProgression: ProgressionSummary = {
   solvedExercises: 0,
   byDifficulty: { Beginner: 0, Intermediate: 0, Advanced: 0 },
   languageXp: [],
+  skillBreakdown: [],
+  achievements: [],
   heatmap: [],
   currentStreak: 0,
   longestStreak: 0,
@@ -74,6 +95,7 @@ export async function mutateExerciseProgression(input: {
   source: ProgressionAttempt["source"];
   exerciseKey: string;
   courseId?: string;
+  usesPracticeAllowance?: boolean;
   submission?: { code?: string; answerIndex?: number; answer?: string; prompt?: string; rubric?: string };
 }) {
   const payload = await progressionRequest("/api/progression/exercise", {
@@ -97,7 +119,7 @@ export async function completeCourseSection(courseId: string, sectionId: string)
   });
 }
 
-export async function equipProgressionTitle(badgeId: string) {
+export async function equipProgressionTitle(badgeId: string | null) {
   return progressionRequest("/api/progression/title", {
     method: "POST",
     body: JSON.stringify({ badgeId })

@@ -96,10 +96,12 @@ export function useTutorChat({
 
   async function requestExerciseTemplate(course: Course, exercise: IndependentExercise, code: string) {
     const currentFiles = storedState.workspaceFilesByCourse[course.id] ?? [];
+    const currentFolders = storedState.workspaceFoldersByCourse[course.id] ?? [];
     return requestTutorReplyStream(
       {
         course,
         files: currentFiles,
+        folders: currentFolders,
         currentFile: currentFiles[active?.fileIndex ?? 0] ?? null,
         recentMessages: storedState.chatByCourse[course.id] ?? [],
         userMessage: "Create a concise fill-in template for this exercise answer.",
@@ -153,6 +155,7 @@ export function useTutorChat({
     const userMessage = persistUserMessage ? createStoredMessage("user", message, lessonIndex) : null;
     const assistantMessage = createStoredMessage("assistant", "", lessonIndex, { messageKind, generatedKey });
     const currentFiles = storedState.workspaceFilesByCourse[course.id] ?? [];
+    const currentFolders = storedState.workspaceFoldersByCourse[course.id] ?? [];
 
     setStoredState((current) => ({
       ...current,
@@ -174,6 +177,7 @@ export function useTutorChat({
         {
           course,
           files: currentFiles,
+          folders: currentFolders,
           currentFile: currentFiles[active?.fileIndex ?? 0] ?? null,
           recentMessages: [...(storedState.chatByCourse[course.id] ?? []), ...(userMessage ? [userMessage] : [])],
           userMessage: message,

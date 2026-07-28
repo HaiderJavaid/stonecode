@@ -3,28 +3,69 @@ import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
-import { drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
+import { Compartment, EditorSelection, EditorState, StateEffect, StateField } from "@codemirror/state";
+import { Decoration, DecorationSet, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, WidgetType } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import type { EditorDiagnostic } from "@/components/stonecode/types";
 import { loadEditorLanguageExtension } from "@/services/editorLanguages";
 
 type StoneEditorProps = {
   filePath: string;
   value: string;
   onChange: (value: string) => void;
+  diagnostics?: EditorDiagnostic[];
+  readOnly?: boolean;
 };
 
+const setEditorDiagnostics = StateEffect.define<EditorDiagnostic[]>();
+
+class DiagnosticCommentWidget extends WidgetType {
+  constructor(private readonly message: string, private readonly filePath?: string) {
+    super();
+  }
+
+  toDOM() {
+    const element = document.createElement("span");
+    element.className = "cm-diagnostic-comment";
+    element.textContent = `  // ${this.filePath ? `${this.filePath} · ` : ""}${this.message}`;
+    return element;
+  }
+}
+
+const editorDiagnosticsField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    value = value.map(transaction.changes);
+    for (const effect of transaction.effects) {
+      if (!effect.is(setEditorDiagnostics)) continue;
+      const decorations = effect.value.flatMap((diagnostic) => {
+        const lineNumber = Math.max(1, Math.min(diagnostic.line, transaction.state.doc.lines));
+        const line = transaction.state.doc.line(lineNumber);
+        return [
+          Decoration.line({ class: "cm-diagnostic-line" }).range(line.from),
+          Decoration.widget({ widget: new DiagnosticCommentWidget(diagnostic.message, diagnostic.filePath), side: 1 }).range(line.to)
+        ];
+      });
+      value = Decoration.set(decorations, true);
+    }
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field)
+});
+
 const stoneHighlightStyle = HighlightStyle.define([
-  { tag: tags.keyword, color: "rgba(150, 184, 242, 0.58)" },
-  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "rgba(141, 214, 186, 0.58)" },
-  { tag: [tags.string, tags.special(tags.string)], color: "rgba(214, 181, 126, 0.6)" },
-  { tag: [tags.number, tags.bool, tags.null], color: "rgba(218, 144, 172, 0.6)" },
-  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "rgba(220, 220, 212, 0.31)" },
-  { tag: [tags.variableName, tags.propertyName, tags.definition(tags.variableName)], color: "rgba(218, 218, 212, 0.46)" },
-  { tag: [tags.operator, tags.punctuation, tags.bracket], color: "rgba(218, 218, 212, 0.4)" }
+  { tag: tags.keyword, color: "rgba(211, 112, 132, 0.95)" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.function(tags.definition(tags.variableName))], color: "rgba(129, 190, 142, 0.96)" },
+  { tag: [tags.tagName, tags.typeName, tags.className], color: "rgba(130, 177, 255, 0.95)" },
+  { tag: [tags.propertyName, tags.attributeName], color: "rgba(143, 185, 118, 0.95)" },
+  { tag: [tags.string, tags.special(tags.string)], color: "rgba(159, 184, 119, 0.96)" },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.unit, tags.color], color: "rgba(209, 157, 113, 0.95)" },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "rgba(220, 220, 212, 0.42)", fontStyle: "italic" },
+  { tag: [tags.variableName, tags.definition(tags.variableName), tags.name], color: "rgba(229, 229, 220, 0.82)" },
+  { tag: [tags.operator, tags.punctuation, tags.bracket, tags.separator], color: "rgba(220, 220, 212, 0.62)" }
 ]);
 
-export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
+export function StoneEditor({ filePath, value, onChange, diagnostics = [], readOnly = false }: StoneEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
@@ -46,8 +87,11 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
       highlightActiveLine(),
       syntaxHighlighting(stoneHighlightStyle, { fallback: true }),
       languageCompartmentRef.current.of([]),
+      editorDiagnosticsField,
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       EditorView.lineWrapping,
+      EditorState.readOnly.of(readOnly),
+      EditorView.editable.of(!readOnly),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           onChangeRef.current(update.state.doc.toString());
@@ -57,7 +101,7 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
         "&": {
           height: "100%",
           background: "transparent",
-          color: "rgba(218, 218, 212, 0.46)",
+          color: "rgba(229, 229, 220, 0.82)",
           fontFamily: "\"SF Mono\", \"IBM Plex Mono\", \"Roboto Mono\", ui-monospace, monospace",
           fontSize: "clamp(9px, 0.78vw, 12px)"
         },
@@ -66,7 +110,7 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
           overflow: "auto",
           padding: "2.9rem 2.4rem 2.4rem 0",
           fontFamily: "inherit",
-          lineHeight: "1.95"
+          lineHeight: "1.65"
         },
         ".cm-content": {
           minHeight: "100%",
@@ -75,7 +119,7 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
         },
         ".cm-line": {
           padding: "0 0 0 10px",
-          lineHeight: "1.95"
+          lineHeight: "1.65"
         },
         ".cm-gutters": {
           minWidth: "2.85rem",
@@ -83,12 +127,12 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
           border: "0",
           background: "transparent",
           color: "rgba(220, 220, 212, 0.31)",
-          lineHeight: "1.95"
+          lineHeight: "1.65"
         },
         ".cm-lineNumbers .cm-gutterElement": {
           minWidth: "2rem",
           padding: "0 8px 0 0",
-          lineHeight: "1.95"
+          lineHeight: "1.65"
         },
         ".cm-activeLine, .cm-activeLineGutter": {
           background: "rgba(255, 255, 255, 0.035)"
@@ -102,6 +146,14 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
         ".cm-cursor": {
           borderLeftColor: "rgba(238, 238, 228, 0.78)"
         },
+        ".cm-diagnostic-line": {
+          background: "rgba(215, 92, 92, 0.08)"
+        },
+        ".cm-diagnostic-comment": {
+          color: "rgba(240, 132, 132, 0.9)",
+          fontStyle: "italic",
+          whiteSpace: "pre-wrap"
+        },
         ".cm-tooltip": {
           border: "1px solid rgba(255, 255, 255, 0.08)",
           borderRadius: "8px",
@@ -110,7 +162,7 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
         }
       })
     ],
-    []
+    [readOnly]
   );
 
   useEffect(() => {
@@ -158,6 +210,10 @@ export function StoneEditor({ filePath, value, onChange }: StoneEditorProps) {
       selection: EditorSelection.cursor(Math.min(selection.head, value.length))
     });
   }, [value]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setEditorDiagnostics.of(diagnostics) });
+  }, [diagnostics]);
 
   return <div className="stone-editor" ref={containerRef} />;
 }

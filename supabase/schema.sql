@@ -16,6 +16,10 @@ create table if not exists public.courses (
   user_id uuid not null references public.profiles(id) on delete cascade,
   title text not null,
   subject text not null,
+  experience_type text not null default 'course' check (experience_type in ('course', 'short_course', 'exercise', 'guided_project')),
+  client_request_id text,
+  skill_ids text[] not null default '{}',
+  domain_ids text[] not null default '{}',
   mode text not null check (mode in ('fundamentals', 'project', 'leetcode', 'mixed')),
   checkpoint text not null,
   description text,
@@ -29,6 +33,10 @@ create table if not exists public.courses (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create unique index if not exists courses_user_client_request_id_idx
+  on public.courses (user_id, client_request_id)
+  where client_request_id is not null;
 
 create table if not exists public.workspace_files (
   id uuid primary key default gen_random_uuid(),
@@ -94,6 +102,18 @@ create table if not exists public.usage_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.user_ai_credentials (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  provider text not null default 'openai' check (provider in ('openai')),
+  encrypted_secret text not null,
+  secret_iv text not null,
+  secret_tag text not null,
+  last_four text not null,
+  verified_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.learner_profiles (
   user_id uuid primary key references public.profiles(id) on delete cascade,
   known_subjects text[] not null default '{}',
@@ -149,6 +169,11 @@ create table if not exists public.exercise_attempts (
   source text not null check (source in ('independent', 'course-mcq', 'course-chat')),
   exercise_key text not null,
   language text not null,
+  primary_skill text,
+  parent_language text,
+  topic_ids text[] not null default '{}',
+  domain_ids text[] not null default '{}',
+  exercise_kind text not null default 'code' check (exercise_kind in ('mcq', 'code', 'chat')),
   difficulty text not null check (difficulty in ('Beginner', 'Intermediate', 'Advanced')),
   attempts integer not null default 0 check (attempts >= 0),
   hint_used boolean not null default false,
@@ -175,6 +200,11 @@ create table if not exists public.xp_ledger (
   source text not null check (source in ('independent', 'course-mcq', 'course-chat')),
   source_key text not null,
   language text not null,
+  primary_skill text,
+  parent_language text,
+  topic_ids text[] not null default '{}',
+  domain_ids text[] not null default '{}',
+  exercise_kind text not null default 'code' check (exercise_kind in ('mcq', 'code', 'chat')),
   difficulty text not null check (difficulty in ('Beginner', 'Intermediate', 'Advanced')),
   xp integer not null check (xp > 0),
   earned_on date not null,
@@ -207,6 +237,7 @@ alter table public.chat_messages enable row level security;
 alter table public.course_progress enable row level security;
 alter table public.subscriptions enable row level security;
 alter table public.usage_events enable row level security;
+alter table public.user_ai_credentials enable row level security;
 alter table public.learner_profiles enable row level security;
 alter table public.course_assessments enable row level security;
 alter table public.rag_documents enable row level security;
@@ -376,10 +407,6 @@ begin
   insert into public.user_badges (user_id, badge_key)
   values (p_user_id, 'first-steps')
   on conflict (user_id, badge_key) do nothing;
-
-  update public.profiles
-  set equipped_badge_id = coalesce(equipped_badge_id, 'first-steps'), updated_at = now()
-  where id = p_user_id;
 
   return jsonb_build_object('awarded', true, 'award_id', v_award_id, 'xp', p_xp);
 end;

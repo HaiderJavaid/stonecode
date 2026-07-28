@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 160" role="img" aria-labelledby="title desc">
+  <title id="title">Stonecode logo concept C</title>
+  <desc id="desc">Geometric S-shaped code fold with a green terminal square.</desc>
+  <rect width="720" height="160" rx="28" fill="#050505"/>
+  <path d="M32 28h104v22H67l-13 13 13 12h45l24 23v12l-22 22H32v-22h72l10-10-9-9H59L32 65Z" fill="#F4F5EF"/>
+  <rect x="124" y="120" width="12" height="12" rx="1" fill="#65B960"/>
+  <text x="172" y="99" fill="#F4F5EF" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="66" font-weight="560" letter-spacing="-2.6">stonecode</text>
+</svg>

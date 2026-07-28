@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Stonecode minimalist logo study</title>
+  <desc id="desc">Three flat black, white, and green logo directions inspired by marks already used in the Stonecode app.</desc>
+  <rect width="1600" height="1080" fill="#050505"/>
+  <text x="72" y="72" fill="#F4F5EF" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" letter-spacing="2">STONECODE / LOGO STUDY 02</text>
+  <text x="1528" y="72" fill="#6D716C" text-anchor="end" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="1">FLAT · MONO · #65B960</text>
+
+  <g transform="translate(72 116)">
+    <rect width="1456" height="264" rx="24" fill="#101111" stroke="#242624"/>
+    <text x="32" y="42" fill="#777C76" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="14" letter-spacing="1.5">A / BRACKET CORE</text>
+    <g transform="translate(48 76)">
+      <rect width="136" height="136" rx="32" fill="#F4F5EF"/>
+      <path d="M54 35 25 68l29 33M82 35l29 33-29 33" fill="none" stroke="#050505" stroke-width="13" stroke-linecap="square" stroke-linejoin="miter"/>
+      <rect x="63" y="63" width="10" height="10" rx="1" fill="#65B960"/>
+    </g>
+    <text x="224" y="170" fill="#F4F5EF" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="74" font-weight="560" letter-spacing="-3">stonecode</text>
+    <g transform="translate(1262 94)">
+      <rect width="72" height="72" rx="17" fill="#F4F5EF"/>
+      <path d="M29 19 14 36l15 17M43 19l15 17-15 17" fill="none" stroke="#050505" stroke-width="7"/>
+      <rect x="33" y="33" width="6" height="6" fill="#65B960"/>
+    </g>
+  </g>
+
+  <g transform="translate(72 408)">
+    <rect width="1456" height="264" rx="24" fill="#101111" stroke="#242624"/>
+    <text x="32" y="42" fill="#777C76" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="14" letter-spacing="1.5">B / SPLIT DIAMOND</text>
+    <g transform="translate(48 76)">
+      <path d="M68 0 136 68 68 136 0 68Zm0 28L28 68l40 40V88L48 68l20-20Z" fill="#F4F5EF" fill-rule="evenodd"/>
+      <path d="M68 28 108 68l-40 40V88l20-20-20-20Z" fill="#F4F5EF"/>
+      <rect x="63" y="61" width="10" height="14" rx="1" fill="#65B960"/>
+    </g>
+    <text x="224" y="170" fill="#F4F5EF" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="74" font-weight="560" letter-spacing="-3">stonecode</text>
+    <g transform="translate(1262 94)">
+      <path d="M36 0 72 36 36 72 0 36Zm0 15L15 36l21 21V47L25 36l11-11Z" fill="#F4F5EF" fill-rule="evenodd"/>
+      <path d="M36 15 57 36 36 57V47l11-11-11-11Z" fill="#F4F5EF"/>
+      <rect x="33" y="32" width="6" height="8" fill="#65B960"/>
+    </g>
+  </g>
+
+  <g transform="translate(72 700)">
+    <rect width="1456" height="264" rx="24" fill="#101111" stroke="#242624"/>
+    <text x="32" y="42" fill="#777C76" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="14" letter-spacing="1.5">C / CODE FOLD</text>
+    <g transform="translate(48 76)">
+      <path d="M0 0h136v28H46L29 45l17 16h58l32 30v16l-29 29H0v-28h94l13-13-12-12H35L0 49Z" fill="#F4F5EF"/>
+      <rect x="121" y="121" width="15" height="15" rx="1" fill="#65B960"/>
+    </g>
+    <text x="224" y="170" fill="#F4F5EF" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="74" font-weight="560" letter-spacing="-3">stonecode</text>
+    <g transform="translate(1262 94)">
+      <path d="M0 0h72v15H24l-9 9 9 8h31l17 16v8L56 72H0V57h50l7-7-7-6H19L0 26Z" fill="#F4F5EF"/>
+      <rect x="64" y="64" width="8" height="8" fill="#65B960"/>
+    </g>
+  </g>
+
+  <text x="72" y="1026" fill="#555A55" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="14">INSPIRED BY CURRENT FILE-PANEL BRACKETS + AUTH DIAMOND</text>
+  <rect x="1464" y="1008" width="16" height="16" rx="2" fill="#65B960"/>
+  <text x="1450" y="1022" fill="#777C76" text-anchor="end" font-family="IBM Plex Mono, SFMono-Regular, Menlo, monospace" font-size="14">ACCENT</text>
+</svg>

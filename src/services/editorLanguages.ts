@@ -19,6 +19,13 @@ export type EditorLanguageId =
   | "php"
   | "ruby"
   | "swift"
+  | "kotlin"
+  | "dart"
+  | "r"
+  | "julia"
+  | "fortran"
+  | "cobol"
+  | "basic"
   | "shell"
   | "yaml"
   | "xml"
@@ -54,6 +61,13 @@ const languageCatalog: EditorLanguageInfo[] = [
   { id: "php", displayName: "PHP", defaultFilePath: "index.php", extensions: ["php"], canRunInBrowser: false, canPreviewVisual: false, runNote: "PHP editing is supported. Running PHP needs the future backend sandbox." },
   { id: "ruby", displayName: "Ruby", defaultFilePath: "main.rb", extensions: ["rb"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Ruby editing is supported. Running Ruby needs the future backend sandbox." },
   { id: "swift", displayName: "Swift", defaultFilePath: "main.swift", extensions: ["swift"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Swift editing is supported. Running Swift needs the future backend sandbox." },
+  { id: "kotlin", displayName: "Kotlin", defaultFilePath: "Main.kt", extensions: ["kt", "kts"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Kotlin editing is supported. Running Kotlin needs the future backend sandbox." },
+  { id: "dart", displayName: "Dart", defaultFilePath: "main.dart", extensions: ["dart"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Dart editing is supported. Running Dart needs the future backend sandbox." },
+  { id: "r", displayName: "R", defaultFilePath: "main.R", extensions: ["r"], canRunInBrowser: false, canPreviewVisual: false, runNote: "R editing is supported. Running R needs the future backend sandbox." },
+  { id: "julia", displayName: "Julia", defaultFilePath: "main.jl", extensions: ["jl"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Julia editing is supported. Running Julia needs the future backend sandbox." },
+  { id: "fortran", displayName: "Fortran", defaultFilePath: "main.f90", extensions: ["f", "f90", "f95"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Fortran editing is supported. Running Fortran needs the future backend sandbox." },
+  { id: "cobol", displayName: "COBOL", defaultFilePath: "main.cob", extensions: ["cob", "cbl"], canRunInBrowser: false, canPreviewVisual: false, runNote: "COBOL editing is supported. Running COBOL needs the future backend sandbox." },
+  { id: "basic", displayName: "BASIC", defaultFilePath: "main.bas", extensions: ["bas", "vb"], canRunInBrowser: false, canPreviewVisual: false, runNote: "BASIC editing is supported. Running BASIC needs the future backend sandbox." },
   { id: "shell", displayName: "Shell", defaultFilePath: "script.sh", extensions: ["sh", "bash", "zsh"], canRunInBrowser: false, canPreviewVisual: false },
   { id: "yaml", displayName: "YAML", defaultFilePath: "config.yaml", extensions: ["yml", "yaml"], canRunInBrowser: false, canPreviewVisual: false },
   { id: "xml", displayName: "XML", defaultFilePath: "document.xml", extensions: ["xml"], canRunInBrowser: false, canPreviewVisual: false },
@@ -89,6 +103,13 @@ export function resolveEditorLanguage(pathOrLanguage: string | null | undefined)
   if (/\bphp\b/.test(normalized)) return byId.get("php")!;
   if (/\bruby\b|\brb\b/.test(normalized)) return byId.get("ruby")!;
   if (/\bswift\b/.test(normalized)) return byId.get("swift")!;
+  if (/\bkotlin\b/.test(normalized)) return byId.get("kotlin")!;
+  if (/\bdart\b|flutter/.test(normalized)) return byId.get("dart")!;
+  if (/\br programming\b|\br language\b/.test(normalized) || normalized === "r") return byId.get("r")!;
+  if (/\bjulia\b/.test(normalized)) return byId.get("julia")!;
+  if (/\bfortran\b/.test(normalized)) return byId.get("fortran")!;
+  if (/\bcobol\b/.test(normalized)) return byId.get("cobol")!;
+  if (/\bbasic\b|qbasic|visual basic/.test(normalized)) return byId.get("basic")!;
   if (/\bsql\b/.test(normalized)) return byId.get("sql")!;
   if (/\byaml\b|\byml\b/.test(normalized)) return byId.get("yaml")!;
   if (/\bxml\b/.test(normalized)) return byId.get("xml")!;
@@ -101,6 +122,35 @@ export function resolveEditorLanguage(pathOrLanguage: string | null | undefined)
 
 export function defaultFilePath(pathOrLanguage: string | null | undefined) {
   return resolveEditorLanguage(pathOrLanguage).defaultFilePath;
+}
+
+export function defaultStarterCode(pathOrLanguage: string | null | undefined) {
+  const language = resolveEditorLanguage(pathOrLanguage);
+  const starters: Partial<Record<EditorLanguageId, string>> = {
+    javascript: "const message = 'Value: stone';\nconsole.log(message);\n",
+    typescript: "const message: string = 'Value: stone';\nconsole.log(message);\n",
+    python: "message = \"Value: stone\"\nprint(message)\n",
+    ruby: "message = \"Value: stone\"\nputs message\n",
+    php: "<?php\n$message = \"Value: stone\";\necho $message . PHP_EOL;\n",
+    java: "public class Main {\n  public static void main(String[] args) {\n    String message = \"Value: stone\";\n    System.out.println(message);\n  }\n}\n",
+    csharp: "using System;\n\nclass Program {\n  static void Main() {\n    string message = \"Value: stone\";\n    Console.WriteLine(message);\n  }\n}\n",
+    cpp: "#include <iostream>\n#include <string>\n\nint main() {\n  std::string message = \"Value: stone\";\n  std::cout << message << std::endl;\n  return 0;\n}\n",
+    c: "#include <stdio.h>\n\nint main(void) {\n  printf(\"Value: stone\\n\");\n  return 0;\n}\n",
+    go: "package main\n\nimport \"fmt\"\n\nfunc main() {\n  message := \"Value: stone\"\n  fmt.Println(message)\n}\n",
+    rust: "fn main() {\n    let message = \"Value: stone\";\n    println!(\"{}\", message);\n}\n",
+    swift: "let message = \"Value: stone\"\nprint(message)\n",
+    kotlin: "fun main() {\n    val message = \"Value: stone\"\n    println(message)\n}\n",
+    dart: "void main() {\n  final message = 'Value: stone';\n  print(message);\n}\n",
+    sql: "SELECT 'Value: stone' AS message;\n",
+    r: "message <- \"Value: stone\"\nprint(message)\n",
+    julia: "message = \"Value: stone\"\nprintln(message)\n",
+    fortran: "program main\n  implicit none\n  print *, \"Value: stone\"\nend program main\n",
+    cobol: "IDENTIFICATION DIVISION.\nPROGRAM-ID. MAIN.\nPROCEDURE DIVISION.\n    DISPLAY \"Value: stone\".\n    STOP RUN.\n",
+    basic: "LET message$ = \"Value: stone\"\nPRINT message$\n",
+    html: "<!doctype html>\n<html>\n  <body>\n    <h1>Value: stone</h1>\n  </body>\n</html>\n",
+    css: ".message {\n  color: #8ee8ad;\n}\n"
+  };
+  return starters[language.id] ?? "";
 }
 
 export async function loadEditorLanguageExtension(filePath: string): Promise<Extension> {
@@ -124,6 +174,13 @@ export async function loadEditorLanguageExtension(filePath: string): Promise<Ext
   if (language.id === "csharp") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/clike")).csharp);
   if (language.id === "ruby") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/ruby")).ruby);
   if (language.id === "swift") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/swift")).swift);
+  if (language.id === "kotlin") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/clike")).kotlin);
+  if (language.id === "dart") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/clike")).dart);
+  if (language.id === "r") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/r")).r);
+  if (language.id === "julia") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/julia")).julia);
+  if (language.id === "fortran") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/fortran")).fortran);
+  if (language.id === "cobol") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/cobol")).cobol);
+  if (language.id === "basic") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/vb")).vb);
   if (language.id === "shell") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/shell")).shell);
   if (language.id === "yaml") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/yaml")).yaml);
   if (language.id === "xml") return StreamLanguage.define((await import("@codemirror/legacy-modes/mode/xml")).xml);

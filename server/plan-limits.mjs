@@ -1,15 +1,24 @@
 export const planLimits = {
   free: {
-    activeCourseLimit: 1,
-    aiMessagesPerMonth: 50
+    activeCourseLimit: 10,
+    aiMessagesPerMonth: 3000,
+    monthlyExperienceGenerationLimit: null,
+    firstModuleOnly: false,
+    requiresOwnOpenAiKey: true
   },
   basic: {
     activeCourseLimit: 2,
-    aiMessagesPerMonth: 500
+    aiMessagesPerMonth: 500,
+    monthlyExperienceGenerationLimit: null,
+    firstModuleOnly: false,
+    requiresOwnOpenAiKey: false
   },
   pro: {
     activeCourseLimit: 10,
-    aiMessagesPerMonth: 3000
+    aiMessagesPerMonth: 3000,
+    monthlyExperienceGenerationLimit: null,
+    firstModuleOnly: false,
+    requiresOwnOpenAiKey: false
   }
 };
 
@@ -23,4 +32,9 @@ export function resolvePlanLimit(plan) {
 
 export function canCreateActiveCourse(plan, activeCourseCount) {
   return activeCourseCount < resolvePlanLimit(plan).activeCourseLimit;
+}
+
+export function canGenerateExperience(plan, generatedThisMonth) {
+  const limit = resolvePlanLimit(plan).monthlyExperienceGenerationLimit;
+  return limit === null || generatedThisMonth < limit;
 }

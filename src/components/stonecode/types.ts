@@ -1,9 +1,10 @@
-import { Course } from "@/data/courses";
+import { Course, GeneratedExerciseWorkspaceFile } from "@/data/courses";
 import { StoredChatMessage } from "@/services/courseStorage";
 import { KeyboardEvent } from "react";
 import { PlanTier } from "@/lib/database.types";
 import { LessonStep } from "@/components/stonecode/lessonData";
 import { IndependentExercise } from "@/features/exercises/challengeData";
+import { WorkspaceFile } from "@/services/workspaceFiles";
 
 export type ActiveState = {
   courseId: Course["id"];
@@ -11,6 +12,12 @@ export type ActiveState = {
 };
 
 export type CardView = "resume" | "exercises";
+
+export type EditorDiagnostic = {
+  filePath?: string;
+  line: number;
+  message: string;
+};
 
 export type CourseCardProps = {
   active: boolean;
@@ -20,6 +27,7 @@ export type CourseCardProps = {
   cardIndex: number;
   chatMessages: StoredChatMessage[];
   activeFileContent: string;
+  workspaceFiles: WorkspaceFile[];
   fileCount: number;
   lessonIndex: number;
   progress: number;
@@ -30,7 +38,9 @@ export type CourseCardProps = {
   requestLessonIntro: (lessonIndex: number, lesson: LessonStep) => void;
   onExerciseHint: (exercise: IndependentExercise, question: string, code: string) => Promise<string>;
   onExerciseTemplate: (exercise: IndependentExercise, code: string) => Promise<string>;
-  onLoadExerciseFile: (path: string, content: string) => void;
+  onLoadExerciseFile: (path: string, content: string, replaceExisting?: boolean) => void;
+  onLoadExerciseWorkspace: (files: GeneratedExerciseWorkspaceFile[], activeFilePath: string, replaceExisting?: boolean) => void;
+  onEditorDiagnosticsChange: (diagnostics: EditorDiagnostic[]) => void;
   onGenerateChapter: (chapterIndex: number) => Promise<void>;
   onLessonIndexChange: (lessonIndex: number) => void;
   onViewChange: (view: CardView | null) => void;

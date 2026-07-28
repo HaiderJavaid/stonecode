@@ -3,22 +3,34 @@ import { PlanTier } from "@/lib/database.types";
 export const planLimits: Record<PlanTier, {
   activeCourseLimit: number;
   aiMessagesPerMonth: number;
-  independentExercisesPerDay: number;
+  independentExercisesPerDay: number | null;
+  monthlyExperienceGenerationLimit: number | null;
+  firstModuleOnly: boolean;
+  requiresOwnOpenAiKey: boolean;
 }> = {
   free: {
-    activeCourseLimit: 1,
-    aiMessagesPerMonth: 50,
-    independentExercisesPerDay: 2
+    activeCourseLimit: 10,
+    aiMessagesPerMonth: 3000,
+    independentExercisesPerDay: null,
+    monthlyExperienceGenerationLimit: null,
+    firstModuleOnly: false,
+    requiresOwnOpenAiKey: true
   },
   basic: {
     activeCourseLimit: 2,
     aiMessagesPerMonth: 500,
-    independentExercisesPerDay: 10
+    independentExercisesPerDay: null,
+    monthlyExperienceGenerationLimit: null,
+    firstModuleOnly: false,
+    requiresOwnOpenAiKey: false
   },
   pro: {
     activeCourseLimit: 10,
     aiMessagesPerMonth: 3000,
-    independentExercisesPerDay: 30
+    independentExercisesPerDay: null,
+    monthlyExperienceGenerationLimit: null,
+    firstModuleOnly: false,
+    requiresOwnOpenAiKey: false
   }
 };
 

@@ -1,5 +1,5 @@
 import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
-import { Course } from "@/data/courses";
+import { Course, experienceTypeFromContent } from "@/data/courses";
 
 export type StoredChatMessage = {
   id: string;
@@ -49,7 +49,11 @@ export function loadCourseState(): StoredCourseState {
 
     return {
       activeCourseId: parsed.activeCourseId ?? null,
-      coursesById: parsed.coursesById ?? {},
+      coursesById: Object.fromEntries(Object.entries(parsed.coursesById ?? {}).map(([id, course]) => [id, {
+        ...course,
+        experienceType: course.experienceType ?? experienceTypeFromContent(course.courseContent),
+        learningBrief: course.learningBrief ?? (course.courseContent && "learningBrief" in course.courseContent ? course.courseContent.learningBrief : null)
+      }])),
       courseOrder: parsed.courseOrder ?? [],
       selectedFilesByCourse: parsed.selectedFilesByCourse ?? {},
       chatByCourse: parsed.chatByCourse ?? {},

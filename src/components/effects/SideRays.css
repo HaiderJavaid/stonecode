@@ -1,0 +1,25 @@
+.side-rays-container {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-side-rays {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: #292929;
+}
+
+.app-side-rays canvas {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-side-rays {
+    opacity: 0.72;
+  }
+}

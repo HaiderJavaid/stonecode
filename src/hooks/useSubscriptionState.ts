@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/auth/AuthProvider";
 import {
   defaultSubscriptionState,
@@ -9,39 +9,43 @@ import {
 export function useSubscriptionState() {
   const { isConfigured, user } = useAuth();
   const [subscription, setSubscription] = useState<SubscriptionState>(defaultSubscriptionState);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(() => Boolean(isConfigured && user));
   const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     if (!isConfigured || !user) {
       setSubscription(defaultSubscriptionState);
       setIsLoading(false);
       setError(null);
-      return;
+      return defaultSubscriptionState;
     }
 
-    let isCancelled = false;
+    const currentRequest = ++requestId.current;
     setIsLoading(true);
     setError(null);
-
-    loadSubscriptionState(user)
-      .then((nextSubscription) => {
-        if (isCancelled) return;
+    try {
+      const nextSubscription = await loadSubscriptionState(user);
+      if (requestId.current === currentRequest) {
         setSubscription(nextSubscription);
-      })
-      .catch((caughtError) => {
-        if (isCancelled) return;
-        setSubscription(defaultSubscriptionState);
+      }
+      return nextSubscription;
+    } catch (caughtError) {
+      if (requestId.current === currentRequest) {
         setError(caughtError instanceof Error ? caughtError.message : "Failed to load subscription.");
-      })
-      .finally(() => {
-        if (!isCancelled) setIsLoading(false);
-      });
-
-    return () => {
-      isCancelled = true;
-    };
+      }
+      throw caughtError;
+    } finally {
+      if (requestId.current === currentRequest) setIsLoading(false);
+    }
   }, [isConfigured, user]);
 
-  return { subscription, isLoading, error };
+  useEffect(() => {
+    void refresh().catch(() => undefined);
+    return () => {
+      requestId.current += 1;
+    };
+  }, [refresh]);
+
+  return { subscription, isLoading, error, refresh };
 }

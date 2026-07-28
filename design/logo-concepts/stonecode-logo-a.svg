@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 160" role="img" aria-labelledby="title desc">
+  <title id="title">Stonecode logo concept A</title>
+  <desc id="desc">Minimal black and white code bracket mark with a small green cursor accent.</desc>
+  <rect width="720" height="160" rx="28" fill="#050505"/>
+  <rect x="28" y="24" width="112" height="112" rx="28" fill="#F4F5EF"/>
+  <path d="M72 53 47 80l25 27M96 53l25 27-25 27" fill="none" stroke="#050505" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="80" y="76" width="8" height="8" rx="1" fill="#65B960"/>
+  <text x="172" y="99" fill="#F4F5EF" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="66" font-weight="560" letter-spacing="-2.6">stonecode</text>
+</svg>

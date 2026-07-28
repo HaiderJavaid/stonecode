@@ -2,8 +2,8 @@ import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { AiFileEdit, applyAiFileEdits } from "@/ai/fileEditCommands";
-import { Course, GeneratedCourseContent, buildSyllabusFromGeneratedContent } from "@/data/courses";
-import { requestGeneratedChapter } from "@/services/courseGeneration";
+import { Course, GeneratedExerciseWorkspaceFile, GeneratedLearningContent, buildSyllabusFromGeneratedContent } from "@/data/courses";
+import { requestGeneratedChapter, requestGeneratedProjectMilestone } from "@/services/courseGeneration";
 import {
   clearCourseState,
   defaultStoredCourseState,
@@ -60,7 +60,7 @@ export function useCourseWorkspace() {
   const activeFiles = activeCourse ? storedState.workspaceFilesByCourse[activeCourse.id] ?? [] : [];
   const activeFolders = activeCourse ? storedState.workspaceFoldersByCourse[activeCourse.id] ?? [] : [];
   const selectedFile = activeFiles[active?.fileIndex ?? 0] ?? null;
-  const activeCourseCount = userCourses.length;
+  const activeCourseCount = userCourses.filter((course) => course.experienceType !== "exercise").length;
 
   function getCourseFiles(course: Course, state = storedState) {
     return state.workspaceFilesByCourse[course.id] ?? [];
@@ -288,7 +288,7 @@ export function useCourseWorkspace() {
     }));
   }
 
-  function loadExerciseFile(course: Course, path: string, content: string) {
+  function loadExerciseFile(course: Course, path: string, content: string, replaceExisting = true) {
     const normalizedPath = normalizeWorkspacePath(path);
     if (!normalizedPath) return;
     let selectedIndex = 0;
@@ -299,7 +299,7 @@ export function useCourseWorkspace() {
       selectedIndex = existingIndex >= 0 ? existingIndex : Math.min(Math.max(activeIndex, 0), Math.max(dedupedFiles.length - 1, 0));
       return {
         files: existingIndex >= 0
-          ? dedupedFiles.map((file, index) => (index === existingIndex ? { ...file, content } : file))
+          ? dedupedFiles.map((file, index) => (index === existingIndex && replaceExisting ? { ...file, content } : file))
           : dedupedFiles.length
             ? dedupedFiles.map((file, index) => (index === selectedIndex ? { path: normalizedPath, content } : file))
             : [{ path: normalizedPath, content }],
@@ -309,8 +309,52 @@ export function useCourseWorkspace() {
     setActive({ courseId: course.id, fileIndex: selectedIndex });
   }
 
+  function loadExerciseWorkspace(
+    course: Course,
+    workspaceFiles: GeneratedExerciseWorkspaceFile[],
+    activeFilePath: string,
+    replaceExisting = true
+  ) {
+    const normalizedFiles = workspaceFiles
+      .map((file) => ({ path: normalizeWorkspacePath(file.path), content: file.content }))
+      .filter((file) => file.path);
+    const normalizedActivePath = normalizeWorkspacePath(activeFilePath);
+    if (!normalizedFiles.length || !normalizedActivePath) return;
+
+    let selectedIndex = 0;
+    setStoredState((current) => {
+      const merged = dedupeWorkspaceFiles(current.workspaceFilesByCourse[course.id] ?? []);
+      for (const incoming of normalizedFiles) {
+        const index = merged.findIndex((file) => file.path === incoming.path);
+        if (index < 0) merged.push(incoming);
+        else if (replaceExisting) merged[index] = incoming;
+      }
+      selectedIndex = Math.max(merged.findIndex((file) => file.path === normalizedActivePath), 0);
+      const derivedFolders = normalizedFiles.flatMap((file) => workspaceFolderPaths(file.path));
+      const currentFolders = current.workspaceFoldersByCourse[course.id] ?? [];
+      const folders = [...new Set([...currentFolders.map((folder) => folder.path), ...derivedFolders])]
+        .map((path) => ({ path }));
+      return {
+        ...current,
+        workspaceFilesByCourse: { ...current.workspaceFilesByCourse, [course.id]: merged },
+        workspaceFoldersByCourse: { ...current.workspaceFoldersByCourse, [course.id]: folders },
+        selectedFilesByCourse: { ...current.selectedFilesByCourse, [course.id]: selectedIndex }
+      };
+    });
+    setActive({ courseId: course.id, fileIndex: selectedIndex });
+  }
+
   async function generateCourseChapter(course: Course, chapterIndex: number) {
-    if (!course.courseContent) return;
+    if (course.courseContent?.schemaVersion === "guided-project-content/v1") {
+      const result = await requestGeneratedProjectMilestone({
+        courseId: course.id,
+        content: course.courseContent,
+        milestoneIndex: chapterIndex
+      });
+      updateGeneratedCourseContent(course.id, result.content);
+      return;
+    }
+    if (!course.courseContent || (course.courseContent.schemaVersion !== "course-content/v1" && course.courseContent.schemaVersion !== "course-content/v2")) return;
     const result = await requestGeneratedChapter({
       courseId: course.id,
       content: course.courseContent,
@@ -319,7 +363,7 @@ export function useCourseWorkspace() {
     updateGeneratedCourseContent(course.id, result.content);
   }
 
-  function updateGeneratedCourseContent(courseId: string, content: GeneratedCourseContent) {
+  function updateGeneratedCourseContent(courseId: string, content: GeneratedLearningContent) {
     setStoredState((current) => {
       const course = current.coursesById[courseId];
       if (!course) return current;
@@ -550,6 +594,7 @@ export function useCourseWorkspace() {
     selectFile,
     updateFileContent,
     loadExerciseFile,
+    loadExerciseWorkspace,
     generateCourseChapter,
     createWorkspaceFile,
     createWorkspaceFolder,
@@ -563,6 +608,11 @@ export function useCourseWorkspace() {
     resetDemoState,
     handleCardKey
   };
+}
+
+function workspaceFolderPaths(filePath: string) {
+  const parts = filePath.split("/").slice(0, -1);
+  return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
 }
 
 function dedupeWorkspaceFiles(files: WorkspaceFile[]) {

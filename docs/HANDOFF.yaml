@@ -1,4 +1,4 @@
-date: 2026-07-03
+date: 2026-07-28
 project:
   name: Stonecode
   local_path: /Users/kinghaider/Desktop/Coding/projects/stonecode
@@ -6,15 +6,18 @@ project:
 status:
   active_ui: src/components/stonecode/StonecodePrototype.tsx
   positioning: paid-beta AI programming tutor for self-taught beginners
-  current_stage: course-content/v2 assessment-first generation implemented locally; authenticated QA and migrations remain
-  current_branch: setting-page-redesign
+  current_stage: universal discovery now captures prior knowledge, offers optional late assessment, and generates guided projects as one complete workshop module
+  current_branch: codex/reactbits-side-rays-bg
   current_risks:
-    - pending Supabase migrations still need to be applied and verified live, especially generated course content and progression/hint fields
+    - Judge0 execution code is implemented and mock-verified, but paid remote execution is intentionally deferred for MVP
+    - learning-experience and skill-progression migrations were reported applied on 2026-07-15; full live progression/title write QA is still needed
     - full real-user v2 QA is still needed from dashboard setup through generated course completion and refresh persistence
     - current QA course on localhost had only one saved generated module; create a fresh v2 course for final flow QA
+    - "server/course-generation.mjs still holds too many responsibilities even after the first extraction pass; keep splitting without changing behavior"
     - generated code-exercise grading still needs stronger server-side rubrics/tests
-    - editor syntax supports many languages, but browser Run is still JavaScript-only; compiled/interpreted languages need the future backend sandbox
+    - editor syntax supports many languages; JavaScript runs locally while other languages require an optional configured remote sandbox
     - Vite dev websocket conflicts can occur if multiple dev servers run; use a stable port or restart cleanly before QA
+    - OpenAI credits were unavailable on 2026-07-15, so the tightened guided-project contract is statically verified but still needs one fresh live generation when credits return
     - dirty worktree contains many milestone edits and untracked files; do not reset or discard user changes
 deployment:
   host_target: unknown
@@ -24,9 +27,70 @@ deployment:
   pushed: false
   pr_url: null
 done:
+  - login and signup are clean mirrored panels: the staged first-load reveal remains intact, while panel-to-panel entrance/exit transitions are immediate; signup collects identity, passwords, and terms in one compact form, then verifies a Supabase eight-digit email OTP in a centered dashboard-styled modal
+  - successful signup verification immediately starts the same IDE zoom handoff as sign-in and enters the dashboard without forcing plan choice or API-key setup
+  - verified Free users can browse the dashboard without an automatic credential prompt; Start learning and other AI-backed actions open the dismissible OpenAI-key gate until a server-verified encrypted key is connected, with Pro upgrade available from that gate
+  - active/trialing paid accounts bypass the Free-key gate; the plan chooser remains available only from an explicit AI-learning upgrade path
+  - a canonical Stonecode confirmation-email template and hosted Supabase/SMTP setup guide now live in the repository
+  - Settings now mounts the dashboard's actual StoneSurface/file-panel left card, including the same texture layer, dimensions, border radius, and shadow; the three-rail shell retains six functional internal routes, real progression/usage/subscription data, persisted profile preferences, and environment/sync content
+  - Settings opening/closing keeps the exact dashboard wall and animates all three rails over a transparent blur-only backdrop with no tint or saturation swap; circular and linear progression fills animate on entry, and earned badges render as an equip/unequip list
+  - the diamond mark introduced in signup email verification is the canonical shared Stonecode logo used by authentication, workspace/file-panel branding, Dashboard, Settings, the public navbar/footer, and the browser favicon
+  - the dashboard course lane now keeps its launcher and Settings footer anchored while the course list scrolls independently; shared course progress is reused by Dashboard and Settings
+  - dashboard and course-workspace walls use a slightly brighter continuation of the sign-in vignette with grain/grid removed; the auth handoff fades only to that target darkness to prevent a bright flash, panels retain stone texture, and the original application light rays remain unchanged
+  - the auth preview IDE, empty dashboard editor, and active CodeMirror editor shell now share one surface, texture, opacity, radius, six-layer shadow, and viewport-aligned lighting token set; lighting ownership swaps on the route frame while the lighting layer stays behind all code/text content
+  - successful login now drives the auth card through an explicit rightward exit keyframe before the dashboard handoff instead of relying on a state-dependent transition
+  - signing out from Settings now completes the Settings close animation, reverses the shared IDE from full workspace size to its original login position, then slides the login panel back in without a route flash
+  - the dashboard and auth transition surfaces now share one wall vignette; sign-out crossfades the darker auth lighting continuously across the full IDE zoom instead of enabling it in a single frame
+  - the dashboard learning list stretches to the Settings boundary; its empty state is one full-height black card with centered copy and a Start learning action
+  - public landing retains its wall grain, grid, and vignette plus the login card's frosted border/background/blur/shadow treatment for navigation and landing cards; the hero cutout has rounded outer clipping, and its middle CodeMirror editor now matches the real workspace with tabs directly above one editor shell and no extra surrounding StoneSurface
+  - public landing panels use 1240ms transitions with 340ms text/media/card staggering and replay after fully leaving the viewport; the sticky frosted navbar stays visible while scrolling, and SideRays animate in last behind the completed hero sequence without a boundary flash
+  - public pricing now offers Free and $9 Pro only; Free has complete-path/all-mode access through a server-encrypted user OpenAI key, while Pro includes Stonecode-managed AI; legacy Basic records remain supported
+  - course and guided-project discovery now captures the learner's relevant prior knowledge before presenting an optional prerequisite check near the end
+  - optional assessment is capped at three questions; skipping goes directly to the editable review using the learner's declared background
+  - guided project and workshop are one experience: one module containing introduction theory, one 10-20-step continuous build, and final theory recap
+  - new guided projects use guided-project-content/v2 while saved v1 milestone projects remain readable and resumable
+  - guided-project v2 AI output uses one initial workspace manifest plus compact exact edits; the server expands every edit into full starter/result/workspace snapshots, avoiding the prior 16k output ceiling
+  - compact project edits prefer exact replacement, tolerate whitespace/stale anchors, and preserve the generated review for retry if the structure remains invalid
+  - course home no longer exposes nested Exercises; pure practice is created only as a standalone learning conversation
+  - generated coding practice now explicitly prefers realistic bug-fix, missing-feature, debugging, and data-task scenarios
+  - authenticated Chrome QA generated and persisted Build a Simple Desktop Platformer with Pygame as one module with 6-step intro theory, 11 coding steps plus recap, and 5-step final theory; no browser errors occurred
+  - that Pygame QA exposed overlong intro/recap and preloaded scratch code; normalization now compacts them to 1-3 and 1-2 steps, clears scratch sources, rejects no-op/run-only steps, and enforces imports -> pygame.init() -> dimensions
+  - native visual projects now receive a source-linked synchronized HTML scene for Visual while Terminal remains the real runtime; repair/add-feature tasks alone may preload existing implementation code
+  - saved lightweight visual steps now auto-repair missing previews at lesson load and recompute them from current editor code without Terminal/OpenAI; already-loaded starter state is preserved
+  - saved workshop rendering now omits legacy run/inspect-only steps with no code delta so optional Terminal execution cannot block progression
+  - deterministic Visual profiles cover browser Canvas/CSS, Pygame/Turtle/Tkinter/Matplotlib, raylib/SDL/SFML, Java/.NET 2D, and simple mobile UI representations; Unity/Unreal/Godot-class engines are Code-only
+  - exercise discovery now resolves practice scope, motivation, topics, count, difficulty, and an editable coding/MCQ mix before confirmation
+  - vague practice defaults to ten exercises and a 70 percent coding proposal; generated sessions reject wrong counts and any theory or workshop leakage
+  - verified exercise progression now stores primary skill, parent language, topics, domains, and exercise kind with difficulty-weighted MCQ/code XP
+  - Settings solved-exercise distribution now groups by primary skill while the Language XP view aggregates parent-language XP without doubling total XP
+  - configurable Frontend Developer, Backend Engineer, Game Developer, Mobile Developer, and Full-stack Developer title badges use program-completion and XP gates
+  - universal AI learning discovery now routes confirmed briefs to course, short-course, exercise, or guided-project generation
+  - all four experience types persist in the existing workspace container with type badges, resumable navigation, chat, files, and progress
+  - exercise sessions use practice allowances without consuming active-program limits
+  - explicit Pygame requests are grounded to Python/Pygame and cannot drift into Unity/C# assessment targets
+  - confirmation persistence is idempotent through a per-user client request id
+  - live Supabase 2026-07-05 learner-profile, course-assessment, and RAG migration applied; four tables and match_rag_chunks RPC verified through the project API
+  - provider-neutral execution boundary and Judge0 adapter now support runtime discovery, strict resource limits, output normalization, and compile/runtime feedback
+  - authenticated execution endpoints now expose safe capabilities and Run without accepting arbitrary commands
+  - non-browser IDE Run now calls the configured sandbox while JavaScript stays in the browser worker and HTML/CSS stay in Visual preview
+  - generated exercise grading now runs learner code plus generated result-code oracles when Judge0 is configured, then combines execution with server acceptance checks
+  - mocked Judge0 verification covers successful execution, compile failure, language resolution, limits, output matching, and mismatches
+  - courses remain dynamically generated per learner; no hard-coded course catalog was introduced
+  - standalone programming-language fundamentals now skip assessment, while frameworks, libraries, advanced specializations, and applied paths require it
+  - shared server capability profiles now cover web, application, enterprise, mobile, data, systems, and legacy language families
+  - editor language support now includes Kotlin, Dart, R, Julia, Fortran, COBOL, and BASIC
+  - workshop steps now normalize explicit ids, dependencies, concept ids, pre-edit starter code, expected micro-edits, and post-edit result code
+  - workshop starter loading now persists its loaded state and preserves existing code across later workshop steps and revisits
+  - AI generation fallbacks are now reported as failures and the setup UI refuses to silently save generic recovery content
+  - failed assessment course generation now returns an actionable 502 and preserves the review screen instead of creating rejected local recovery content
+  - incomplete OpenAI JSON responses retry with a larger bounded output budget
+  - quality repair runs at topic scope, repairs affected topics concurrently, protects unrelated valid blocks, and allows wording-only context warnings after bounded repair while structural errors still block saving
+  - task-based OpenAI model routing now supports low, medium, high, reasoning, and grader roles with OPENAI_MODEL fallback
   - OpenAI Responses API is now the main tutor/course/grader provider path; OpenRouter path was removed from active routing
   - direct AI file edits and generated code exercises reuse or rename the active IDE whiteboard file instead of creating folders/README/new JS files
-  - setup flow now asks subject, asks readiness, runs adaptive assessment, shows review, then generates course from assessment
+  - setup flow now resolves the learning goal and prior knowledge, offers an optional assessment near the end, shows editable review, then generates the selected experience
+  - setup now begins with AI-generated conversational discovery and contextual suggested answers while free typing remains available
+  - vague outcome-first requests are clarified into a specific course target before assessment policy is applied
   - assessment MCQs require plausible same-length distractors and adaptive follow-up after skipped/wrong prerequisite answers
   - assessment follow-ups now step down after skipped/wrong prerequisite answers and check readiness signals such as syntax recognition, input/rule/output tracing, debugging mindset, and prerequisite gaps
   - assessment MCQs now ask with explicit intent to discover learner intention, readiness, prerequisite gaps, syntax bridges, and required modules; the skip control is learner-facing as I don't know
@@ -40,7 +104,10 @@ done:
   - generated content normalization enforces block-kind step boundaries, so theory/quiz/workshop/lab blocks cannot silently mix incompatible step types
   - quiz blocks are exam-style MCQ-only checkpoints with multiple questions; one-off MCQ checks stay inside theory blocks
   - workshop blocks are guided practical editor steps that build on each other
-  - lab blocks are independent practice, usually one step, only after workshop or thorough teaching
+  - lab blocks are independent transfer practice, usually one step, only after a relevant guided workshop; theory alone is insufficient
+  - generated progression validation rejects labs before workshops and projects before multiple workshops plus at least one lab establish readiness
+  - milestone project timing remains AI-selected after readiness, while the final capstone stays near the end of the course
+  - Judge0 is optional for MVP; browser JavaScript and Visual preview remain available while other languages use editing plus static/AI feedback
   - answer-in-chat/reflection prompts require recap or clue before asking the learner to write
   - generated course prompt no longer asks for user level, learning mode, project type, Leetcode preference, preview edits, or final confirmation
   - left panel now has Modules and Files tabs; generated courses default to Modules
@@ -50,47 +117,89 @@ done:
   - generated courses now fully load/unlock module 1, while modules 2+ remain locked shell buttons
   - course lesson progress bar now tracks steps inside the current block, with Next section/block/topic labels and no auto-advance across modules
   - workshop/lab/project steps now include context and MVP acceptance checklists; editor submissions update a dynamic checklist
-  - workshop prompts now require FreeCodeCamp-style tutorial guidance before learner action, including many tiny numbered steps, syntax reminders/examples, exact step code, and explanation of important lines
+  - workshop rendering now introduces the build only on Step 1, then shows one compact micro-edit, exact code delta, and explanation of only that delta on later coding steps
+  - every workshop now ends with a non-coding recap that explains the finished code and its practical use; saved workshops receive the recap at display time
+  - workshop steps expose relevant suggested questions plus free-form tutor chat, and failed checks add non-mutating inline diagnostic comments beside incorrect editor lines
   - course generation now assumes zero programming/syntax knowledge unless assessment proves otherwise, and prompts must explain every new code token before requiring it
   - generated workshops are variable-length guided mini-projects; two-step workshops are rejected during normalization instead of rendered as real workshops
   - labs should usually reuse the same project pattern as the preceding workshop with a variant and less guidance
   - lesson rendering now strips leaked prompt/internal-planning text and replaces old generic fallback workshop context with language-aware context
-  - Java/Python/C++/JS workshop lessons now render syntax reminders and starter-code explanations from the actual starter code
+  - workshop generation now requires step-specific codeExplanation and suggestedQuestions instead of repeated generic syntax lists or whole-starter excerpts
   - C# course/exercise detection now correctly resolves C# instead of C, including saved-course display repair for older C# lessons that stored C/printf metadata
-  - course workshop starter files auto-load once per step; the manual Load starter button was removed and the primary editor action is Check -> Submit and next after pass
+  - course workshop starter files auto-load once per step; the manual Load starter button was removed and shared lesson navigation handles Check -> Next section
   - generated code exercise grading now evaluates generated acceptance criteria on both client checklist and server progression API instead of passing on generic code shape alone
   - generated visual exercises can set requiresPreview so the lesson tells learners to inspect the Visual view before submitting
+  - center IDE now uses full-height Code/Visual/Terminal tabs; the terminal no longer occupies a fixed bottom row
+  - generated practical steps now normalize workspaceView, requiresPreview, requiresTerminal, and a complete workspaceFiles project manifest
+  - visual web/game bug-fix and feature exercises are prompted to preload a renderable starting scene; native-language scenes are labeled visual references
+  - generated nested paths are preserved, related folders/files load together, and tutor context includes the complete file/folder workspace
+  - advanced/applied-course assessment now gates a narrow target-specific refresher module instead of always adding generic fundamentals
   - generated exercise normalization replaces obvious JavaScript starter code when the target exercise language is non-JS
   - editor exercise MVP checklist can be collapsed/restored from the lesson chat dock
   - shared editor language registry maps common languages to CodeMirror support, generated filenames, run capability, and preview support
   - CodeMirror support now includes Go, Rust, C#, Ruby, Swift, shell, YAML, XML, Vue/Svelte-like markup, and prior JS/TS/Python/HTML/CSS/SQL/Java/C++/PHP modes
-  - editor has a frosted Code/Visual toggle; visual preview supports HTML, CSS, and browser JavaScript
+  - Visual uses HTML as the browser entrypoint, resolves only explicitly linked local CSS/JavaScript, names connected files, warns about broken references, and guides unlinked assets
   - Files tab keeps existing file/folder tree and file/folder actions live in per-item triple-dot menus
   - right-panel Course Roadmap button/function was removed
   - completed generated MCQ/writing/editor steps hydrate from progression attempts when revisited
   - AI chat and editor text were brightened/enlarged while preserving code line-number gutter brightness
   - generated topic transitions avoid repeating the first Stonecode greeting after the first course step
   - tutor lesson rendering introduces as a personal AI Tutor, not as Stonecode
+  - Code/Visual/Terminal tabs now sit above and outside the editor shell, using the same rectangular stone-form styling as the left panel
+  - workshop MVP checklists now start closed behind a compact chevron and slide open without learner-facing implementation instructions
+  - workshop grading now reuses the shared Previous/Next control: Next becomes Check until the code passes, then becomes Next section; the duplicate Submit and next button was removed
+  - theory generation now requires course and chapter orientation, explanatory prose before bullets, mental models, useful analogies mapped back to code, and small worked examples
+  - existing saved v2 courses receive a course-specific opening and one orientation message at the first step of each topic
+  - tutor quick actions and short follow-ups now receive direct conversational replies instead of the full Goal/Concept/Task/Acceptance/Verify/Next template
+  - workshop chat now uses the same quick-actions/composer layout as theory, caps suggestions at three, and renders checking/error messages in the conversation above the dock
+  - failed workshop diagnostics carry the source file path, render only in that matching editor file, and show file plus line-local guidance
+  - multi-file workshop Check resolves and grades the step's declared file path instead of whichever workspace file the learner last selected
+  - first architecture cleanup pass split course-generation rule loading, block contracts, and learner/static generation context into `server/course-generation/*`
 verification:
   passed:
+    - npm run verify:ai-credentials
+    - npm run verify:subscription-state
+    - npm run verify:stripe-subscription-sync
+    - authenticated browser QA for universal greeting, complete exercise request, short-course routing, Python fundamentals no-assessment policy, React assessment policy, and Pygame project prerequisites
+    - npm run verify:learning-orchestrator
+    - focused live Supabase API check for learner_profiles, course_assessments, rag_documents, rag_chunks, and match_rag_chunks
+    - npm run verify:execution-sandbox
+    - npm run verify:simple-visual-preview
     - npm run verify:generated-course-content
     - npm run verify:tutor-flow
     - npm run typecheck
     - npm run build
     - git diff --check
   rendered:
+    - authenticated Chrome QA verified clean login/signup panels, immediate bidirectional switching, responsive 390px layouts, Free/Pro onboarding, active-Pro dashboard bypass, and zero browser console errors; live OTP delivery still requires hosted template installation
     - Browser QA at http://127.0.0.1:5174/courses/ce4f8c0c-9af7-44c9-a90d-bc41af88f12e verified existing saved C# workshop renders Program.cs, Console.WriteLine, C# syntax explanations, no printf, no Load starter button, and stricter Check failure for missing second output/function call
     - Chrome QA at http://127.0.0.1:5174/courses/bb762e12-0e37-4afb-8d3a-976b2542ffe9 verified Modules tab default, compact module button, chapter/block expansion, and 28x28 step tiles without label leakage
+    - Authenticated Chrome QA verified AI-generated discovery greeting, six initial recommendations, free typing, a contextual game-type follow-up for "I want to make a game", refreshed Python/JavaScript/Unity suggestions, and transition from a Pygame choice into assessment readiness
+    - Authenticated Chrome QA generated and saved course fcac57d8-3ac6-47fc-a4af-1c693d801949 for 2D Python/Pygame after four assessment answers; refresh preserved its Module 1 tree with 3-step theory, 7-step workshop, and 4-step quiz, with no browser errors
+    - Authenticated Chrome QA on that saved Pygame course verified compact Step 1/Step 2 teaching, an injected Step 8 workshop recap, relevant question chips/chat, and inline `Expected: import pygame` diagnostics after an incorrect check
+    - In-app browser QA on the saved Pygame course verified full-height Code/Visual/Terminal switching, enabled Python terminal Run routing, no fixed bottom terminal, preserved course layout, and zero browser errors
+    - Authenticated Chrome QA on the saved Node.js course verified Code/Visual/Terminal tabs are siblings above the editor shell with a 7px gap, the workshop checklist starts at max-height 0/opacity 0, its chevron opens and closes it, no duplicate exercise action button exists, and the shared navigation remains Prev/Next section after prior completion
+    - Authenticated Chrome QA verified workshop status appears above the shared theory-style dock, exactly three quick actions render, the checklist starts collapsed, no nested workshop action card remains, status names main.js, and Visual reports index.html with Connected: style.css; browser console had zero errors
+    - focused compiled preview check verified linked CSS and JavaScript render through web/index.html, an unrelated stylesheet stays excluded, and an unlinked stylesheet returns connection guidance
+    - deterministic guided-project verifier now covers blank scratch source, Pygame import/init/dimensions ordering, real edit continuity, intro/recap compaction, and source-linked synchronized Visual files
+    - 2026-07-15 local rendered smoke check loaded the app without browser console errors; live guided-project generation remains deferred until OpenAI credits return
+    - authenticated Chrome QA on saved Pygame course c7074747-706b-44c6-a8e5-e5477bc365b2 verified Workshop Step 1 auto-added preview/index.html, connected it to main.py, rendered one canvas in Visual, removed the Terminal requirement, and produced zero browser errors
   limitations:
     - rendered QA used an existing saved course, not a fresh generated v2 course after the latest prompt/rule updates
     - Chrome console showed only React Router future-flag warnings during left-panel QA
-    - full authenticated setup-to-course QA remains pending
+    - assessment-to-generated-course creation, refresh, and workshop rendering/error feedback are verified; lab progression still needs QA
 next:
-  - apply pending Supabase migrations, then rerun migration-related verifiers
-  - run authenticated QA: login -> add learning course -> subject -> readiness -> assessment with Skip -> review -> generate course -> Modules tree -> theory -> quiz -> workshop -> lab -> refresh persistence
+  - install `supabase/templates/confirmation.html` in the hosted Supabase Confirm signup template, verify it uses `{{ .Token }}`, and configure production custom SMTP
+  - run one real Free signup and one fresh Pro signup through eight-digit inbox OTP, key connection/AI gating, Stripe checkout, webhook sync, and dashboard entry
+  - apply 2026-07-15-add-learning-experience-types.sql, then 2026-07-16-add-skill-progression-achievements.sql, and verify live progression reads/writes
+  - apply the remaining generated-content/progression Supabase migrations, then rerun their migration-related verifiers
+  - run authenticated QA: login -> add learning -> discovery suggestions/free typing -> resolved target and prior knowledge -> optional assessment skip/take -> editable review -> generate each type -> correct navigation -> refresh persistence
   - create a fresh generated course and verify module count, first-module depth, block kinds, tree navigation, and locked later modules
+  - create a fresh visual generated course and verify its workspaceFiles scene, automatic Visual opening, nested file tree, Terminal routing, and targeted refresher decision
+  - when OpenAI credits return, generate a fresh scratch Pygame project and verify blank main.py, import/init/dimensions as Steps 1-3, 1-3 intro steps, 1-2 recap steps, synchronized Visual, and no run-only workshop step
   - add OpenAI model router env roles for low, medium, high, reasoning, grader, and embedding
   - add static-first RAG abstraction for curriculum patterns, prerequisites, course content, exercise bank, rubrics, official docs, and style
+  - continue splitting `server/course-generation.mjs`: assessment prompts, blueprint/outline/module prompts, fallback generation, normalization, and repair helpers
   - harden generated code-exercise grading with server-side rubrics/tests
   - finish dashboard polish: focus-return reanimation, direct settings/account buttons, summary clamp, and real progress derivation
 read_first:
@@ -101,4 +210,5 @@ read_first:
   - docs/DECISIONS.md
   - docs/project-architecture.md
   - docs/ai-tutor-behavior.md
+  - docs/AI_COURSE_GENERATION_RULES.md
   - docs/superpowers/plans/2026-06-30-personalized-freecodecamp-course-generation.md

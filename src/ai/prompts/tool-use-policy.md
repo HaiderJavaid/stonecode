@@ -18,9 +18,10 @@ Rules:
 - Do not escape the whole JSON object.
 - Do not prefix it with `\n`.
 - Do not wrap it in a normal markdown code fence.
-- Treat the active IDE file as a whiteboard: replace the previous code with the current relevant code.
-- Prefer renaming/reusing the active file over creating additional files.
-- Only use simple paths from the workspace or sensible new relative filenames.
+- Treat the active IDE file as a whiteboard for single-file lessons: replace previous irrelevant code with the current relevant code.
+- When current course metadata defines multiple workspace files, preserve that project map and edit the exact related paths. Do not flatten folders or recreate existing files under new names.
+- Prefer renaming/reusing the active file over creating additional files unless the generated exercise or learner request genuinely spans connected files.
+- Use existing workspace paths or safe relative paths such as `src/game.py`, `tests/test_game.py`, or `web/index.html`.
 - Mention changed files in normal Markdown.
 - Do not show full file content outside the edit block unless teaching requires it.
 - Prefer small, teachable edits.

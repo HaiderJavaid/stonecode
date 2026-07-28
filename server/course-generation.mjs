@@ -1,4 +1,33 @@
-import { selectCuratedRagChunks } from "./rag/curriculum-sources.mjs";
+import {
+  blockKindsInModuleOutline,
+  buildBlockGenerationPrompt,
+  extractModuleOutline,
+  normalizeBlockKindName
+} from "./course-generation/block-contracts.mjs";
+import {
+  buildLearnerGenerationContext,
+  formatStaticCourseGenerationContext,
+  retrieveStaticCourseGenerationContext
+} from "./course-generation/generation-context.mjs";
+import {
+  formatEditableCourseGenerationRules,
+  readEditableCourseGenerationRules
+} from "./course-generation/editable-rules.mjs";
+import {
+  classifyCourseIntent,
+  courseLanguageCapabilities,
+  inferGeneratedLanguages,
+  inferGeneratedSubject,
+  isSupportedProgrammingSubject,
+  resolveCourseLanguageCapability
+} from "./course-generation/language-capabilities.mjs";
+
+export {
+  buildBlockGenerationPrompt,
+  buildLearnerGenerationContext,
+  readEditableCourseGenerationRules,
+  retrieveStaticCourseGenerationContext
+};
 
 const contentSchemaVersion = "course-content/v1";
 const contentSchemaVersionV2 = "course-content/v2";
@@ -77,13 +106,14 @@ export function stabilizeAssessmentQuestion({ question, subject, step = 0, answe
 export function resolveAssessmentPlan(subject) {
   const normalizedSubject = trimText(subject, "Programming");
   const lower = normalizedSubject.toLowerCase();
-  const startFromZero = /\b(beginner|from zero|zero|fundamental|fundamentals|basics|basic|intro|introduction)\b/.test(lower);
-  const supported = isProgrammingLearningSubject(lower);
+  const intent = classifyCourseIntent(normalizedSubject);
+  const supported = isSupportedProgrammingSubject(normalizedSubject);
   const areas = resolvePrerequisiteAreas(normalizedSubject);
-  const requiresAssessment = supported && !startFromZero && requiresPrerequisiteAssessment(lower);
+  const requiresAssessment = supported && intent.requiresAssessment;
   return {
     supported,
     requiresAssessment,
+    intentKind: intent.kind,
     reason: !supported
       ? "Stonecode currently supports programming, software, scripting, and code-related courses only."
       : requiresAssessment
@@ -110,8 +140,8 @@ Return JSON only:
 
 Rules:
 - Non-code subjects are unavailable. Stonecode supports programming, software, scripting, developer tools, web/app/game development, automation, data/code, and framework/library courses.
-- Fundamentals/from-zero/basic/intro courses can start from foundations and usually do not require prerequisite assessment.
-- Frameworks, libraries, broad web/app/game/fullstack/backend/frontend/data/automation paths usually require prerequisite assessment.
+- A standalone programming language course starts from foundations and does not require prerequisite assessment. Examples: Python, Java, C++, C#, Kotlin, Swift, Dart, Go, Rust, Ruby, PHP, R, Julia, Fortran, COBOL, and BASIC.
+- Frameworks, libraries, advanced language specializations, and broad applied paths require prerequisite assessment even when the learner is a beginner.
 - Choose prerequisite areas dynamically for the requested subject. Do not always check HTML, CSS, and JavaScript.
 - Examples: React needs JavaScript plus HTML/CSS basics; Next.js needs JavaScript, React, and request/response basics; C++ game development needs C++ syntax, variables, and functions; Unity scripting needs C# syntax, variables, functions, and component thinking.
 - Each prerequisite area should become an assessment topic if requiresAssessment is true.
@@ -120,15 +150,20 @@ Rules:
 
 Subject: ${trimText(subject, "Programming")}
 Learner profile: ${JSON.stringify(learnerProfile ?? {}).slice(0, 1200)}
-Retrieved context: ${formatStaticCourseGenerationContext(retrievedContext).slice(0, 1800)}`;
+Retrieved context: ${formatStaticCourseGenerationContext(retrievedContext).slice(0, 1800)}
+${formatEditableCourseGenerationRules(3000)}`;
 }
 
 export function normalizeAssessmentPlan(input, fallbackSubject = "Programming") {
   const fallback = resolveAssessmentPlan(fallbackSubject);
   const supported = typeof input?.supported === "boolean" ? input.supported : fallback.supported;
-  const targetSubject = trimText(input?.targetSubject || input?.subject, trimText(fallbackSubject, "Programming"));
+  const rawTargetSubject = trimText(fallbackSubject, "Programming");
+  const targetIntent = classifyCourseIntent(rawTargetSubject);
+  const targetSubject = targetIntent.kind === "language-fundamentals" && targetIntent.language
+    ? targetIntent.language.label
+    : rawTargetSubject;
   const courseCategory = normalizeCourseCategory(input?.courseCategory);
-  const prerequisiteAreas = Array.isArray(input?.prerequisiteAreas)
+  const generatedPrerequisiteAreas = Array.isArray(input?.prerequisiteAreas)
     ? input.prerequisiteAreas.map((area, index) => normalizeAssessmentPlanArea(area, index)).filter(Boolean).slice(0, 8)
     : fallback.areas.map((area) => ({
         id: area.id,
@@ -136,11 +171,11 @@ export function normalizeAssessmentPlan(input, fallbackSubject = "Programming") 
         reason: `Required prerequisite signal for ${targetSubject}.`,
         startingDifficulty: "mid"
       }));
-  const requiresAssessment = supported && Boolean(
-    typeof input?.requiresAssessment === "boolean"
-      ? input.requiresAssessment
-      : fallback.requiresAssessment
-  );
+  const policy = resolveAssessmentPlan(targetSubject);
+  const prerequisiteAreas = /\bpygame\b/i.test(targetSubject)
+    ? policy.areas.map((area) => ({ id: area.id, title: area.title, reason: `Required prerequisite signal for ${targetSubject}.`, startingDifficulty: "mid" }))
+    : generatedPrerequisiteAreas;
+  const requiresAssessment = supported && policy.requiresAssessment;
 
   return {
     supported,
@@ -196,15 +231,6 @@ function lowerAssessmentDifficulty(difficulty) {
   return "entry";
 }
 
-function requiresPrerequisiteAssessment(lowerSubject) {
-  return /\b(react|vue|angular|svelte|next|node|express|backend|frontend|fullstack|full-stack|web dev|web development|game|games|unity|unreal|spring|django|flask|laravel|machine learning|ai|data science|mobile|ios|android|plugin|scripting|modding|automation|api)\b/.test(lowerSubject);
-}
-
-function isProgrammingLearningSubject(lowerSubject) {
-  if (/\b(cooking|recipe|fitness|workout|math homework|history|geography|biology|chemistry|physics|english|writing|marketing|sales|finance|trading|music|guitar|piano|language|spanish|japanese|french|photography)\b/.test(lowerSubject)) return false;
-  return /\b(program|programming|code|coding|software|developer|dev|script|scripting|web|frontend|backend|fullstack|full-stack|app|apps|game|games|unity|unreal|godot|roblox|react|next|vue|angular|svelte|node|express|django|flask|spring|laravel|html|css|javascript|typescript|python|java|c\+\+|cpp|c#|csharp|c\b|go|golang|rust|ruby|php|swift|kotlin|sql|database|api|automation|machine learning|data science|ai|mobile|ios|android|plugin|modding)\b/.test(lowerSubject);
-}
-
 function resolvePrerequisiteAreas(subject) {
   const lower = subject.toLowerCase();
   if (/\bnext\b/.test(lower)) return [javascriptArea(), reactArea(), httpArea()];
@@ -213,6 +239,7 @@ function resolvePrerequisiteAreas(subject) {
   if (/\bfullstack|full-stack\b/.test(lower)) return [javascriptArea(), htmlArea(), cssArea(), httpArea(), dataArea()];
   if (/\bnode|express|backend\b/.test(lower)) return [javascriptArea(), httpArea(), dataArea()];
   if (/\bunity\b/.test(lower)) return [csharpSyntaxArea(), variablesArea("C#"), functionsArea("C#")];
+  if (/\bpygame\b/.test(lower)) return [pythonSyntaxArea(), variablesArea("Python"), functionsArea("Python")];
   if (/\bunreal\b/.test(lower)) return [cppSyntaxArea(), variablesArea("C++"), functionsArea("C++")];
   if (/\bgodot\b/.test(lower)) return [programmingSyntaxArea("GDScript"), variablesArea("GDScript"), functionsArea("GDScript")];
   if (/\bgame|games|modding|plugin|scripting\b/.test(lower)) return [languageSyntaxArea(subject), variablesArea(subject), functionsArea(subject)];
@@ -561,7 +588,8 @@ Assessment plan: ${JSON.stringify({
   targetDifficulty: target.difficulty
 }).slice(0, 1200)}
 Previous answers: ${JSON.stringify(answers).slice(0, 1800)}
-Weak signals needing possible follow-up: ${JSON.stringify(weakSignals).slice(0, 1000)}`;
+Weak signals needing possible follow-up: ${JSON.stringify(weakSignals).slice(0, 1000)}
+${formatEditableCourseGenerationRules(2200)}`;
 }
 
 export function normalizeAssessmentQuestion(input, fallbackSubject = "Programming", fallbackStep = 0) {
@@ -587,12 +615,22 @@ export function normalizeAssessmentQuestion(input, fallbackSubject = "Programmin
 }
 
 export function createFallbackAssessmentReview({ subject, answers = [] }) {
+  if (!answers.length) {
+    const language = resolveCourseLanguage(subject).label;
+    return {
+      strengths: ["The course can start cleanly from foundations without assuming prior programming knowledge."],
+      gaps: [],
+      suggestedModules: [`${language} foundations`, "Values, variables, and visible output", "Decisions and repetition", "Functions and small reusable programs", `A guided ${language} project`]
+    };
+  }
   const prerequisiteAnswers = answers.filter((answer) => answer?.questionKind !== "course_shaping");
   const shapingAnswers = answers.filter((answer) => answer?.questionKind === "course_shaping" && answer?.answer !== null && answer?.answer !== undefined);
   const skipped = prerequisiteAnswers.filter((answer) => answer?.skipped).length;
   const missed = prerequisiteAnswers.filter((answer) => answer?.type === "mcq" && answer?.isCorrect === false).length;
   const correct = prerequisiteAnswers.filter((answer) => answer?.type === "mcq" && answer?.isCorrect === true).length;
   const noConfirmedPrereqs = !correct && (skipped || missed);
+  const needsTargetedRefresher = resolveAssessmentPlan(subject).requiresAssessment && Boolean(skipped || missed);
+  const baseLanguage = resolveCourseLanguage(subject).label;
   return {
     strengths: correct
       ? ["Some prerequisite MCQ answers showed usable starting knowledge."]
@@ -603,15 +641,19 @@ export function createFallbackAssessmentReview({ subject, answers = [] }) {
         ? ["Skipped or missed prerequisite checks should become bridge lessons before harder modules."]
         : ["The course should still verify each concept before harder practice."],
     suggestedModules: [
-      `${trimText(subject, "Programming")} foundations`,
+      needsTargetedRefresher ? `Targeted ${baseLanguage} refresher for ${trimText(subject, "Programming")}` : null,
+      !needsTargetedRefresher ? `${trimText(subject, "Programming")} foundations` : null,
       noConfirmedPrereqs ? "Syntax, symbols, and tiny runnable examples" : "Core concept checks",
       "Core practice with feedback",
       shapingAnswers.length ? "Preferred language and library path" : "Capstone assessment and review"
-    ].slice(0, 4)
+    ].filter(Boolean).slice(0, 4)
   };
 }
 
 export function buildAssessmentReviewPrompt({ subject, answers = [] }) {
+  const noAssessmentGuidance = answers.length
+    ? ""
+    : `\n- No assessment was required because this is a standalone programming-language course. Do not invent missing evidence or prerequisite gaps.\n- Return strengths that say the course will start from foundations, return an empty gaps array, and suggest a natural beginner module path for the language.`;
   return `Review prerequisite assessment answers for a learner who wants to study ${trimText(subject, "Programming")}.
 
 Return JSON only:
@@ -627,11 +669,16 @@ Rules:
 - Treat "course_shaping" answers as course customization preferences, not strengths or weaknesses.
 - If a wrong or skipped answer is followed by a correct follow-up, mark that area as "needs reinforcement" rather than a complete blocker.
 - Recommend modules to include, especially prerequisites required for the target subject and any relevant language/library/tool preferences from course-shaping answers.
+- For an advanced, framework, library, game, web, data, or applied course: if answers show prerequisite gaps, make the first suggested module a targeted refresher. Name the base language and target, such as "Targeted Python refresher for Pygame".
+- A targeted refresher teaches only prerequisite language features the target course will actually use. Do not insert a generic full fundamentals course.
+- If the learner proves the relevant prerequisites, do not add a refresher module merely for completeness.
+${noAssessmentGuidance}
 - Do not assign a level label.
 - Do not generate the course content here.
 - Keep each list 3 to 6 items.
 
-Assessment answers: ${JSON.stringify(answers).slice(0, 2400)}`;
+Assessment answers: ${JSON.stringify(answers).slice(0, 2400)}
+${formatEditableCourseGenerationRules(2200)}`;
 }
 
 export function createFallbackGeneratedCourseFromAssessment({ subject, assessmentReview }) {
@@ -644,7 +691,7 @@ export function createFallbackGeneratedCourseFromAssessment({ subject, assessmen
     description: `A complete beginner-friendly ${normalizedSubject} course generated from prerequisite assessment signals.`,
     languages: inferLanguages(subject),
     tags: ["AI generated", "Assessment based", "MVP"],
-    generationDepth: "full_course",
+    generationDepth: "full_structure_first_module",
     assessmentReview: assessmentReview ?? createFallbackAssessmentReview({ subject }),
     courseBlueprint: createDefaultCourseBlueprint({ subject: normalizedSubject, assessmentReview }),
     modules: buildFallbackModules(normalizedSubject)
@@ -747,7 +794,7 @@ function normalizeGeneratedCourseContentV2(input) {
     description: trimText(input.description, "Generated programming course."),
     languages: normalizedLanguages.length ? normalizedLanguages : [defaultLanguageInfo.label],
     tags: uniqueStrings(input.tags).length ? uniqueStrings(input.tags) : ["AI generated"],
-    generationDepth: "full_course",
+    generationDepth: input.generationDepth === "full_course" ? "full_course" : "full_structure_first_module",
     assessmentReview: normalizeAssessmentReview(input.assessmentReview),
     courseBlueprint: normalizeCourseBlueprint(input.courseBlueprint),
     ragSources: normalizeRagSources(input.ragSources),
@@ -831,9 +878,9 @@ Rules:
 - Fully fill only chapter 1 blocks.
 - Later chapters must include section titles/summaries and may use empty blocks.
 - Separate learning beats into separate sections. Do not put theory, MCQ, writing exercise, and code exercise into one section.
-- Theory sections must teach only: concept, analogy, simple example, and topic transition. Do not ask the learner to answer inside theory.
+- Theory sections must teach only: concept, analogy, simple example, and topic transition. Start with explanatory prose and a mental model before bullets. Explain why the idea exists, include a useful analogy mapped back to code, and do not ask the learner to answer inside theory.
 - Start every new topic with at least 3 consecutive theory-style sections before any MCQ, chat_exercise, or code_exercise.
-- The first course section must greet the learner as their tutor, then teach slowly. Do not start with an exercise.
+- The first course section must meaningfully introduce the course: what the learner will understand or build, the course path, why it matters, and why the first topic comes first. A greeting alone is not an introduction. Do not start with an exercise.
 - Add clear continuity when moving topics, for example "Now that the mental model is clear, next is 1.2 HTML and CSS."
 - Use MCQ or chat_exercise sections only after the relevant theory/example section.
 - Use code_exercise sections only for editor work.
@@ -847,76 +894,6 @@ Learner objective: ${trimText(objective, "Programming")}
 Current level: ${trimText(level, "Beginner")}
 Practical outcome: ${trimText(outcome, "Build practical projects")}
 Amendments: ${amendments.map((item) => trimText(item, "")).filter(Boolean).join("; ") || "none"}`;
-}
-
-export function buildLearnerGenerationContext({ subject, answers = [], assessmentReview }) {
-  const prerequisiteAnswers = answers.filter((answer) => answer?.questionKind !== "course_shaping");
-  const shapingAnswers = answers.filter((answer) => answer?.questionKind === "course_shaping");
-  const weakSignals = prerequisiteAnswers
-    .filter((answer) => answer?.skipped || answer?.isCorrect === false)
-    .map((answer) => ({
-      questionId: trimText(answer.questionId, "unknown"),
-      prompt: trimText(answer.prompt, ""),
-      answer: formatAssessmentAnswer(answer),
-      skipped: Boolean(answer.skipped)
-    }))
-    .filter((signal) => signal.prompt)
-    .slice(0, 6);
-  const strongSignals = prerequisiteAnswers
-    .filter((answer) => answer?.isCorrect === true)
-    .map((answer) => trimText(answer.prompt, ""))
-    .filter(Boolean)
-    .slice(0, 5);
-  const preferences = shapingAnswers
-    .map((answer) => ({
-      questionId: trimText(answer.questionId, "preference"),
-      prompt: trimText(answer.prompt, ""),
-      answer: formatAssessmentAnswer(answer)
-    }))
-    .filter((preference) => preference.prompt && preference.answer)
-    .slice(0, 5);
-  const readiness = weakSignals.length >= 2
-    ? "missing_prereqs"
-    : weakSignals.length === 1
-      ? "needs_bridging"
-      : strongSignals.length
-        ? "ready"
-        : "unknown";
-
-  return {
-    subject: trimText(subject, "Programming"),
-    readiness,
-    strengths: uniqueStrings(assessmentReview?.strengths).slice(0, 6),
-    gaps: uniqueStrings(assessmentReview?.gaps).slice(0, 6),
-    suggestedModules: uniqueStrings(assessmentReview?.suggestedModules).slice(0, 8),
-    weakSignals,
-    strongSignals,
-    preferences
-  };
-}
-
-export function retrieveStaticCourseGenerationContext({ subject, learnerContext }) {
-  const normalizedSubject = trimText(subject, "Programming");
-  const needsBridge = learnerContext?.readiness === "missing_prereqs" || learnerContext?.readiness === "needs_bridging";
-  const chunks = selectCuratedRagChunks({ subject: normalizedSubject, task: "course-generation", limit: 9 });
-
-  if (needsBridge) {
-    chunks.push({
-      id: "prerequisite-bridge",
-      sourceType: "stonecode-curriculum",
-      kind: "curriculum-pattern",
-      title: "Prerequisite bridge pattern",
-      content: `For ${normalizedSubject}, start with the smallest missing prerequisite before target-topic depth. Use tiny input-rule-output examples, syntax recognition, and feedback-loop practice before harder workshops.`
-    });
-  }
-
-  return chunks;
-}
-
-function formatStaticCourseGenerationContext(chunks) {
-  return chunks
-    .map((chunk) => `- ${chunk.kind}${chunk.blockKind ? `/${chunk.blockKind}` : ""}: ${chunk.title} — ${chunk.content}`)
-    .join("\n");
 }
 
 export function buildCourseBlueprintPrompt({ subject, answers = [], assessmentReview, learnerContext, retrievedContext = [] }) {
@@ -941,22 +918,15 @@ Rules:
 - Mini-projects should be small functions, UI pieces, scripts, mechanics, or behaviors that can become part of the final project.
 - Do not force a fixed number of modules, topics, blocks, or workshop steps.
 - Use assessment gaps to add prerequisiteBridges before harder project capabilities.
+- When learnerContext.refresher.needed is true, make the first bridge a narrow target-relevant refresher. When false, do not invent one.
 
 Subject: ${trimText(subject, "Programming")}
 Learner generation context: ${JSON.stringify(context).slice(0, 2200)}
 Assessment answers: ${JSON.stringify(answers).slice(0, 1600)}
 Assessment review: ${JSON.stringify(assessmentReview ?? {}).slice(0, 1000)}
 Retrieved context:
-${formatStaticCourseGenerationContext(retrievedContext).slice(0, 2400)}`;
-}
-
-function formatAssessmentAnswer(answer) {
-  if (answer?.skipped) return "I don't know / skipped";
-  if (typeof answer?.answer === "number" && Array.isArray(answer.options)) {
-    return trimText(answer.options[answer.answer], String(answer.answer));
-  }
-  if (answer?.answer === null || answer?.answer === undefined) return "";
-  return trimText(String(answer.answer), "");
+${formatStaticCourseGenerationContext(retrievedContext).slice(0, 2400)}
+${formatEditableCourseGenerationRules(3500)}`;
 }
 
 export function buildAssessmentCourseOutlinePrompt({ subject, answers = [], assessmentReview, courseBlueprint = null, retrievedContext = null }) {
@@ -975,7 +945,13 @@ Required plan:
 - Every topic plans intentional block kinds using only: theory, quiz, workshop, lab, project, review.
 - Start each topic with theory.
 - Do not force every topic into the same rhythm.
+- Practical progression is theory/example -> guided workshop -> independent lab -> later milestone project. This is a dependency rule, not a required template for every topic.
+- Never plan a lab before a relevant workshop. Thorough theory alone does not make an independent lab appropriate.
+- A lab is a small checkpoint exam and does not need to immediately follow its workshop. Reviews, quizzes, theory, topic transitions, or other workshops may appear between them.
+- Plan milestone projects only after multiple workshops and at least one lab have prepared the required ideas. Keep the final project near the end of the course.
+- Multiple labs and milestone projects are allowed when the curriculum naturally needs them. The final project remains the main course exam.
 - Assessment review suggestedModules must visibly appear, be naturally renamed, or be merged into equivalent module coverage.
+- If learnerContext.refresher.needed is true, Module 1 must be a clearly named targeted refresher covering only prerequisites used by the requested subject. If false, begin directly with the requested subject.
 - Use the Course blueprint as the hidden spine. Every module goal, workshop, lab, and project should contribute to the final project capabilities.
 
 Learner generation context: ${JSON.stringify(learnerContext).slice(0, 2200)}
@@ -984,78 +960,8 @@ Retrieved course-generation context:
 ${formatStaticCourseGenerationContext(contextChunks).slice(0, 2200)}
 Subject: ${trimText(subject, "Programming")}
 Assessment answers: ${JSON.stringify(answers).slice(0, 1600)}
-Assessment review: ${JSON.stringify(assessmentReview ?? {}).slice(0, 1000)}`;
-}
-
-export function buildBlockGenerationPrompt({ blockKind, subject, moduleTitle, topicTitle, learnerContext }) {
-  const kind = normalizeBlockKindName(blockKind);
-  const shared = `Subject: ${trimText(subject, "Programming")}
-Module: ${trimText(moduleTitle, "Current module")}
-Topic: ${trimText(topicTitle, "Current topic")}
-Learner context: ${JSON.stringify(learnerContext ?? {}).slice(0, 1200)}
-
-Shared rules:
-- Match the current topic; do not drift into unrelated topics.
-- Assume zero syntax knowledge unless learner context proves otherwise.
-- Explain new syntax before asking the learner to use it.
-- Avoid generic filler and hidden prompt/internal-planning text.`;
-
-  if (kind === "theory") {
-    return `${shared}
-
-Theory block contract:
-- Use only theory, analogy, example, summary, and optional single mcq steps.
-- Teach the mental model first, then names, then a tiny example.
-- Do not ask for open-ended learner work inside theory markdown.
-- A single quick MCQ can live inside theory; larger checks belong in quiz.`;
-  }
-  if (kind === "quiz") {
-    return `${shared}
-
-Quiz block contract:
-- Use only mcq steps.
-- Generate 4 to 10 MCQs.
-- Each MCQ tests recently taught material.
-- Distractors must be plausible, similar length, and not joke answers.
-- correctOptionIndex should vary across questions.`;
-  }
-  if (kind === "workshop") {
-    return `${shared}
-
-Workshop block contract:
-- First decide the concrete deliverable the learner will build.
-- Use as many guided workshop steps as the deliverable naturally needs. Do not target a fixed count.
-- Each step continues the same practical build unless a change is explicitly justified.
-- Each step asks for one atomic editor action, usually one line or one small change, then explains that action.
-- Include context, prompt, language, filePath, starterCode, acceptanceCriteria, and requiresPreview.
-- The context must name what the learner just learned and why this exact edit comes next.
-- The prompt must teach what to write and why before asking the learner to continue.
-- Starter code must be consistent across steps; do not reset to an unrelated example.
-- Acceptance criteria must be concrete and visible in code/output.`;
-  }
-  if (kind === "lab") {
-    return `${shared}
-
-Lab block contract:
-- Usually one independent lab step.
-- Reuse the same pattern taught immediately before, with a different variant and less guidance.
-- Include goal/context, starterCode, concrete acceptanceCriteria, and expected visible outcome.
-- Do not introduce a new concept that was not taught earlier.`;
-  }
-  if (kind === "project") {
-    return `${shared}
-
-Project block contract:
-- Use project steps only for larger capstone-style work.
-- Include a deliverable, milestones inside the prompt, starterCode when useful, and concrete acceptanceCriteria.
-- Keep scope small enough for the active IDE workspace.`;
-  }
-  return `${shared}
-
-Review block contract:
-- Use reflection and summary steps only.
-- Reflection prompts must include a short recap or clue before asking the learner to answer.
-- Summary steps should close the current topic and bridge to what comes next.`;
+Assessment review: ${JSON.stringify(assessmentReview ?? {}).slice(0, 1000)}
+${formatEditableCourseGenerationRules(3500)}`;
 }
 
 export function buildAssessmentCourseContentPrompt({ subject, answers = [], assessmentReview, courseOutline, courseBlueprint = null, retrievedContext = null }) {
@@ -1082,9 +988,10 @@ Course blueprint:
 ${JSON.stringify(courseBlueprint ?? {}).slice(0, 2200)}
 Retrieved context:
 ${formatStaticCourseGenerationContext(retrievedContext ?? retrieveStaticCourseGenerationContext({ subject, learnerContext })).slice(0, 2200)}
+${formatEditableCourseGenerationRules(3500)}
 
 Block-specific generation contracts:
-${blockContracts.slice(0, 7000)}`;
+${blockContracts.slice(0, 14000)}`;
 }
 
 export function buildAssessmentModuleContentPrompt({ subject, answers = [], assessmentReview, courseOutline, courseBlueprint = null, retrievedContext = null, moduleIndex = 0 }) {
@@ -1136,9 +1043,10 @@ Return strict JSON only:
             "title":"Workshop title",
             "summary":"Guided build with as many atomic steps as the deliverable needs",
             "steps":[
-              {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"The deliverable is a tiny visible program for this topic. Start with the smallest runnable line so the learner has a baseline.","prompt":"Step 1: write one visible output line. Explain what each token does before moving on.","starterCode":"console.log('start');","acceptanceCriteria":["Creates the first visible output","Keeps the work in main.js"],"requiresPreview":false},
-              {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"Continue the same file and build from the previous step.","prompt":"Step 2: make one tiny change to the output value and explain why the visible result changes.","starterCode":"console.log('changed');","acceptanceCriteria":["Changes only one small part","Visible output matches the new value"],"requiresPreview":false},
-              {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"Keep adding atomic steps until the deliverable is complete. Add more step objects here when the build needs them.","prompt":"Step 3: add the next single code line or tiny edit required by the deliverable, then explain that exact edit.","starterCode":"const value = 'changed';\nconsole.log(value);","acceptanceCriteria":["Adds one atomic edit","Keeps continuity with the same build"],"requiresPreview":false}
+              {"id":"workshop-step-1","type":"workshop","buildsOnStepId":null,"conceptIds":["console-output"],"language":"JavaScript","filePath":"main.js","context":"The deliverable is a tiny visible program for this topic. Start with the smallest runnable line so the learner has a baseline.","prompt":"Step 1: add one console.log line that prints Ready.","expectedChange":"Add exactly one console.log('Ready') statement.","starterCode":"","resultCode":"console.log('Ready');","acceptanceCriteria":["Creates the first visible output","Keeps the work in main.js"],"requiresPreview":false},
+              {"id":"workshop-step-2","type":"workshop","buildsOnStepId":"workshop-step-1","conceptIds":["string-value"],"language":"JavaScript","filePath":"main.js","context":"Continue the same file and build from the previous step.","prompt":"Step 2: change only the quoted text from Ready to Hello.","expectedChange":"Replace the Ready string with Hello and change nothing else.","starterCode":"console.log('Ready');","resultCode":"console.log('Hello');","acceptanceCriteria":["Changes only the string value","Visible output says Hello"],"requiresPreview":false},
+              {"id":"workshop-step-3","type":"workshop","buildsOnStepId":"workshop-step-2","conceptIds":["named-value"],"language":"JavaScript","filePath":"main.js","context":"Continue the same visible message. Now give the text a reusable name.","prompt":"Step 3: add a const named message above the output line.","expectedChange":"Add const message = 'Hello'; above the existing line.","starterCode":"console.log('Hello');","resultCode":"const message = 'Hello';\nconsole.log('Hello');","acceptanceCriteria":["Creates const message","Keeps the visible output"],"requiresPreview":false},
+              {"id":"workshop-step-4","type":"workshop","buildsOnStepId":"workshop-step-3","conceptIds":["variable-use"],"language":"JavaScript","filePath":"main.js","context":"Finish the same tiny program by using the named value.","prompt":"Step 4: replace only the quoted text inside console.log with message.","expectedChange":"Change console.log('Hello') to console.log(message).","starterCode":"const message = 'Hello';\nconsole.log('Hello');","resultCode":"const message = 'Hello';\nconsole.log(message);","acceptanceCriteria":["console.log uses message","Keeps const message"],"requiresPreview":false}
             ]
           }
         ]
@@ -1152,17 +1060,34 @@ Rules:
 - Generate complete steps for every block in this module.
 - Every object inside a steps array must have a "type" field.
 - Do not encode fields as {"kind":"prompt","content":"..."} or {"kind":"starterCode","content":"..."}.
-- For workshop/lab/project steps, put context, prompt, language, filePath, starterCode, acceptanceCriteria, and requiresPreview on the same step object.
+- For workshop/lab/project steps, put context, prompt, language, filePath, starterCode, acceptanceCriteria, requiresPreview, requiresTerminal, workspaceView, and workspaceFiles on the same step object.
+- workspaceFiles is a complete small project manifest: [{"path":"src/main.py","content":"...","purpose":"...","editable":true}]. Include the active file and every related file in its real folder.
+- Visual web/game/layout work must preload a renderable scene. Open workspaceView:"preview" for the initial scene or bug state, then let later micro-steps open Code while still requiring a Visual check.
+- Visual web work must use an HTML entrypoint that explicitly links each required local stylesheet and browser script with correct relative href/src paths. Do not assume every CSS/JavaScript file is injected automatically.
+- Terminal-output work uses requiresTerminal:true and workspaceView:"terminal" when the immediate learner action is run/read/fix output.
 - Preserve planned block kinds from the module outline. Do not turn a planned quiz/workshop/lab/project block into a theory block.
 - A quiz block must have 4 to 10 mcq step objects.
 - A workshop block must have enough workshop step objects to complete its deliverable through atomic edits. One-step or two-step workshops are invalid.
+- Every workshop step must include id, buildsOnStepId, conceptIds, expectedChange, starterCode, and resultCode.
+- Every workshop coding step must also include codeExplanation for only that micro-change and 2 to 3 suggestedQuestions tied to the current line.
+- Step 1 introduces the workshop deliverable once. Later steps do not repeat the introduction, generic syntax lists, whole-file explanations, or starter excerpts.
+- End every workshop with one non-coding {"type":"summary","markdown":"..."} step that explains the completed code, how its parts connect, and where it is useful.
+- starterCode is the exact pre-edit file. resultCode is the exact file after the requested micro-edit. For steps after Step 1, starterCode must equal the previous step resultCode.
+- expectedChange must describe one small code delta, not a broad task. Never preload resultCode into the learner editor for that same step.
 - Do not force exactly 4 workshop steps. Use 6, 10, 18, or any natural count when the deliverable needs it.
 - Each loaded module should include at least one practical workshop, lab, or project block.
+- A guided workshop must be the first practical code block in the learning path.
 - A lab block is usually one lab step, but it must stay kind "lab".
+- A lab must follow a relevant workshop and reuse only already workshopped concepts. Thorough theory alone is not enough.
+- The relevant workshop may be earlier rather than adjacent; intervening teaching, quizzes, reviews, and workshops are allowed.
 - A project block must stay kind "project".
+- A milestone project requires multiple earlier workshops and at least one earlier lab. It must not be the learner's first or second practical coding experience.
+- Multiple labs and milestone projects are allowed. Choose their timing dynamically from demonstrated curriculum readiness; reserve the final project as the main exam near the end.
 - Only module 1 content should be fully loaded during initial course generation.
 - Keep later-module outline content out of this response.
 - Every topic must start with a theory block.
+- A theory block must contain real teaching steps before checks. Never return a theory block whose steps are only MCQs.
+- When teaching syntax, include a fenced code snippet with the correct language tag and explain the new tokens before any workshop/lab asks the learner to edit them.
 - Use the learner context and assessment review as binding personalization input.
 - Use the Course blueprint as the hidden spine: workshop/lab/project deliverables should become small pieces of the final project, and theory/quiz should prepare those pieces.
 
@@ -1172,9 +1097,10 @@ Assessment review: ${JSON.stringify(assessmentReview ?? {}).slice(0, 1000)}
 Course blueprint: ${JSON.stringify(courseBlueprint ?? {}).slice(0, 2200)}
 Retrieved context: ${formatStaticCourseGenerationContext(retrievedContext ?? retrieveStaticCourseGenerationContext({ subject, learnerContext })).slice(0, 2200)}
 Module outline: ${JSON.stringify(moduleOutline ?? {}).slice(0, 3500)}
+${formatEditableCourseGenerationRules(3500)}
 
 Block-specific generation contracts:
-${blockContracts.slice(0, 7000)}`;
+${blockContracts.slice(0, 14000)}`;
 }
 
 export function createGeneratedCourseSkeletonFromOutline(outline, { subject = "Programming", assessmentReview = null, courseBlueprint = null, ragSources = [] } = {}) {
@@ -1243,7 +1169,7 @@ export function createGeneratedCourseSkeletonFromOutline(outline, { subject = "P
     description: trimText(source?.description || source?.summary, `Personalized ${trimText(subject, "Programming")} course.`),
     languages: inferLanguages(source?.subject || subject),
     tags: ["AI generated", "Assessment based", "QA outline"],
-    generationDepth: "full_course",
+    generationDepth: "full_structure_first_module",
     assessmentReview: normalizeAssessmentReview(assessmentReview),
     courseBlueprint: normalizeCourseBlueprint(courseBlueprint ?? source?.courseBlueprint),
     ragSources: normalizeRagSources(ragSources),
@@ -1252,14 +1178,64 @@ export function createGeneratedCourseSkeletonFromOutline(outline, { subject = "P
 }
 
 export function extractGeneratedModuleFromResponse(response, fallbackModule, moduleIndex = 0) {
-  const module = response?.module && typeof response.module === "object"
+  const candidate = response?.module && typeof response.module === "object"
     ? response.module
     : Array.isArray(response?.modules)
       ? response.modules[moduleIndex]
       : Array.isArray(response?.course?.modules)
         ? response.course.modules[moduleIndex]
       : response;
-  return module && typeof module === "object" ? module : fallbackModule;
+  const rawTopics = Array.isArray(candidate?.topics)
+    ? candidate.topics
+    : Array.isArray(candidate?.chapters)
+      ? candidate.chapters
+      : [];
+  if (!candidate || typeof candidate !== "object" || !rawTopics.length) return fallbackModule;
+  return {
+    ...fallbackModule,
+    ...candidate,
+    id: trimText(candidate.id, fallbackModule?.id),
+    topics: rawTopics
+  };
+}
+
+export function extractGeneratedTopicFromResponse(response, fallbackTopic, topicIndex = 0, qualityWarnings = null) {
+  const candidate = response?.topic && typeof response.topic === "object"
+    ? response.topic
+    : Array.isArray(response?.topics)
+      ? response.topics[topicIndex]
+      : Array.isArray(response?.module?.topics)
+        ? response.module.topics[topicIndex]
+        : response;
+  if (!candidate || typeof candidate !== "object" || !Array.isArray(candidate.blocks) || !candidate.blocks.length) {
+    return fallbackTopic;
+  }
+  const repairedTopic = {
+    ...fallbackTopic,
+    ...candidate,
+    id: trimText(candidate.id, fallbackTopic?.id),
+    blocks: candidate.blocks
+  };
+  if (!Array.isArray(qualityWarnings) || !qualityWarnings.length) return repairedTopic;
+
+  const targetedBlockIndexes = new Set();
+  let needsWholeTopicRepair = false;
+  for (const warning of qualityWarnings) {
+    const match = String(warning?.message ?? "").match(/\.blocks\[(\d+)\]/);
+    if (match) targetedBlockIndexes.add(Number(match[1]));
+    else needsWholeTopicRepair = true;
+  }
+  if (needsWholeTopicRepair || !targetedBlockIndexes.size) return repairedTopic;
+
+  const blocks = [...(fallbackTopic?.blocks ?? [])];
+  for (const blockIndex of targetedBlockIndexes) {
+    const fallbackBlock = blocks[blockIndex];
+    const repairedBlock = fallbackBlock?.id
+      ? candidate.blocks.find((block) => block?.id === fallbackBlock.id) ?? candidate.blocks[blockIndex]
+      : candidate.blocks[blockIndex];
+    if (repairedBlock && typeof repairedBlock === "object") blocks[blockIndex] = repairedBlock;
+  }
+  return { ...fallbackTopic, blocks };
 }
 
 export function buildGeneratedCourseRepairPrompt({ subject, content, qualityWarnings = [] }) {
@@ -1270,16 +1246,32 @@ Return the full corrected course JSON. Do not return a patch. Preserve the exist
 Repair rules:
 - Fix only blocks related to the quality warnings.
 - Do not rewrite good modules or unrelated topics.
+- If a theory block has only MCQs, add real theory/analogy/example/summary teaching steps before any MCQ.
+- Every loaded topic must start with real theory teaching, not a quiz, lab, project, or workshop.
+- If syntax_teaching_missing appears, add syntax teaching before the exercise or inside the workshop prompt before the edit. Explain keywords, names, quotes, parentheses, braces, semicolons, operators, and output calls the first time they appear.
+- If workshop_context_missing_purpose appears, rewrite context to briefly say what the learner is learning, why it is useful, and how this step continues the build.
+- If workshop_prompt_missing_action appears, rewrite the prompt so it gives one immediate concrete edit action plus a small syntax hint when relevant.
+- If workshop_continuity_broken appears, give each step a stable id, point buildsOnStepId to the previous step, and make the previous resultCode exactly equal the next starterCode.
+- If workshop_expected_change_missing appears, add one explicit expectedChange describing the tiny code delta.
+- If workshop_no_code_delta appears, provide distinct starterCode and resultCode states separated by exactly the requested micro-edit.
+- If exercise_topic_mismatch appears, replace the exercise with one that directly practices the current topic goal and preceding teaching while preserving the block kind.
+- When teaching syntax in markdown, include fenced code examples with the correct language tag such as \`\`\`js, \`\`\`python, \`\`\`cpp, \`\`\`csharp, or \`\`\`java.
 - If a workshop is too short, expand it until the deliverable is complete through atomic FreeCodeCamp-style steps.
+- If workshop_missing_recap appears, add one final non-coding summary step after all coding steps.
+- If workshop_code_explanation_missing appears, explain only the exact line or micro-change introduced by that coding step.
+- If workshop_suggested_questions_missing appears, add 2 to 3 short questions relevant to that exact step.
 - If theory is thin, expand the theory markdown with mental model, explanation, and tiny example.
 - If exercise context is thin, add concrete context tied to the current topic and prior teaching.
 - If quiz is too short, add enough MCQ steps to reach 4 to 10.
 - If a loaded topic is missing quiz, workshop, lab, or project practice, add the planned interactive block that best matches the topic.
+- If lab_before_workshop appears, insert or restore a relevant guided workshop before the lab; do not solve it by adding more theory.
+- If project_before_practice_readiness appears, move the project later or replace it with a workshop/lab until multiple workshops and at least one lab establish readiness.
 - Keep language, filePath, starterCode, and acceptanceCriteria consistent.
 
 Subject: ${trimText(subject, "Programming")}
 Quality warnings: ${JSON.stringify(qualityWarnings).slice(0, 2200)}
-Course JSON: ${JSON.stringify(content ?? {}).slice(0, 11000)}`;
+Course JSON: ${JSON.stringify(content ?? {}).slice(0, 11000)}
+${formatEditableCourseGenerationRules(3000)}`;
 }
 
 export function buildGeneratedModuleRepairPrompt({ subject, module, moduleIndex = 0, qualityWarnings = [] }) {
@@ -1288,16 +1280,29 @@ export function buildGeneratedModuleRepairPrompt({ subject, module, moduleIndex 
 Return strict JSON only:
 {
   "moduleIndex":${moduleIndex},
-  "module": { "id":"module-id", "title":"...", "summary":"...", "unlocked":true, "chapters":[] }
+  "module": { "id":"module-id", "title":"...", "summary":"...", "unlocked":true, "topics":[] }
 }
 
 Rules:
 - Preserve this module's id, title, topic ids, and block ids unless invalid.
 - Fix only the warning-related topics/blocks in this module.
 - Do not rewrite other modules.
+- If a theory block has only MCQs, add real teaching steps before the MCQs or split the MCQs into a quiz block.
+- Every loaded topic must start with real theory teaching. Do not start a topic with only quiz questions.
+- If syntax_teaching_missing appears, add syntax teaching before the exercise or inside the workshop prompt before the edit. Explain keywords, names, quotes, parentheses, braces, semicolons, operators, and output calls the first time they appear.
+- If workshop_context_missing_purpose appears, rewrite context to briefly say what the learner is learning, why it is useful, and how this step continues the build.
+- If workshop_prompt_missing_action appears, rewrite the prompt so it gives one immediate concrete edit action plus a small syntax hint when relevant.
+- If workshop_continuity_broken appears, give each step a stable id, point buildsOnStepId to the previous step, and make the previous resultCode exactly equal the next starterCode.
+- If workshop_expected_change_missing appears, add one explicit expectedChange describing the tiny code delta.
+- If workshop_no_code_delta appears, provide distinct starterCode and resultCode states separated by exactly the requested micro-edit.
+- If exercise_topic_mismatch appears, rewrite only that exercise so it directly practices the current topic and preceding teaching.
+- When teaching syntax in markdown, include fenced code examples with the correct language tag such as \`\`\`js, \`\`\`python, \`\`\`cpp, \`\`\`csharp, or \`\`\`java.
 - If a topic is missing interactive practice, add or restore the planned quiz, workshop, lab, or project block.
 - If a loaded module has no workshop, lab, or project, add one guided workshop to the most suitable early topic.
+- If lab_before_workshop appears, insert or restore a relevant guided workshop before that lab. More theory alone does not satisfy this warning.
+- If project_before_practice_readiness appears, move the project later or use workshops/labs first until multiple workshops and at least one lab establish readiness.
 - Workshop blocks need enough atomic workshop step objects to complete their concrete deliverable. Do not target a fixed count.
+- Every workshop ends with one non-coding summary step after its atomic coding steps.
 - Quiz blocks need 4 to 10 mcq step objects.
 - If a lab step was emitted as workshop, return it as type "lab".
 - If a review step was emitted as theory, return it as type "summary".
@@ -1306,29 +1311,44 @@ Rules:
 Subject: ${trimText(subject, "Programming")}
 Module index: ${moduleIndex}
 Quality warnings for this module: ${JSON.stringify(qualityWarnings).slice(0, 1800)}
-Module JSON: ${JSON.stringify(module ?? {}).slice(0, 7000)}`;
+Module JSON: ${JSON.stringify(module ?? {}).slice(0, 7000)}
+${formatEditableCourseGenerationRules(3000)}`;
 }
 
-function normalizeBlockKindName(blockKind) {
-  const kind = typeof blockKind === "string" ? blockKind.trim().toLowerCase() : "";
-  return ["theory", "quiz", "workshop", "lab", "project", "review"].includes(kind) ? kind : "review";
+export function buildGeneratedTopicRepairPrompt({ subject, topic, moduleIndex = 0, topicIndex = 0, qualityWarnings = [] }) {
+  return `Repair only this generated Stonecode topic.
+
+Return strict JSON only:
+{
+  "moduleIndex":${moduleIndex},
+  "topicIndex":${topicIndex},
+  "topic": { "id":"topic-id", "title":"...", "summary":"...", "blocks":[] }
 }
 
-function extractModuleOutline(courseOutline, moduleIndex) {
-  const source = courseOutline?.course && typeof courseOutline.course === "object" ? courseOutline.course : courseOutline;
-  const modules = Array.isArray(source?.modules) ? source.modules : [];
-  return modules[moduleIndex] ?? null;
-}
+Rules:
+- Preserve the topic id, title, block ids, block kinds, and all valid content.
+- Fix only the blocks named by the supplied warnings.
+- The first block must be theory with real theory/analogy/example/summary teaching before any check.
+- A quiz block contains 4 to 10 MCQ steps.
+- Workshops are guided tutorials with enough atomic steps for the deliverable.
+- Every workshop step needs id, buildsOnStepId, conceptIds, context, prompt, expectedChange, starterCode, resultCode, and acceptanceCriteria.
+- Every workshop coding step also needs codeExplanation and 2 to 3 suggestedQuestions relevant to that exact micro-change.
+- Every practical step also needs workspaceView and a workspaceFiles project manifest. Preserve real folders and related-file contents across steps.
+- Each workshop prompt gives one concrete edit. Each context explains what is learned, why it matters, and how it continues the build.
+- For workshop continuity, each previous resultCode must exactly equal the next starterCode, and every resultCode must differ from its own starterCode.
+- Introduce the whole workshop only on Step 1. Later coding steps explain only their new line or tiny edit; never repeat generic syntax lists, whole-starter explanations, or starter excerpts.
+- The final workshop step is a non-coding summary that explains the complete code and its practical use.
+- Explain new syntax with a correctly tagged fenced code example before asking the learner to edit it.
+- Exercises must directly practice the topic and preceding teaching.
+- A lab may appear only after a relevant workshop; a project requires multiple earlier workshops and at least one lab.
+- Return the complete corrected topic, not a patch, commentary, module, or course.
 
-function blockKindsInModuleOutline(moduleOutline) {
-  const rawTopics = Array.isArray(moduleOutline?.chapters) ? moduleOutline.chapters : moduleOutline?.topics;
-  const kinds = new Set(["theory"]);
-  for (const topic of Array.isArray(rawTopics) ? rawTopics : []) {
-    for (const block of Array.isArray(topic?.blocks) ? topic.blocks : []) {
-      kinds.add(normalizeBlockKindName(block?.kind));
-    }
-  }
-  return [...kinds];
+Subject: ${trimText(subject, "Programming")}
+Module index: ${moduleIndex}
+Topic index: ${topicIndex}
+Quality warnings for this topic: ${JSON.stringify(qualityWarnings).slice(0, 1800)}
+Topic JSON: ${JSON.stringify(topic ?? {}).slice(0, 7500)}
+${formatEditableCourseGenerationRules(2600)}`;
 }
 
 export function buildAssessmentCourseGenerationPrompt({ subject, answers = [], assessmentReview, courseBlueprint = null, retrievedContext = null }) {
@@ -1344,7 +1364,7 @@ Return only JSON matching:
   "description":"one sentence",
   "languages":["JavaScript"],
   "tags":["Assessment based"],
-  "generationDepth":"full_course",
+  "generationDepth":"full_structure_first_module",
   "assessmentReview":{"strengths":["..."],"gaps":["..."],"suggestedModules":["..."]},
   "courseBlueprint":{"finalProject":{"title":"...","description":"...","capabilities":["..."]},"miniProjects":[],"conceptSequence":[],"prerequisiteBridges":[],"moduleGoals":[]},
   "modules":[
@@ -1378,11 +1398,11 @@ Return only JSON matching:
               "title":"Workshop title",
               "summary":"Guided practical build",
               "steps":[
-                {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"We are building a tiny greeting filter one verified line at a time. The learner has already seen console output and strings before this step.","prompt":"Step 1: create one visible greeting with console.log. console.log(...) sends text to the console; quotes make the greeting text; the semicolon ends the instruction. Add one line that prints \"Hi there\".","starterCode":"console.log('Ready');","acceptanceCriteria":["Has one console.log line for the greeting","Printed text includes Hi there","Code stays in main.js"],"requiresPreview":false},
-                {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"Continue the same file. Step 1 made one visible result; now the learner adds a named value so later steps can reuse it.","prompt":"Step 2: create a const named playerName above the log line. const creates a name that stores a value; playerName is the label; the quoted text is the stored name. Then keep the greeting visible.","starterCode":"const playerName = 'Mina';\nconsole.log('Hi there');","acceptanceCriteria":["Creates const playerName","Keeps a visible console.log result","Does not delete the first greeting"],"requiresPreview":false},
-                {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"Continue the same greeting filter. The learner now connects the stored value to the visible output.","prompt":"Step 3: change the console.log text so it uses playerName in the message. The + operator joins text pieces together. Keep the output readable.","starterCode":"const playerName = 'Mina';\nconsole.log('Hi ' + playerName);","acceptanceCriteria":["console.log uses playerName","Output is a readable greeting","Keeps the const from step 2"],"requiresPreview":false},
-                {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"Continue the same behavior. The learner has a value and an output; now add the smallest decision.","prompt":"Step 4: add an if statement that checks whether playerName has text before printing the greeting. if (...) asks a true-or-false question; braces hold the code that runs when the question is true.","starterCode":"const playerName = 'Mina';\nif (playerName) {\n  console.log('Hi ' + playerName);\n}","acceptanceCriteria":["Has one if statement","Greeting log lives inside the if block","Keeps playerName as the checked value"],"requiresPreview":false},
-                {"type":"workshop","language":"JavaScript","filePath":"main.js","context":"Finish the same mini-feature. The learner now proves both paths of the filter.","prompt":"Step 5: add an else path that prints \"No player yet\" when playerName is empty. else is the fallback path when the if question is false.","starterCode":"const playerName = 'Mina';\nif (playerName) {\n  console.log('Hi ' + playerName);\n} else {\n  console.log('No player yet');\n}","acceptanceCriteria":["Has one if path and one else path","Each path prints a visible result","Code still reads like one greeting filter"],"requiresPreview":false}
+                {"id":"greeting-step-1","type":"workshop","buildsOnStepId":null,"conceptIds":["console-output"],"language":"JavaScript","filePath":"main.js","context":"We are building a tiny greeting one verified line at a time after learning console output.","prompt":"Step 1: add one console.log line that prints Hi there.","expectedChange":"Add exactly one visible greeting statement.","starterCode":"","resultCode":"console.log('Hi there');","acceptanceCriteria":["Has one console.log greeting","Printed text includes Hi there"],"requiresPreview":false},
+                {"id":"greeting-step-2","type":"workshop","buildsOnStepId":"greeting-step-1","conceptIds":["named-value"],"language":"JavaScript","filePath":"main.js","context":"Continue the same greeting. Give the name a reusable label.","prompt":"Step 2: add const playerName = 'Mina' above the greeting.","expectedChange":"Add one const declaration above the existing output.","starterCode":"console.log('Hi there');","resultCode":"const playerName = 'Mina';\nconsole.log('Hi there');","acceptanceCriteria":["Creates const playerName","Keeps the greeting"],"requiresPreview":false},
+                {"id":"greeting-step-3","type":"workshop","buildsOnStepId":"greeting-step-2","conceptIds":["string-joining"],"language":"JavaScript","filePath":"main.js","context":"Continue the same greeting and use the stored player name.","prompt":"Step 3: replace only 'there' with ' + playerName'.","expectedChange":"Make console.log join Hi with playerName.","starterCode":"const playerName = 'Mina';\nconsole.log('Hi there');","resultCode":"const playerName = 'Mina';\nconsole.log('Hi ' + playerName);","acceptanceCriteria":["console.log uses playerName","Keeps the const"],"requiresPreview":false},
+                {"id":"greeting-step-4","type":"workshop","buildsOnStepId":"greeting-step-3","conceptIds":["condition"],"language":"JavaScript","filePath":"main.js","context":"Continue the same greeting. Add the smallest decision after learning if syntax.","prompt":"Step 4: wrap the existing console.log line in if (playerName) braces.","expectedChange":"Add one if wrapper without changing the greeting line.","starterCode":"const playerName = 'Mina';\nconsole.log('Hi ' + playerName);","resultCode":"const playerName = 'Mina';\nif (playerName) {\n  console.log('Hi ' + playerName);\n}","acceptanceCriteria":["Has one if statement","Greeting stays inside the if block"],"requiresPreview":false},
+                {"id":"greeting-step-5","type":"workshop","buildsOnStepId":"greeting-step-4","conceptIds":["fallback-branch"],"language":"JavaScript","filePath":"main.js","context":"Finish the same greeting by handling the empty-name path.","prompt":"Step 5: add an else block that prints No player yet.","expectedChange":"Add one else block after the existing if block.","starterCode":"const playerName = 'Mina';\nif (playerName) {\n  console.log('Hi ' + playerName);\n}","resultCode":"const playerName = 'Mina';\nif (playerName) {\n  console.log('Hi ' + playerName);\n} else {\n  console.log('No player yet');\n}","acceptanceCriteria":["Has if and else paths","Each path prints a result"],"requiresPreview":false}
               ]
             },
             {
@@ -1405,13 +1425,17 @@ Rules:
 - Generate a complete top-level curriculum like a freeCodeCamp index, with as many modules as the subject and learner gaps naturally need.
 - Use the Course blueprint as the hidden spine for the whole syllabus. The course should secretly lead to the final project; each workshop/lab/project should contribute a mini-function, behavior, or capability used later.
 - Fully load module 1 with enough chapters/topics to teach the first path properly. Each loaded chapter/topic should contain intentional blocks and visible numbered steps.
+- The first loaded course step should be a substantive, friendly course introduction before formal teaching. Use 3 to 6 short paragraphs to explain what the learner will understand or build, common real-world uses, the course path, one interesting practical fact, and why the first topic comes first. Do not make it only a tutor greeting.
 - Keep modules 2 and later as locked outline shells for later high-quality generation after module 1 is validated.
 - Modules 3 and later must appear in the left panel as locked shell buttons with outline-level chapters only.
 - Every block must include a "kind" field: "theory", "quiz", "workshop", "lab", "project", or "review".
-- Start each new topic/chapter with a theory block before any quiz, workshop, lab, or project.
+- Start each new topic/chapter with a theory block before any quiz, workshop, lab, or project. Its opening must orient the learner: the problem this topic solves, how it connects to the course goal/project, and what the learner will understand or build by the end.
+- Every theory block must include real teaching steps before any MCQ. Never create a theory block made only of MCQ steps.
+- When a topic introduces code syntax, use fenced code snippets with language tags and explain new tokens before the learner uses them in a workshop, lab, or project.
 - Do not generate every topic as the same template. Avoid repeating "concept -> analogy -> example -> quiz -> review" as a fixed rhythm.
 - Do not use fixed counts like exactly 4 theory steps or exactly 2 workshop steps. The step count must follow the idea size, learner prerequisite gaps, and project complexity.
 - A theory block can combine concept and analogy on one page when short, split subtopics across multiple theory steps when the idea is bigger, and place examples wherever they make the explanation click.
+- A theory block may use several theory/analogy/example/summary steps when the topic needs more teaching. Do not force exactly one theory step or exactly one MCQ.
 - Assume the learner has no programming, coding, or syntax knowledge unless the assessment clearly proved otherwise. Explain every new code word, symbol, punctuation mark, and line before requiring the learner to use it.
 - Analogy and example are teaching tools, not mandatory separate pages for every topic. Use them when they improve understanding.
 - Use one consistent analogy theme per topic. Do not change analogy themes inside that topic.
@@ -1422,31 +1446,43 @@ Rules:
   - Quiz blocks are exam-style checkpoints. A "quiz" block must contain only mcq steps and should have 4 to 10 MCQ steps like a test, not one quick question.
 - A "workshop" block must be guided practical continuity. Each workshop step is one atomic editor action that builds on the previous step until a feature or mini-feature is complete.
   - Workshop length is variable. The deliverable decides the step count. Never make a one-step or two-step workshop.
-  - A "lab" block must be independent practice: one bug, problem, or feature for the learner to solve with optional AI help. Use labs only after a workshop or after thorough theory + example coverage. Usually make a lab one step.
-  - A "project" block is for larger capstone-style work only.
+  - A "lab" block is a small checkpoint exam: one bug, problem, or feature for the learner to solve with optional AI help. Use labs only after a relevant guided workshop; thorough theory alone is not enough. The workshop and lab need not be adjacent. Usually make a lab one step.
+  - A "project" block is a larger cumulative milestone exam. Place it after multiple guided workshops and at least one independent lab have prepared its capabilities. Multiple milestone projects are allowed; keep the distinct final project as the main exam near the end of the course.
 - Every workshop/lab/project step needs detailed context explaining the problem situation, why it follows from the current teaching, and what the learner is building or fixing.
+- Workshop context should briefly explain what the learner is learning, why it is useful, and how this step continues the same build.
 - Workshop prompts must teach by tutorial: state what we are building, why we are building it, exactly what code to write for that step, and explain what each important line does before asking the learner to continue.
+- Workshop prompts should move quickly: short context, immediate concrete edit action, and a small syntax hint only when that syntax is relevant.
+- Introduce the workshop deliverable only on Step 1. Later steps must not repeat generic language syntax, explain the entire starter file, or show starter-code excerpts.
+- Every coding step includes codeExplanation for only its exact new line/micro-change plus 2 to 3 suggestedQuestions the learner can tap to ask the tutor.
+- End every workshop with one non-coding summary step that explains what the finished code does, how its main parts connect, and where the pattern is useful.
 - Each workshop step should read like a FreeCodeCamp-style step screen: Step 1, Step 2, Step 3, etc. Use one small action per step, remind the learner what they already learned, show a tiny syntax example if needed, then give the exact code action for the editor.
 - Keep workshop steps granular. Prefer many small atomic steps over a few large vague tasks when the deliverable needs it.
 - A workshop step is not a lab. Do not say "build this on your own" in a workshop. Save independent problem solving for lab/project blocks.
 - For each workshop, lab, project, or MCQ, make the output depend on what has already been taught, what syntax has not yet been taught, what syntax must be explained in this step, what tiny action the learner will do, and how the next step builds on it. Never include hidden planning, prompts, system instructions, or reasoning notes in learner-facing markdown/prompt/context fields.
-- Labs and project exams may create multiple small connected files when the exercise genuinely needs them, such as an HTML/CSS/JS mini-page or a multi-file bug-fix. Keep that for harder labs; normal workshops should still prefer one active whiteboard file.
+- Labs and project exams may create multiple small connected files when the exercise genuinely needs them, such as an HTML/CSS/JS mini-page, a Python package, or a multi-file bug-fix. workspaceFiles must include the active file and all supporting files with real folder paths. Normal early workshops may still prefer one active whiteboard file.
 - If a workshop asks the learner to write syntax, the immediately previous theory/example or the same workshop prompt must have taught that syntax first.
-- Labs should usually be the same project pattern as the preceding workshop but with a different variant and less guidance, so the learner practices transfer instead of guessing a new concept.
+- Labs should reuse the project pattern of an earlier relevant workshop with a different variant and less guidance, so the learner practices transfer instead of guessing a new concept. They do not need to be adjacent.
+- A workshop must be the first practical code experience. Never place a lab or project before guided hands-on teaching.
 - Use requiresPreview:true on workshop/lab/project steps where the learner should inspect visual changes in the Visual view, such as web UI, animation, canvas, game, or layout work.
+- For visual work, generate the initial visible scene before the learner edits: an existing broken scene for debugging, or a minimal working baseline for feature work. Include a browser-renderable index.html scene even when the taught game source uses Python or another native runtime; label it as a visual reference, not the real runtime.
+- Use workspaceView:"preview" on the first visual step so the learner sees the starting state, then workspaceView:"code" for edits and keep requiresPreview:true for comparison.
+- Use requiresTerminal:true and workspaceView:"terminal" for steps whose immediate goal is to execute a command/program or inspect stdout, errors, tests, or logs. Never pretend a browser preview executed a native language.
+- Treat workspaceFiles as the exercise project snapshot. The tutor must reason about imports, paths, assets, styles, tests, and behavior across all listed folders/files, not only filePath.
 - Every workshop/lab/project step needs an acceptanceCriteria checklist with 2 to 5 concrete MVP requirements. These criteria become the dynamic checklist in the UI.
 - Workshop steps must carry forward the previous step's file and behavior. Do not restart from unrelated starter code in the next workshop step.
+- Encode workshop continuity explicitly: Step 1 has buildsOnStepId:null; each later step references the previous step id; each resultCode becomes the next starterCode.
 - Theory must not be shallow. Loaded module 1 teaching steps should feel like a real tutor: introduce the topic naturally, explain why it matters, then use a consistent analogy and concrete example before checks.
 - The first explanation for a new concept should be simple enough for a 10-year-old, then gradually add the technical names, analogy, and example.
 - When showing code, explain every new token the first time it appears: keyword, name, quotes, parentheses, braces, semicolon, indentation, operator, and output call.
 - The tutor voice should feel human and varied, not like a form. Use headings, bullets, short jokes, or light dry sarcasm when it helps, but never mock the learner.
 - Only the first course step may introduce Stonecode. New topics should start with the topic title and a natural continuity line from the previous topic.
 - Do not optimize for token saving in loaded teaching content.
-- Every exercise must directly test the immediately previous theory/example/workshop. Do not introduce an exercise that requires an idea not already taught in the prior steps.
+- Every exercise must test relevant material already taught and practiced earlier in the course path. Do not introduce an exercise that requires an untaught idea. Only workshop micro-steps require immediate step-to-step code continuity.
 - Reflection/"Answer in chat" prompts must include a short recap or clue before asking the learner to answer.
 - Theory never asks the learner to answer; questions only use mcq, reflection, lab, workshop, or project steps.
 - Course-shaping assessment answers are learner preferences. Use them to choose relevant languages, libraries, frameworks, and optional modules where they fit the subject. Do not treat them as right or wrong.
 - Assessment review suggestedModules are planning inputs. The generated modules must visibly include them, rename them naturally, or merge them into equivalent module coverage; do not ignore them.
+- For advanced/applied subjects, use learnerContext.refresher as a gate: when needed, Module 1 is a narrow refresher containing only base-language concepts required by the target (for example, Pygame-relevant Python functions, loops, collections, imports, and classes). When not needed, do not add a generic refresher.
 - For all generated MCQ steps, make distractors plausible and similar length. Distribute correctOptionIndex across 0, 1, 2, and 3; do not default to 0.
 - Use language-appropriate simple file paths. Examples: main.js, main.ts, index.html, styles.css, main.py, Main.java, main.cpp, main.c, Program.cs, main.go, main.rs, index.php, main.rb, main.swift.
 - Match starterCode to the language. Never use JavaScript starter code for C++, Java, Python, Go, Rust, Ruby, Swift, C#, PHP, SQL, or shell exercises.
@@ -1458,6 +1494,7 @@ Course blueprint:
 ${JSON.stringify(courseBlueprint ?? {}).slice(0, 2400)}
 Retrieved course-generation context:
 ${formatStaticCourseGenerationContext(contextChunks).slice(0, 2200)}
+${formatEditableCourseGenerationRules(4500)}
 Assessment answers: ${JSON.stringify(answers).slice(0, 2000)}
 Assessment review: ${JSON.stringify(assessmentReview ?? {}).slice(0, 1000)}`;
 }
@@ -1483,6 +1520,65 @@ Rules:
 - Do not ask for current level, project type, learning mode, Leetcode preference, preferred pace, design preference, or course preview changes.
 - Do not claim the course is finalized.
 - Do not list a syllabus yet.`;
+}
+
+export function buildCourseDiscoveryPrompt({ messages = [], turn = 0 }) {
+  const transcript = messages
+    .filter((message) => message && (message.role === "assistant" || message.role === "user"))
+    .slice(-10)
+    .map((message) => `${message.role}: ${trimText(message.content, "")}`)
+    .filter((line) => line.trim())
+    .join("\n");
+
+  return `You are the Stonecode course-discovery tutor. Hold a short, natural conversation that turns a beginner's vague programming goal into one specific course target before prerequisite assessment.
+
+Return strict JSON only:
+{
+  "status":"clarifying|ready|unsupported",
+  "reply":"short conversational response ending with at most one question when clarifying",
+  "suggestions":["clickable direct answer","clickable direct answer"],
+  "resolvedSubject":"specific course target when ready, otherwise empty"
+}
+
+Conversation turn: ${Number.isInteger(turn) ? turn : 0}
+Transcript:
+${transcript || "No messages yet. Start the conversation."}
+
+Rules:
+- When there is no transcript, greet the learner naturally, ask what they want to learn or build, and provide 5 to 6 varied recommended programming starting points.
+- Suggestions must answer the exact question in reply. Make them short, distinct, useful, and clickable without editing.
+- Keep free typing possible; never imply the learner must choose a suggestion.
+- Ask only one main clarification question per turn.
+- Clarify only what changes the curriculum: intended outcome, product type, platform, or relevant technology choice.
+- If the learner names an exact standalone language fundamentals course, it can be ready immediately.
+- If the learner says only "make a game", "build a website", "make an app", "backend", "data", or another broad outcome, ask focused follow-ups until the target is teachable.
+- If the learner does not know a language/framework, recommend suitable choices in suggestions with plain outcome-focused labels. Do not expect technical knowledge.
+- A ready target should be specific enough to plan, for example "Python fundamentals", "2D desktop games with Python and Pygame", or "beginner full-stack web apps with React and Node.js".
+- Do not ask for self-rated level, learning style, pace, Leetcode preference, or design preference. Prerequisite knowledge is handled by assessment later.
+- Stonecode supports programming/software courses only. For unsupported requests, briefly redirect and suggest programming alternatives.
+- Do not fabricate live popularity, usage counts, or claims about what other users learned this week. You may call suggestions "popular starting points" without claiming real-time analytics.
+- Do not generate a syllabus, assessment question, or course content yet.
+- After several vague turns, narrow the choices to 2 to 4 concrete recommended paths, but wait for the learner to choose or confirm one.
+- status=ready requires a non-empty resolvedSubject and should not ask another clarification question.
+- status=clarifying or unsupported requires 2 to 6 suggestions and an empty resolvedSubject.`;
+}
+
+export function normalizeCourseDiscoveryTurn(value) {
+  const status = ["clarifying", "ready", "unsupported"].includes(value?.status) ? value.status : "";
+  const reply = trimText(value?.reply, "").slice(0, 700);
+  const suggestions = uniqueStrings(value?.suggestions).map((item) => item.slice(0, 90)).slice(0, 6);
+  const resolvedSubject = trimText(value?.resolvedSubject, "").slice(0, 140);
+
+  if (!status || !reply) throw new Error("Course discovery response is missing status or reply.");
+  if (status === "ready" && !resolvedSubject) throw new Error("Ready course discovery response is missing resolvedSubject.");
+  if (status !== "ready" && suggestions.length < 2) throw new Error("Course discovery question needs at least two suggested answers.");
+
+  return {
+    status,
+    reply,
+    suggestions: status === "ready" ? [] : suggestions,
+    resolvedSubject: status === "ready" ? resolvedSubject : ""
+  };
 }
 
 export function buildChapterGenerationPrompt({ content, chapterIndex }) {
@@ -1941,22 +2037,78 @@ function normalizeLearningBlock(block, blockIndex, topicId, defaultLanguageInfo 
     allowedSteps = filterStepsForKind(kind, coerceStepsForKind(kind, steps));
   }
   if (!allowedSteps.length) return null;
-  if (kind === "workshop" && allowedSteps.length < minimumWorkshopStepCount) return null;
+  const workshopSteps = kind === "workshop" ? allowedSteps.filter((step) => step.type === "workshop") : [];
+  if (kind === "workshop" && workshopSteps.length < minimumWorkshopStepCount) return null;
+  const contractedSteps = kind === "workshop"
+    ? ensureWorkshopRecapStep({
+        blockId: id,
+        blockSummary: trimText(block?.summary, "Generated workshop."),
+        blockTitle: title,
+        summaryStep: [...allowedSteps].reverse().find((step) => step.type === "summary"),
+        workshopSteps: normalizeWorkshopContinuity(workshopSteps, id)
+      })
+    : allowedSteps.map((step, stepIndex) => ({ ...step, id: step.id || `${id}-step-${stepIndex + 1}` }));
   return {
     id,
     kind,
     title,
     summary: trimText(block?.summary, "Generated block."),
     order: blockIndex,
-    steps: allowedSteps
+    steps: contractedSteps
   };
+}
+
+function ensureWorkshopRecapStep({ blockId, blockSummary, blockTitle, summaryStep, workshopSteps }) {
+  const recap = summaryStep ?? {
+    type: "summary",
+    markdown: buildWorkshopRecapMarkdown(blockTitle, blockSummary, workshopSteps)
+  };
+  return [...workshopSteps, { ...recap, id: recap.id || `${blockId}-recap` }];
+}
+
+function buildWorkshopRecapMarkdown(blockTitle, blockSummary, workshopSteps) {
+  const changes = workshopSteps
+    .map((step) => trimText(step.expectedChange, step.prompt))
+    .filter(Boolean)
+    .map((change) => `- ${change.replace(/^Step\s+\d+\s*:\s*/i, "")}`)
+    .join("\n");
+  const finalStep = workshopSteps.at(-1);
+  const finalCode = trimText(finalStep?.resultCode, "");
+  const language = trimText(finalStep?.language, "text").toLowerCase().replace(/[^a-z0-9+#]/g, "");
+  const code = finalCode ? `\n\n## The finished code\n\n\`\`\`${language}\n${finalCode}\n\`\`\`` : "";
+  return `## Workshop complete\n\nYou finished **${blockTitle}**. ${blockSummary}\n\n## What the code now does\n\n${changes || "- It combines the workshop edits into one working behavior."}${code}\n\n## Why this matters\n\nThis recap closes the guided build. Ask the tutor about any line before moving to independent practice.`;
+}
+
+function normalizeWorkshopContinuity(steps, blockId) {
+  const normalized = [];
+  for (let index = 0; index < steps.length; index += 1) {
+    const raw = steps[index];
+    const previous = normalized[index - 1] ?? null;
+    const id = slugify(raw.id || `${blockId}-step-${index + 1}`);
+    const starterCode = previous?.resultCode || raw.starterCode;
+    const nextStarterCode = typeof steps[index + 1]?.starterCode === "string" ? steps[index + 1].starterCode : "";
+    const resultCode = trimText(raw.resultCode, nextStarterCode || starterCode);
+    normalized.push({
+      ...raw,
+      id,
+      buildsOnStepId: previous?.id ?? null,
+      starterCode,
+      resultCode,
+      workspaceFiles: normalizeExerciseWorkspaceFiles(raw.workspaceFiles, { filePath: raw.filePath, starterCode }),
+      expectedChange: trimText(raw.expectedChange, raw.prompt),
+      conceptIds: uniqueStrings(raw.conceptIds).length ? uniqueStrings(raw.conceptIds) : [slugify(raw.assessmentArea || blockId)]
+    });
+  }
+  return normalized;
 }
 
 function normalizeBlockKind(kind, steps) {
   const rawKind = typeof kind === "string" ? kind.trim().toLowerCase() : "";
   const mcqCount = steps.filter((step) => step.type === "mcq").length;
+  const teachingCount = steps.filter((step) => ["theory", "analogy", "example", "summary"].includes(step.type)).length;
   const workshopCount = steps.filter((step) => step.type === "workshop").length;
   if (rawKind === "quiz") return mcqCount >= 4 ? "quiz" : "theory";
+  if (rawKind === "theory" && teachingCount === 0 && mcqCount >= 4) return "quiz";
   if (["theory", "workshop", "lab", "project", "review"].includes(rawKind)) return rawKind;
   if (steps.every((step) => step.type === "mcq")) return mcqCount >= 4 ? "quiz" : "theory";
   if (steps.some((step) => step.type === "lab")) return "lab";
@@ -1970,7 +2122,7 @@ function filterStepsForKind(kind, steps) {
   return steps.filter((step) => {
     if (kind === "theory") return ["theory", "analogy", "example", "summary", "mcq"].includes(step.type);
     if (kind === "quiz") return step.type === "mcq";
-    if (kind === "workshop") return step.type === "workshop";
+    if (kind === "workshop") return step.type === "workshop" || step.type === "summary";
     if (kind === "lab") return step.type === "lab";
     if (kind === "project") return step.type === "project";
     if (kind === "review") return step.type === "reflection" || step.type === "summary";
@@ -2015,6 +2167,9 @@ function normalizeLearningStep(step, defaultLanguageInfo = courseLanguages[0]) {
     const languageInfo = resolveCourseLanguage(step.language || defaultLanguageInfo.label || step.filePath);
     const filePath = normalizeExerciseFilePath(step.filePath, languageInfo);
     const rawStarterCode = typeof step.starterCode === "string" ? step.starterCode : "";
+    const starterCode = typeof step.starterCode === "string" && !isMismatchedStarterCode(rawStarterCode, languageInfo)
+      ? rawStarterCode
+      : starterCodeForLanguage(languageInfo);
     const acceptanceCriteria = uniqueStrings(step.acceptanceCriteria).length
       ? uniqueStrings(step.acceptanceCriteria)
       : defaultAcceptanceCriteria(languageInfo, step.type);
@@ -2025,24 +2180,64 @@ function normalizeLearningStep(step, defaultLanguageInfo = courseLanguages[0]) {
     const prompt = trimText(step.prompt, "Complete the task in the editor.");
     return {
       type: step.type,
+      id: typeof step.id === "string" ? slugify(step.id) : undefined,
       language: languageInfo.label,
       filePath,
       prompt: wordCount(prompt) >= 8
         ? prompt
         : `${prompt} Make one small code change, then check the visible result before continuing.`,
-      starterCode: rawStarterCode.trim() && !isMismatchedStarterCode(rawStarterCode, languageInfo)
-        ? rawStarterCode
-        : starterCodeForLanguage(languageInfo),
+      starterCode,
+      resultCode: typeof step.resultCode === "string" && step.resultCode.trim() ? step.resultCode : undefined,
+      expectedChange: trimText(step.expectedChange, prompt),
+      codeExplanation: trimText(step.codeExplanation, step.expectedChange || prompt),
+      suggestedQuestions: uniqueStrings(step.suggestedQuestions).length
+        ? uniqueStrings(step.suggestedQuestions).slice(0, 3)
+        : ["Explain the new code line", "Why does this step come next?", "What happens if I change this value?"],
+      buildsOnStepId: typeof step.buildsOnStepId === "string" ? slugify(step.buildsOnStepId) : null,
+      conceptIds: uniqueStrings(step.conceptIds),
       acceptanceCriteria: acceptanceCriteria.length >= 2
         ? acceptanceCriteria
         : [...acceptanceCriteria, "The result is visible from the code or output"],
       context: wordCount(context) >= 10
         ? context
         : `${context} This step should stay connected to the current topic and avoid introducing a new concept.`,
-      requiresPreview: Boolean(step.requiresPreview)
+      requiresPreview: Boolean(step.requiresPreview),
+      requiresTerminal: Boolean(step.requiresTerminal),
+      workspaceView: normalizeWorkspaceView(step.workspaceView, step),
+      workspaceFiles: normalizeExerciseWorkspaceFiles(step.workspaceFiles, { filePath, starterCode })
     };
   }
   return null;
+}
+
+function normalizeWorkspaceView(value, step) {
+  if (value === "code" || value === "preview" || value === "terminal") return value;
+  if (step?.requiresPreview) return "preview";
+  if (step?.requiresTerminal) return "terminal";
+  return "code";
+}
+
+function normalizeExerciseWorkspaceFiles(files, { filePath, starterCode }) {
+  const normalized = Array.isArray(files)
+    ? files.map((file) => {
+        if (!file || typeof file !== "object") return null;
+        const rawPath = typeof file.path === "string" ? file.path.trim() : "";
+        if (!rawPath) return null;
+        const path = normalizePath(rawPath);
+        if (path.endsWith("/")) return null;
+        return {
+          path,
+          content: typeof file.content === "string" ? file.content.slice(0, 40000) : "",
+          purpose: typeof file.purpose === "string" ? file.purpose.trim().slice(0, 180) : undefined,
+          editable: file.editable !== false
+        };
+      }).filter(Boolean).slice(0, 12)
+    : [];
+  const activeIndex = normalized.findIndex((file) => file.path === filePath);
+  const activeFile = { path: filePath, content: starterCode, purpose: "Active exercise file", editable: true };
+  if (activeIndex >= 0) normalized[activeIndex] = { ...normalized[activeIndex], ...activeFile };
+  else normalized.unshift(activeFile);
+  return normalized;
 }
 
 function isMismatchedStarterCode(code, languageInfo) {
@@ -2058,7 +2253,7 @@ function isMismatchedStarterCode(code, languageInfo) {
   if (label === "python") return looksLikeJavaScript || looksLikeCpp || looksLikeJava;
   if (label === "c++") return looksLikeJavaScript || looksLikePython || looksLikeJava;
   if (label === "java") return looksLikeJavaScript || looksLikePython || looksLikeCpp;
-  if (["c", "c#", "go", "rust", "php", "ruby", "swift", "sql"].includes(label)) return looksLikeJavaScript || looksLikePython || looksLikeCpp || looksLikeJava;
+  if (["c", "c#", "go", "rust", "php", "ruby", "swift", "kotlin", "dart", "r", "julia", "fortran", "cobol", "basic", "sql"].includes(label)) return looksLikeJavaScript || looksLikePython || looksLikeCpp || looksLikeJava;
   return false;
 }
 
@@ -2498,7 +2693,11 @@ function normalizePath(value) {
     .trim() || "main.js";
 }
 
-const courseLanguages = [
+const courseLanguages = courseLanguageCapabilities;
+
+// Kept temporarily as compatibility documentation while generated-course fixtures
+// migrate to the shared language capability registry above.
+const legacyCourseLanguages = [
   {
     label: "JavaScript",
     aliases: [/javascript/i, /\bjs\b/i, /node/i],
@@ -2622,13 +2821,7 @@ const courseLanguages = [
 ];
 
 function resolveCourseLanguage(value) {
-  const text = trimText(value, "JavaScript");
-  const extension = text.toLowerCase().includes(".") ? text.toLowerCase().split(".").pop() : "";
-  const extensionMatch = courseLanguages.find((language) => language.extensions.includes(extension));
-  if (extensionMatch) return extensionMatch;
-  if (/c#|csharp|dotnet/i.test(text)) return courseLanguages.find((language) => language.label === "C#");
-  if (/c\+\+|cpp|cplusplus/i.test(text)) return courseLanguages.find((language) => language.label === "C++");
-  return courseLanguages.find((language) => language.aliases.some((alias) => alias.test(text))) ?? courseLanguages[0];
+  return resolveCourseLanguageCapability(value);
 }
 
 function starterCodeForLanguage(languageInfo) {
@@ -2662,29 +2855,11 @@ function defaultAcceptanceCriteria(languageInfo, stepType) {
 }
 
 function inferSubject(objective) {
-  const value = trimText(objective, "Programming").toLowerCase();
-  if (value.includes("react")) return "React";
-  if (value.includes("array") || value.includes("javascript") || value.includes("js")) return "JavaScript";
-  if (value.includes("python")) return "Python";
-  if (value.includes("typescript")) return "TypeScript";
-  if (value.includes("c++") || value.includes("cpp")) return "C++";
-  if (/\bjava\b/.test(value)) return "Java";
-  if (value.includes("c#") || value.includes("csharp")) return "C#";
-  if (value.includes("go") || value.includes("golang")) return "Go";
-  if (value.includes("rust")) return "Rust";
-  if (value.includes("php")) return "PHP";
-  if (value.includes("ruby")) return "Ruby";
-  if (value.includes("swift")) return "Swift";
-  if (value.includes("css") || value.includes("website") || value.includes("html")) return "Web Development";
-  return "Programming";
+  return inferGeneratedSubject(objective);
 }
 
 function inferLanguages(objective) {
-  const subject = inferSubject(objective);
-  if (subject === "Python") return ["Python"];
-  if (["TypeScript", "C++", "Java", "C#", "Go", "Rust", "PHP", "Ruby", "Swift"].includes(subject)) return [subject];
-  if (subject === "Web Development" || subject === "React") return ["JavaScript", "HTML", "CSS"];
-  return [resolveCourseLanguage(objective).label];
+  return inferGeneratedLanguages(objective);
 }
 
 function inferPrimaryLanguage(subject) {

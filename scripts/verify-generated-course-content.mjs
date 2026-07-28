@@ -9,8 +9,10 @@ import {
   buildBlockGenerationPrompt,
   buildGeneratedCourseRepairPrompt,
   buildGeneratedModuleRepairPrompt,
+  buildGeneratedTopicRepairPrompt,
   buildLearnerGenerationContext,
   buildCourseBlueprintPrompt,
+  buildCourseDiscoveryPrompt,
   buildCourseSyllabusFromContent,
   createFallbackAssessmentReview,
   createFallbackAssessmentQuestion,
@@ -19,17 +21,67 @@ import {
   createFallbackGeneratedChapter,
   createGeneratedCourseSkeletonFromOutline,
   extractGeneratedModuleFromResponse,
+  extractGeneratedTopicFromResponse,
   normalizeAssessmentPlan,
+  normalizeCourseDiscoveryTurn,
   normalizeGeneratedCourseContent,
+  readEditableCourseGenerationRules,
   resolveAssessmentPlan,
   retrieveStaticCourseGenerationContext,
   stabilizeAssessmentQuestion
 } from "../server/course-generation.mjs";
 import {
   groupGeneratedCourseWarningsByModule,
+  groupGeneratedCourseWarningsByTopic,
   hasBlockingGeneratedCourseQualityWarnings,
+  hasRepairableGeneratedCourseQualityWarnings,
   validateGeneratedCourseQuality
 } from "../server/course-generation-quality.mjs";
+import {
+  classifyCourseIntent,
+  isSupportedProgrammingSubject,
+  resolveCourseLanguageCapability
+} from "../server/course-generation/language-capabilities.mjs";
+import { requestCourseGenerationJson, resolveProviderConfig } from "../server/llm-providers.mjs";
+
+const editableRules = readEditableCourseGenerationRules();
+assert.ok(editableRules.includes("# AI Course Generation Rules"), "editable course-generation rulebook should exist");
+assert.ok(editableRules.includes("Initial Generation Rule"), "rulebook should explain module 1 upfront generation");
+assert.ok(editableRules.includes("Workshop Blocks"), "rulebook should expose workshop behavior");
+assert.ok(editableRules.includes("Hidden Course Blueprint"), "rulebook should expose project-spine behavior");
+assert.ok(editableRules.includes("Practice Progression Rule"), "rulebook should expose workshop-first practice progression");
+assert.ok(editableRules.includes("RAG Rules"), "rulebook should expose retrieval behavior");
+
+const initialDiscoveryPrompt = buildCourseDiscoveryPrompt({ messages: [], turn: 0 });
+assert.ok(initialDiscoveryPrompt.includes("5 to 6 varied recommended programming starting points"), "initial discovery should request AI-generated starting suggestions");
+assert.ok(initialDiscoveryPrompt.includes("Ask only one main clarification question"), "discovery should ask one question at a time");
+assert.ok(initialDiscoveryPrompt.includes("does not need to know a language/framework") || initialDiscoveryPrompt.includes("does not know a language/framework"), "discovery should support outcome-first beginners");
+assert.ok(initialDiscoveryPrompt.includes("Do not fabricate live popularity"), "discovery must not fake user-trend data");
+const vagueDiscoveryPrompt = buildCourseDiscoveryPrompt({
+  messages: [
+    { role: "assistant", content: "What would you like to build?" },
+    { role: "user", content: "I want to make a game." }
+  ],
+  turn: 1
+});
+assert.ok(vagueDiscoveryPrompt.includes("I want to make a game."), "discovery prompt should include learner conversation context");
+const normalizedDiscovery = normalizeCourseDiscoveryTurn({
+  status: "clarifying",
+  reply: "What kind of game would you enjoy making first?",
+  suggestions: ["A 2D desktop game", "A browser game", "A mobile game", "I am not sure yet"],
+  resolvedSubject: "should be cleared"
+});
+assert.equal(normalizedDiscovery.resolvedSubject, "");
+assert.equal(normalizedDiscovery.suggestions.length, 4);
+const readyDiscovery = normalizeCourseDiscoveryTurn({
+  status: "ready",
+  reply: "Great, I have enough to plan your course.",
+  suggestions: ["ignored"],
+  resolvedSubject: "2D desktop games with Python and Pygame"
+});
+assert.equal(readyDiscovery.resolvedSubject, "2D desktop games with Python and Pygame");
+assert.deepEqual(readyDiscovery.suggestions, []);
+assert.throws(() => normalizeCourseDiscoveryTurn({ status: "clarifying", reply: "Choose one", suggestions: ["Only one"] }), /at least two/);
 
 const assessmentPrompt = buildAssessmentQuestionPrompt({
   subject: "Machine Learning",
@@ -40,6 +92,7 @@ const assessmentPlanPrompt = buildAssessmentPlanPrompt({ subject: "Next.js" });
 assert.ok(assessmentPlanPrompt.includes("Return JSON only"), "assessment plan prompt must require JSON");
 assert.ok(assessmentPlanPrompt.includes("prerequisiteAreas"), "assessment plan prompt must ask for prerequisite areas");
 assert.ok(assessmentPlanPrompt.includes("Non-code subjects"), "assessment plan prompt must reject non-code subjects");
+assert.ok(assessmentPlanPrompt.includes("Editable course-generation rules"), "assessment plan prompt should include editable rulebook");
 const normalizedNextPlan = normalizeAssessmentPlan({
   supported: true,
   targetSubject: "Next.js",
@@ -71,6 +124,7 @@ assert.ok(assessmentPrompt.includes("do not make the correct option longer"));
 assert.ok(!assessmentPrompt.includes('"questionKind":"course_shaping"'));
 assert.ok(assessmentPrompt.includes("prerequisite knowledge"));
 assert.ok(assessmentPrompt.includes("Do not default to A or B"));
+assert.ok(assessmentPrompt.includes("Editable course-generation rules"), "assessment question prompt should include editable rulebook");
 
 const fallbackAssessment = createFallbackAssessmentQuestion({ subject: "Machine Learning", step: 0 });
 assert.equal(fallbackAssessment.type, "mcq");
@@ -89,9 +143,32 @@ assert.deepEqual(cppGameAssessmentPlan.areas.map((area) => area.id), ["cpp-synta
 const cppFundamentalsPlan = resolveAssessmentPlan("C++ fundamentals");
 assert.equal(cppFundamentalsPlan.requiresAssessment, false);
 assert.equal(cppFundamentalsPlan.supported, true);
+const pygamePlan = normalizeAssessmentPlan({
+  supported: true,
+  targetSubject: "Unity with C#",
+  requiresAssessment: true,
+  prerequisiteAreas: [{ id: "csharp", title: "C# basics", reason: "Wrong stack", startingDifficulty: "mid" }]
+}, "Pygame");
+assert.equal(pygamePlan.targetSubject, "Pygame", "assessment target must remain grounded in the confirmed brief");
+assert.deepEqual(pygamePlan.prerequisiteAreas.map((area) => area.id), ["python-syntax", "variables", "functions"]);
 const cookingAssessmentPlan = resolveAssessmentPlan("Italian cooking");
 assert.equal(cookingAssessmentPlan.supported, false);
 assert.equal(cookingAssessmentPlan.requiresAssessment, false);
+for (const language of ["Python", "Java", "C++", "C#", "Kotlin", "Swift", "Dart", "Go", "Rust", "Ruby", "PHP", "R programming", "Julia", "Fortran", "COBOL", "BASIC"]) {
+  assert.equal(resolveAssessmentPlan(language).requiresAssessment, false, `${language} fundamentals should start without assessment`);
+  assert.equal(isSupportedProgrammingSubject(language), true, `${language} should be an allowed programming subject`);
+}
+for (const target of ["React", "Next.js", "Flutter", "Unity", "Node.js", "Rust concurrency", "Python automation", "Java game development"]) {
+  assert.equal(resolveAssessmentPlan(target).requiresAssessment, true, `${target} should assess prerequisites`);
+}
+assert.equal(classifyCourseIntent("Python").kind, "language-fundamentals");
+assert.equal(classifyCourseIntent("Django").kind, "framework");
+assert.equal(normalizeAssessmentPlan({ supported: true, targetSubject: "Python", requiresAssessment: true, prerequisiteAreas: [{ title: "Wrong" }] }, "Python").requiresAssessment, false, "server policy should override AI assessment drift for language fundamentals");
+assert.equal(normalizeAssessmentPlan({ supported: true, targetSubject: "React", requiresAssessment: false, prerequisiteAreas: [{ id: "javascript", title: "JavaScript", reason: "Required", startingDifficulty: "mid" }] }, "React").requiresAssessment, true, "server policy should require framework assessment");
+
+const routedConfig = resolveProviderConfig({ OPENAI_API_KEY: "test", OPENAI_MODEL: "fallback", OPENAI_MODEL_REASONING: "reasoning-model", OPENAI_MODEL_LOW: "low-model" }, "course_structure");
+assert.equal(routedConfig.model, "reasoning-model");
+assert.equal(resolveProviderConfig({ OPENAI_API_KEY: "test", OPENAI_MODEL: "fallback", OPENAI_MODEL_LOW: "low-model" }, "tutor_chat").model, "low-model");
 const fallbackPrereqIndexes = [0, 1, 2, 3, 5, 6].map((step) =>
   createFallbackAssessmentQuestion({ subject: "Machine Learning", step }).correctOptionIndex
 );
@@ -127,6 +204,11 @@ const skippedReview = createFallbackAssessmentReview({
   ]
 });
 assert.ok(skippedReview.gaps.some((gap) => /complete beginner|tiny runnable examples/i.test(gap)), "skipped assessment review should assume beginner bridges");
+const pygameSkippedReview = createFallbackAssessmentReview({
+  subject: "2D desktop games with Python and Pygame",
+  answers: [{ questionId: "python-functions", type: "mcq", skipped: true, questionKind: "prerequisite" }]
+});
+assert.match(pygameSkippedReview.suggestedModules[0], /Targeted Python refresher.*Pygame/i, "applied-course gaps should create a target-specific refresher");
 
 const preview = createFallbackGeneratedCourse({
   objective: "Learn JavaScript arrays",
@@ -204,7 +286,7 @@ const assessmentCourse = createFallbackGeneratedCourseFromAssessment({
   assessmentReview: review
 });
 assert.equal(assessmentCourse.schemaVersion, "course-content/v2");
-assert.equal(assessmentCourse.generationDepth, "full_course");
+assert.equal(assessmentCourse.generationDepth, "full_structure_first_module");
 assert.ok(assessmentCourse.modules.length >= 6);
 assert.ok(assessmentCourse.modules[0].unlocked);
 assert.ok(assessmentCourse.modules[0].topics.length >= 3);
@@ -215,7 +297,15 @@ assert.ok(assessmentCourse.modules[0].topics[0].blocks.some((block) => block.kin
 assert.ok(assessmentCourse.modules[0].topics[2].blocks.some((block) => block.kind === "workshop"));
 const fallbackWorkshop = assessmentCourse.modules[0].topics[2].blocks.find((block) => block.kind === "workshop");
 assert.ok(fallbackWorkshop.steps.length >= 5, "fallback workshop should be several tiny guided steps");
-assert.ok(fallbackWorkshop.steps.every((step, index) => step.prompt.includes(`Step ${index + 1}`)), "fallback workshop prompts should be numbered");
+const fallbackWorkshopCodeSteps = fallbackWorkshop.steps.filter((step) => step.type === "workshop");
+assert.ok(fallbackWorkshopCodeSteps.every((step, index) => step.prompt.includes(`Step ${index + 1}`)), "fallback workshop prompts should be numbered");
+assert.ok(fallbackWorkshopCodeSteps.every((step) => step.id && step.expectedChange && step.conceptIds.length), "workshops should have explicit micro-edit contracts");
+assert.equal(fallbackWorkshop.steps.at(-1).type, "summary", "workshops should end with a non-coding recap");
+assert.match(fallbackWorkshop.steps.at(-1).markdown, /What the code now does/, "workshop recap should explain the finished code");
+for (let index = 1; index < fallbackWorkshopCodeSteps.length; index += 1) {
+  assert.equal(fallbackWorkshopCodeSteps[index].buildsOnStepId, fallbackWorkshopCodeSteps[index - 1].id, "workshop steps should reference the previous step");
+  assert.equal(fallbackWorkshopCodeSteps[index].starterCode, fallbackWorkshopCodeSteps[index - 1].resultCode, "workshop code should carry forward exactly");
+}
 const fallbackQuizBlocks = assessmentCourse.modules.flatMap((module) => module.topics).flatMap((topic) => topic.blocks).filter((block) => block.kind === "quiz");
 assert.ok(fallbackQuizBlocks.every((block) => block.steps.length >= 4), "quiz blocks should be multi-question exam checkpoints");
 assert.ok(assessmentCourse.modules[0].topics[2].blocks.some((block) => block.kind === "lab" && block.steps.length === 1));
@@ -236,6 +326,12 @@ assert.ok(csharpExercises.every((step) => step.filePath === "Program.cs"), "C# f
 assert.ok(csharpExercises.every((step) => /Console\.WriteLine/.test(step.starterCode)), "C# starter code must use Console.WriteLine, not printf");
 assert.ok(!csharpExercises.some((step) => /printf/.test(`${step.prompt} ${step.starterCode} ${step.acceptanceCriteria.join(" ")}`)), "C# fallback workshop text must not mention printf");
 
+for (const [language, filePath] of [["Kotlin", "Main.kt"], ["Dart", "main.dart"], ["R programming", "main.R"], ["Julia", "main.jl"], ["Fortran", "main.f90"], ["COBOL", "main.cob"], ["BASIC", "main.bas"]]) {
+  const capability = resolveCourseLanguageCapability(language);
+  assert.equal(capability.filePath, filePath, `${language} should have a language-safe workshop file`);
+  assert.ok(capability.starterCode.length > 20, `${language} should have a language-safe starter`);
+}
+
 const coursePrompt = buildAssessmentCourseGenerationPrompt({
   subject: "Machine Learning",
   answers: [
@@ -253,6 +349,7 @@ const learnerContext = buildLearnerGenerationContext({
   assessmentReview: review
 });
 assert.ok(learnerContext.readiness !== "unknown", "learner generation context should classify readiness");
+assert.equal(learnerContext.refresher.needed, true, "weak prerequisites should request a targeted refresher");
 assert.ok(learnerContext.weakSignals.some((signal) => signal.prompt.includes("variable")), "learner context should preserve weak assessment signals");
 assert.ok(learnerContext.preferences.some((preference) => preference.answer.includes("Python")), "learner context should preserve course-shaping preferences");
 const staticContext = retrieveStaticCourseGenerationContext({ subject: "Machine Learning", learnerContext });
@@ -265,6 +362,7 @@ const blueprintPrompt = buildCourseBlueprintPrompt({ subject: "Machine Learning"
 assert.ok(blueprintPrompt.includes("courseBlueprint"), "blueprint prompt must produce courseBlueprint");
 assert.ok(blueprintPrompt.includes("finalProject"), "blueprint prompt must include final project spine");
 assert.ok(blueprintPrompt.includes("miniProjects"), "blueprint prompt must include mini-project path");
+assert.ok(blueprintPrompt.includes("Editable course-generation rules"), "blueprint prompt should include editable rulebook");
 
 const outlinePrompt = buildAssessmentCourseOutlinePrompt({
   subject: "Machine Learning",
@@ -275,9 +373,11 @@ const outlinePrompt = buildAssessmentCourseOutlinePrompt({
 assert.ok(outlinePrompt.includes("Course outline phase"), "outline prompt should identify outline phase");
 assert.ok(outlinePrompt.includes("Do not write full lesson markdown"), "outline prompt should not generate loaded teaching content");
 assert.ok(outlinePrompt.includes("Module 1"), "outline prompt should plan only the first loaded module");
+assert.ok(outlinePrompt.includes("targeted refresher"), "outline prompt should gate target-specific refresher modules from assessment evidence");
 assert.ok(outlinePrompt.includes("Do not target a fixed module count"), "outline prompt should avoid fixed module counts");
 assert.ok(outlinePrompt.includes("kind"), "outline prompt should still plan block kinds");
 assert.ok(outlinePrompt.includes("Course blueprint"), "outline prompt must receive hidden course blueprint context");
+assert.ok(outlinePrompt.includes("Editable course-generation rules"), "outline prompt should include editable rulebook");
 
 const blockPrompt = buildBlockGenerationPrompt({
   blockKind: "workshop",
@@ -289,6 +389,10 @@ const blockPrompt = buildBlockGenerationPrompt({
 assert.ok(blockPrompt.includes("Workshop block contract"), "block prompt should include workshop-specific contract");
 assert.ok(blockPrompt.includes("First decide the concrete deliverable"), "workshop prompt should be deliverable-driven");
 assert.ok(blockPrompt.includes("Do not target a fixed count"), "workshop prompt should avoid fixed step counts");
+assert.ok(blockPrompt.includes("non-coding summary step"), "workshop prompt should require a final recap");
+assert.ok(blockPrompt.includes("suggestedQuestions"), "workshop prompt should request relevant learner questions");
+assert.ok(blockPrompt.includes("Do not repeat generic language syntax"), "workshop prompt should avoid repeated syntax dumps");
+assert.ok(blockPrompt.includes("HTML is the preview entrypoint"), "visual web workshops must explicitly connect HTML, CSS, and JavaScript files");
 assert.ok(!blockPrompt.includes("Quiz block contract"), "workshop prompt should not mix quiz rules");
 
 const contentPrompt = buildAssessmentCourseContentPrompt({
@@ -302,6 +406,7 @@ assert.ok(contentPrompt.includes("Use the course outline as the fixed plan"), "c
 assert.ok(contentPrompt.includes("Block-specific generation contracts"), "content prompt should include block-specific contracts");
 assert.ok(contentPrompt.includes("Workshop block contract"), "content prompt should include workshop block rules");
 assert.ok(contentPrompt.includes("Lab block contract"), "content prompt should include lab block rules");
+assert.ok(contentPrompt.includes("Editable course-generation rules"), "content prompt should include editable rulebook");
 
 const modulePrompt = buildAssessmentModuleContentPrompt({
   subject: "Machine Learning",
@@ -316,6 +421,7 @@ assert.ok(modulePrompt.includes('"moduleIndex":0'), "module prompt should ask fo
 assert.ok(modulePrompt.includes("Generate full block steps only for this module"), "module prompt should be scoped to one module");
 assert.ok(modulePrompt.includes("Block-specific generation contracts"), "module prompt should include block contracts");
 assert.ok(modulePrompt.includes("Course blueprint"), "module prompt must keep practical content tied to the project spine");
+assert.ok(modulePrompt.includes("Editable course-generation rules"), "module prompt should include editable rulebook");
 
 const outlineSkeleton = createGeneratedCourseSkeletonFromOutline({
   course: {
@@ -362,6 +468,8 @@ const extractedModule = extractGeneratedModuleFromResponse({
   module: assessmentCourse.modules[0]
 }, outlineSkeleton.modules[0], 0);
 assert.equal(extractedModule.id, assessmentCourse.modules[0].id);
+const malformedExtractedModule = extractGeneratedModuleFromResponse({ moduleIndex: 0 }, outlineSkeleton.modules[0], 0);
+assert.equal(malformedExtractedModule.id, outlineSkeleton.modules[0].id, "malformed repair wrappers must preserve the existing module");
 
 const repairPrompt = buildGeneratedCourseRepairPrompt({
   subject: "Machine Learning",
@@ -371,6 +479,7 @@ const repairPrompt = buildGeneratedCourseRepairPrompt({
 assert.ok(repairPrompt.includes("Repair only the invalid generated blocks"), "repair prompt should be block-scoped");
 assert.ok(repairPrompt.includes("workshop_too_short"), "repair prompt should include quality warning codes");
 assert.ok(repairPrompt.includes("Return the full corrected course JSON"), "repair prompt should return full course JSON for existing normalizer");
+assert.ok(repairPrompt.includes("Editable course-generation rules"), "repair prompt should include editable rulebook");
 
 const moduleRepairPrompt = buildGeneratedModuleRepairPrompt({
   subject: "Machine Learning",
@@ -381,7 +490,47 @@ const moduleRepairPrompt = buildGeneratedModuleRepairPrompt({
 assert.ok(moduleRepairPrompt.includes("Repair only this generated module"), "module repair prompt should be module-scoped");
 assert.ok(moduleRepairPrompt.includes('"moduleIndex":0'), "module repair prompt should preserve module index");
 assert.ok(moduleRepairPrompt.includes("Return strict JSON only"), "module repair prompt should return JSON");
+assert.ok(moduleRepairPrompt.includes('"topics":[]'), "module repair prompt should use the v2 topics schema");
+assert.ok(!moduleRepairPrompt.includes('"chapters":[]'), "module repair prompt should not advertise the obsolete chapters shape");
 assert.ok(!moduleRepairPrompt.includes("full corrected course JSON"), "module repair prompt should not ask for full-course repair");
+assert.ok(moduleRepairPrompt.includes("Editable course-generation rules"), "module repair prompt should include editable rulebook");
+
+const topicRepairPrompt = buildGeneratedTopicRepairPrompt({
+  subject: "Machine Learning",
+  topic: assessmentCourse.modules[0].topics[0],
+  moduleIndex: 0,
+  topicIndex: 0,
+  qualityWarnings: [{ code: "workshop_prompt_missing_action", message: "modules[0].topics[0].blocks[1].steps[0] needs an action." }]
+});
+assert.ok(topicRepairPrompt.includes("Repair only this generated Stonecode topic"), "topic repair should stay smaller than a whole module repair");
+assert.ok(topicRepairPrompt.includes('"topicIndex":0'), "topic repair prompt should preserve its index");
+assert.equal(
+  extractGeneratedTopicFromResponse({ topicIndex: 0 }, assessmentCourse.modules[0].topics[0], 0).id,
+  assessmentCourse.modules[0].topics[0].id,
+  "malformed topic repair wrappers must preserve the existing topic"
+);
+const protectedTopic = {
+  id: "protected-topic",
+  title: "Protected topic",
+  blocks: [
+    { id: "valid-theory", kind: "theory", steps: [{ type: "theory", markdown: "Keep this valid theory unchanged." }] },
+    { id: "broken-workshop", kind: "workshop", steps: [{ type: "workshop", prompt: "Old" }] }
+  ]
+};
+const selectivelyRepairedTopic = extractGeneratedTopicFromResponse({
+  topic: {
+    ...protectedTopic,
+    blocks: [
+      { id: "valid-theory", kind: "theory", steps: [{ type: "mcq", prompt: "Regressed unrelated block" }] },
+      { id: "broken-workshop", kind: "workshop", steps: [{ type: "workshop", prompt: "Add one concrete line." }] }
+    ]
+  }
+}, protectedTopic, 0, [{
+  code: "workshop_prompt_missing_action",
+  message: "modules[0].topics[0].blocks[1].steps[0] needs a concrete action."
+}]);
+assert.deepEqual(selectivelyRepairedTopic.blocks[0], protectedTopic.blocks[0], "topic repair must not rewrite an unrelated valid block");
+assert.equal(selectivelyRepairedTopic.blocks[1].steps[0].prompt, "Add one concrete line.");
 
 const groupedWarnings = groupGeneratedCourseWarningsByModule([
   { code: "workshop_too_short", message: "modules[0].topics[0].blocks[1] workshop has fewer than 4 steps." },
@@ -390,12 +539,55 @@ const groupedWarnings = groupGeneratedCourseWarningsByModule([
 ]);
 assert.equal(groupedWarnings.get(0).length, 2, "unscoped warnings should default to module 0 repair");
 assert.equal(groupedWarnings.get(1).length, 1, "module 1 warnings should group together");
+const groupedTopicWarnings = groupGeneratedCourseWarningsByTopic(groupedWarnings.get(0), 0);
+assert.equal(groupedTopicWarnings.get(0).length, 1, "topic-scoped warnings should be isolated for smaller repairs");
+const contextOnlyWarnings = [{
+  code: "workshop_context_missing_purpose",
+  message: "modules[0].topics[0].blocks[1].steps[0] workshop context does not explain why this step matters."
+}];
+assert.equal(hasRepairableGeneratedCourseQualityWarnings(contextOnlyWarnings), true, "weak workshop context should still trigger repair");
+assert.equal(hasBlockingGeneratedCourseQualityWarnings(contextOnlyWarnings), false, "one wording-only context warning should not reject an otherwise valid course");
+
+const originalFetch = globalThis.fetch;
+const generationRequests = [];
+globalThis.fetch = async (_url, options) => {
+  generationRequests.push(JSON.parse(options.body));
+  if (generationRequests.length === 1) {
+    return new Response(JSON.stringify({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output_text: '{"partial":true'
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+  return new Response(JSON.stringify({ status: "completed", output_text: '{"complete":true}' }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+};
+try {
+  const retriedGeneration = await requestCourseGenerationJson({
+    config: { apiKey: "test", model: "test-model" },
+    prompt: "Return a small JSON object.",
+    maxTokens: 100
+  });
+  assert.equal(retriedGeneration.ok, true, "incomplete OpenAI output should retry");
+  assert.equal(generationRequests.length, 2, "incomplete OpenAI output should make a second request");
+  assert.ok(generationRequests[1].max_output_tokens > generationRequests[0].max_output_tokens, "incomplete output retry should receive a larger token budget");
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 assert.ok(coursePrompt.includes("Learner generation context"));
 assert.ok(coursePrompt.includes("Retrieved course-generation context"));
+assert.ok(coursePrompt.includes("Editable course-generation rules"));
+assert.ok(coursePrompt.includes("Initial Generation Rule"));
 assert.ok(coursePrompt.includes('Every block must include a "kind" field'));
 assert.ok(coursePrompt.includes("Fully load module 1"));
 assert.ok(coursePrompt.includes("Keep modules 2 and later as locked outline shells"));
+assert.ok(coursePrompt.includes("friendly course introduction"), "course prompt should require an introductory first step");
+assert.ok(coursePrompt.includes("Do not make it only a tutor greeting"), "course introduction must contain course-specific orientation");
+assert.ok(coursePrompt.includes("problem this topic solves"), "each topic opening must explain its purpose and course connection");
+assert.ok(coursePrompt.includes("map it back to code"), "theory must connect analogies back to programming behavior");
 assert.ok(coursePrompt.includes('A "theory" block may contain only theory, analogy, example, summary, and optional mcq steps.'));
 assert.ok(coursePrompt.includes('A "quiz" block must contain only mcq steps and should have 4 to 10 MCQ steps'));
 assert.ok(coursePrompt.includes("Single MCQ checks belong inside theory blocks"));
@@ -406,17 +598,27 @@ assert.ok(coursePrompt.includes("Assume the learner has no programming, coding, 
 assert.ok(coursePrompt.includes("Workshop length is variable"));
 assert.ok(coursePrompt.includes("Never make a one-step or two-step workshop"));
 assert.ok(coursePrompt.includes("The step count must follow the idea size"));
-assert.ok(coursePrompt.includes('A "lab" block must be independent'));
-assert.ok(coursePrompt.includes("Labs should usually be the same project pattern as the preceding workshop"));
+assert.ok(coursePrompt.includes('A "lab" block is a small checkpoint exam'));
+assert.ok(coursePrompt.includes("Labs should reuse the project pattern of an earlier relevant workshop"));
+assert.ok(coursePrompt.includes("A workshop must be the first practical code experience"), "course prompt should require workshop-first practice");
 assert.ok(coursePrompt.includes("Every workshop/lab/project step needs detailed context"));
+assert.ok(coursePrompt.includes("Workshop context should briefly explain what the learner is learning"), "workshop context should explain purpose");
 assert.ok(coursePrompt.includes("Workshop prompts must teach by tutorial"));
+assert.ok(coursePrompt.includes("Workshop prompts should move quickly"), "workshop prompts should stay atomic");
 assert.ok(coursePrompt.includes("Each workshop step should read like a FreeCodeCamp-style step screen"));
+assert.ok(coursePrompt.includes("Introduce the workshop deliverable only on Step 1"));
+assert.ok(coursePrompt.includes("Every coding step includes codeExplanation"));
+assert.ok(coursePrompt.includes("End every workshop with one non-coding summary step"));
 assert.ok(coursePrompt.includes("Step 1, Step 2"));
 assert.ok(coursePrompt.includes("remind the learner what they already learned"));
 assert.ok(coursePrompt.includes("explain every new token"));
+assert.ok(coursePrompt.includes("Do not force exactly one theory step or exactly one MCQ"), "theory blocks must stay flexible");
 assert.ok(coursePrompt.includes("Never include hidden planning"));
 assert.ok(!coursePrompt.includes("internally design"));
 assert.ok(coursePrompt.includes("Use requiresPreview:true"));
+assert.ok(coursePrompt.includes('workspaceView:"preview"'), "visual exercises should open the Visual tab from generated metadata");
+assert.ok(coursePrompt.includes('workspaceView:"terminal"'), "execution exercises should open the Terminal tab from generated metadata");
+assert.ok(coursePrompt.includes("workspaceFiles"), "generated exercises should include their project file manifest");
 assert.ok(coursePrompt.includes("may create multiple small connected files"));
 assert.ok(coursePrompt.includes("Use language-appropriate simple file paths"));
 assert.ok(coursePrompt.includes('Reflection/"Answer in chat" prompts must include a short recap or clue'));
@@ -434,6 +636,33 @@ assert.equal(normalizedV2.schemaVersion, "course-content/v2");
 assert.ok(normalizedV2.assessmentReview.suggestedModules.length > 0);
 assert.equal(normalizedV2.modules[0].unlocked, true, "module 1 should be unlocked");
 assert.equal(normalizedV2.modules[1].unlocked, false, "module 2 should stay locked until generated later");
+
+const visualWorkspaceFixture = structuredClone(assessmentCourse);
+const visualStep = visualWorkspaceFixture.modules
+  .flatMap((module) => module.topics)
+  .flatMap((topic) => topic.blocks)
+  .flatMap((block) => block.steps)
+  .find((step) => step.type === "workshop");
+Object.assign(visualStep, {
+  language: "Python",
+  filePath: "game/main.py",
+  starterCode: "player_x = 40\n",
+  requiresPreview: true,
+  workspaceView: "preview",
+  workspaceFiles: [
+    { path: "game/main.py", content: "player_x = 40\n", purpose: "Pygame source", editable: true },
+    { path: "preview/index.html", content: "<main>Player scene</main>", purpose: "Browser-renderable scene reference", editable: false }
+  ]
+});
+const normalizedVisualWorkspace = normalizeGeneratedCourseContent(visualWorkspaceFixture);
+const normalizedVisualStep = normalizedVisualWorkspace.modules
+  .flatMap((module) => module.topics)
+  .flatMap((topic) => topic.blocks)
+  .flatMap((block) => block.steps)
+  .find((step) => step.type === "workshop" && step.filePath === "game/main.py");
+assert.equal(normalizedVisualStep.workspaceView, "preview");
+assert.equal(normalizedVisualStep.workspaceFiles.length, 2);
+assert.ok(normalizedVisualStep.workspaceFiles.some((file) => file.path === "preview/index.html"), "visual scene reference should survive normalization");
 
 const qualityWarnings = validateGeneratedCourseQuality({
   schemaVersion: "course-content/v2",
@@ -480,6 +709,65 @@ const qualityWarnings = validateGeneratedCourseQuality({
 assert.ok(qualityWarnings.some((warning) => warning.code === "theory_too_thin"), "quality validation should flag shallow theory");
 assert.ok(qualityWarnings.some((warning) => warning.code === "exercise_context_too_thin"), "quality validation should flag weak exercise context");
 
+const quizOnlyTheoryWarnings = validateGeneratedCourseQuality({
+  schemaVersion: "course-content/v2",
+  title: "Quiz Only Theory",
+  subject: "JavaScript",
+  description: "Theory block is actually a quiz.",
+  languages: ["JavaScript"],
+  tags: ["test"],
+  generationDepth: "full_course",
+  assessmentReview: review,
+  modules: [
+    {
+      id: "m1",
+      title: "Module",
+      summary: "Module",
+      unlocked: true,
+      topics: [
+        {
+          id: "t1",
+          title: "Variables",
+          summary: "Variables",
+          unlocked: true,
+          blocks: [
+            {
+              id: "b1",
+              kind: "theory",
+              title: "Variables",
+              summary: "Variables",
+              steps: [
+                { type: "mcq", prompt: "What is a variable?", options: ["A name for a value", "A style rule", "A database", "A browser"], correctOptionIndex: 0, explanation: "A variable stores a value under a name." },
+                { type: "mcq", prompt: "What does const do?", options: ["Creates a named value", "Deletes a file", "Runs CSS", "Starts a server"], correctOptionIndex: 0, explanation: "const creates a binding." },
+                { type: "mcq", prompt: "What do quotes mark?", options: ["String text", "A loop", "A folder", "A test"], correctOptionIndex: 0, explanation: "Quotes mark literal text." },
+                { type: "mcq", prompt: "What does console.log show?", options: ["Console output", "A route", "A color", "A component"], correctOptionIndex: 0, explanation: "It prints visible output." }
+              ]
+            },
+            {
+              id: "w1",
+              kind: "workshop",
+              title: "Workshop",
+              summary: "Workshop",
+              steps: Array.from({ length: 4 }, (_, index) => ({
+                type: "workshop",
+                language: "JavaScript",
+                filePath: "main.js",
+                context: "This workshop uses the variable syntax taught above and changes one line at a time.",
+                prompt: `Step ${index + 1}: write one small line and explain the syntax before editing.`,
+                starterCode: "const message = 'hello';\nconsole.log(message);",
+                acceptanceCriteria: ["Uses a named value", "Shows output"]
+              }))
+            }
+          ]
+        }
+      ]
+    }
+  ]
+});
+assert.ok(quizOnlyTheoryWarnings.some((warning) => warning.code === "theory_block_missing_teaching"), "quality validation should reject theory blocks made only of MCQs");
+assert.ok(quizOnlyTheoryWarnings.some((warning) => warning.code === "topic_missing_theory_teaching"), "topics should need real theory teaching, not just theory-labeled quizzes");
+assert.ok(hasBlockingGeneratedCourseQualityWarnings(quizOnlyTheoryWarnings), "quiz-only theory should block save without repair");
+
 const missingInteractiveWarnings = validateGeneratedCourseQuality({
   schemaVersion: "course-content/v2",
   title: "Missing Practice",
@@ -517,6 +805,113 @@ const missingInteractiveWarnings = validateGeneratedCourseQuality({
 });
 assert.ok(missingInteractiveWarnings.some((warning) => warning.code === "topic_missing_interactive_block"), "quality validation should flag missing interactive blocks in loaded modules");
 assert.ok(hasBlockingGeneratedCourseQualityWarnings(missingInteractiveWarnings), "missing interactive block warnings should block save without repair");
+
+const missingSyntaxTeachingWarnings = validateGeneratedCourseQuality({
+  schemaVersion: "course-content/v2",
+  title: "Syntax Missing",
+  subject: "JavaScript",
+  description: "Code appears without syntax teaching.",
+  languages: ["JavaScript"],
+  tags: ["test"],
+  generationDepth: "full_course",
+  assessmentReview: review,
+  modules: [
+    {
+      id: "m1",
+      title: "Module",
+      summary: "Module",
+      unlocked: true,
+      topics: [
+        {
+          id: "t1",
+          title: "Variables",
+          summary: "Variables",
+          unlocked: true,
+          blocks: [
+            {
+              id: "b1",
+              kind: "theory",
+              title: "Variables",
+              summary: "Variables",
+              steps: [{ type: "theory", markdown: "## Variables\n\nThis topic introduces a small idea before practice. The lesson says why values matter and keeps the explanation general before practice." }]
+            },
+            {
+              id: "w1",
+              kind: "workshop",
+              title: "Workshop",
+              summary: "Workshop",
+              steps: Array.from({ length: 4 }, (_, index) => ({
+                type: "workshop",
+                language: "JavaScript",
+                filePath: "main.js",
+                context: "Build a tiny output.",
+                prompt: `Step ${index + 1}: add the next edit.`,
+                starterCode: "const message = 'hello';\nconsole.log(message);",
+                acceptanceCriteria: ["Uses message", "Shows output"]
+              }))
+            }
+          ]
+        }
+      ]
+    }
+  ]
+});
+assert.ok(missingSyntaxTeachingWarnings.some((warning) => warning.code === "syntax_teaching_missing"), "quality validation should reject code exercises without syntax teaching");
+assert.ok(hasBlockingGeneratedCourseQualityWarnings(missingSyntaxTeachingWarnings), "missing syntax teaching should block save without repair");
+
+const vagueWorkshopWarnings = validateGeneratedCourseQuality({
+  schemaVersion: "course-content/v2",
+  title: "Vague Workshop",
+  subject: "JavaScript",
+  description: "Workshop lacks purpose and action.",
+  languages: ["JavaScript"],
+  tags: ["test"],
+  generationDepth: "full_course",
+  assessmentReview: review,
+  modules: [
+    {
+      id: "m1",
+      title: "Module",
+      summary: "Module",
+      unlocked: true,
+      topics: [
+        {
+          id: "t1",
+          title: "Variables",
+          summary: "Variables",
+          unlocked: true,
+          blocks: [
+            {
+              id: "b1",
+              kind: "theory",
+              title: "Variables",
+              summary: "Variables",
+              steps: [{ type: "theory", markdown: "## Variables\n\nA variable stores a value under a name, such as `const score = 10`. The word `const` creates the name, `score` is the name, and `10` is the stored value." }]
+            },
+            {
+              id: "w1",
+              kind: "workshop",
+              title: "Workshop",
+              summary: "Workshop",
+              steps: Array.from({ length: 4 }, () => ({
+                type: "workshop",
+                language: "JavaScript",
+                filePath: "main.js",
+                context: "This is fine.",
+                prompt: "Continue carefully.",
+                starterCode: "const score = 10;\nconsole.log(score);",
+                acceptanceCriteria: ["Uses score", "Shows score"]
+              }))
+            }
+          ]
+        }
+      ]
+    }
+  ]
+});
+assert.ok(vagueWorkshopWarnings.some((warning) => warning.code === "workshop_context_missing_purpose"), "quality validation should reject workshop context without learning purpose");
+assert.ok(vagueWorkshopWarnings.some((warning) => warning.code === "workshop_prompt_missing_action"), "quality validation should reject workshop prompts without a concrete edit action");
+assert.ok(hasBlockingGeneratedCourseQualityWarnings(vagueWorkshopWarnings), "vague workshop warnings should block save without repair");
 
 const missingPracticalWarnings = validateGeneratedCourseQuality({
   schemaVersion: "course-content/v2",
@@ -1064,5 +1459,68 @@ assert.ok(javaWorkshop);
 assert.equal(javaWorkshop.steps[0].language, "Java");
 assert.equal(javaWorkshop.steps[0].filePath, "Main.java");
 assert.ok(javaWorkshop.steps[0].starterCode.includes("public class Main"));
+
+const progressionCourse = (blocks) => ({
+  schemaVersion: "course-content/v2",
+  modules: [{
+    id: "module-1",
+    title: "Practice progression",
+    unlocked: true,
+    topics: [{
+      id: "topic-1",
+      title: "Values",
+      summary: "Learn and practice values",
+      blocks
+    }]
+  }]
+});
+const teachingBlock = {
+  id: "theory-1",
+  kind: "theory",
+  steps: [{ type: "theory", markdown: "Values give programs useful information. A named value stores information so later code can read it, change behavior, and display a meaningful result." }]
+};
+const practicalBlock = (kind, id) => ({
+  id,
+  kind,
+  steps: [{
+    type: kind,
+    language: "JavaScript",
+    filePath: "main.js",
+    context: "Practice values from the current topic by building one visible variation after learning the syntax.",
+    prompt: "Change the named value and print the result so the behavior is visible in the console.",
+    starterCode: "const value = 'stone';\nconsole.log(value);",
+    acceptanceCriteria: ["Uses a named value", "Prints the result"]
+  }]
+});
+const labFirstWarnings = validateGeneratedCourseQuality(progressionCourse([
+  teachingBlock,
+  practicalBlock("lab", "lab-1")
+]));
+assert.ok(labFirstWarnings.some((warning) => warning.code === "lab_before_workshop"), "a lab before guided practice must be rejected");
+assert.ok(hasBlockingGeneratedCourseQualityWarnings(labFirstWarnings), "lab-before-workshop must block generated content");
+
+const earlyProjectWarnings = validateGeneratedCourseQuality(progressionCourse([
+  teachingBlock,
+  practicalBlock("workshop", "workshop-1"),
+  practicalBlock("project", "project-1")
+]));
+assert.ok(earlyProjectWarnings.some((warning) => warning.code === "project_before_practice_readiness"), "an early project must be rejected");
+
+const readyProjectWarnings = validateGeneratedCourseQuality(progressionCourse([
+  teachingBlock,
+  practicalBlock("workshop", "workshop-1"),
+  {
+    id: "review-1",
+    kind: "review",
+    steps: [{ type: "summary", markdown: "Review the named-value pattern, why it stores information, and how output makes the current result visible before attempting independent practice." }]
+  },
+  practicalBlock("lab", "lab-1"),
+  practicalBlock("workshop", "workshop-2"),
+  practicalBlock("project", "project-1"),
+  practicalBlock("lab", "lab-2"),
+  practicalBlock("project", "project-2")
+]));
+assert.ok(!readyProjectWarnings.some((warning) => warning.code === "lab_before_workshop"), "labs may follow guided practice after intervening review blocks");
+assert.ok(!readyProjectWarnings.some((warning) => warning.code === "project_before_practice_readiness"), "AI may place multiple projects after practice readiness is established");
 
 console.log("generated course content checks passed");

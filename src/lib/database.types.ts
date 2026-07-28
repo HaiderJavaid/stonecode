@@ -14,6 +14,10 @@ export type CourseRecord = {
   user_id: string;
   title: string;
   subject: string;
+  experience_type?: "course" | "short_course" | "exercise" | "guided_project" | null;
+  client_request_id?: string | null;
+  skill_ids?: string[] | null;
+  domain_ids?: string[] | null;
   mode: "fundamentals" | "project" | "leetcode" | "mixed";
   checkpoint: string;
   description: string | null;
@@ -84,4 +88,16 @@ export type UsageEventRecord = {
   output_tokens: number | null;
   status: "success" | "failed" | "blocked";
   created_at: string;
+};
+
+export type UserAiCredentialRecord = {
+  user_id: string;
+  provider: "openai";
+  encrypted_secret: string;
+  secret_iv: string;
+  secret_tag: string;
+  last_four: string;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
 };

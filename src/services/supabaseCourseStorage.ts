@@ -1,5 +1,13 @@
 import { User } from "@supabase/supabase-js";
-import { Course, GeneratedCourseContent, buildSyllabusFromGeneratedContent, createDefaultCourseMetadata, starterCourseFiles } from "@/data/courses";
+import {
+  Course,
+  GeneratedLearningContent,
+  LearningExperienceType,
+  buildSyllabusFromGeneratedContent,
+  createDefaultCourseMetadata,
+  experienceTypeFromContent,
+  starterCourseFiles
+} from "@/data/courses";
 import {
   ChatMessageRecord,
   CourseProgressRecord,
@@ -12,8 +20,8 @@ import { StoredCourseState } from "@/services/courseStorage";
 import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
 import { resetProgression } from "@/services/progression";
 
-type SupabaseCourseDraft = Pick<Course, "title" | "subject" | "mode" | "checkpoint" | "description" | "progress" | "syllabus" | "languages" | "tags"> & {
-  courseContent?: GeneratedCourseContent | null;
+type SupabaseCourseDraft = Pick<Course, "id" | "title" | "subject" | "mode" | "checkpoint" | "description" | "progress" | "syllabus" | "languages" | "tags" | "experienceType" | "learningBrief"> & {
+  courseContent?: GeneratedLearningContent | null;
 };
 
 let chatMessageMetadataSupported: boolean | null = null;
@@ -377,9 +385,12 @@ async function selectProgressByCourseIds(courseIds: string[]): Promise<CoursePro
 
 function courseRecordToCourse(record: CourseRecord): Course {
   const metadata = createDefaultCourseMetadata(record.subject);
-  const courseContent = isGeneratedCourseContent(record.course_content) ? record.course_content : null;
+  const courseContent = isGeneratedLearningContent(record.course_content) ? record.course_content : null;
+  const experienceType = normalizeExperienceType(record.experience_type) ?? experienceTypeFromContent(courseContent);
   return {
     id: record.id,
+    experienceType,
+    learningBrief: courseContent && "learningBrief" in courseContent ? courseContent.learningBrief : null,
     title: record.title,
     subject: record.subject,
     mode: record.mode,
@@ -397,12 +408,20 @@ function courseRecordToCourse(record: CourseRecord): Course {
   };
 }
 
-function isGeneratedCourseContent(value: unknown): value is GeneratedCourseContent {
+function isGeneratedLearningContent(value: unknown): value is GeneratedLearningContent {
   if (!value || typeof value !== "object") return false;
-  const content = value as GeneratedCourseContent;
+  const content = value as GeneratedLearningContent;
   if (content.schemaVersion === "course-content/v1") return Array.isArray(content.chapters);
   if (content.schemaVersion === "course-content/v2") return Array.isArray(content.modules);
+  if (content.schemaVersion === "short-course-content/v1") return Array.isArray(content.sections);
+  if (content.schemaVersion === "exercise-session/v1") return Array.isArray(content.problems);
+  if (content.schemaVersion === "guided-project-content/v1") return Array.isArray(content.milestones);
+  if (content.schemaVersion === "guided-project-content/v2") return Boolean(content.module && Array.isArray(content.module.blocks));
   return false;
+}
+
+function normalizeExperienceType(value: CourseRecord["experience_type"]): LearningExperienceType | null {
+  return value === "course" || value === "short_course" || value === "exercise" || value === "guided_project" ? value : null;
 }
 
 function formatUpdatedAt(value: string): string {

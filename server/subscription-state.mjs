@@ -22,6 +22,9 @@ export function formatSubscriptionState(record) {
     planName: planNames[plan],
     activeCourseLimit: limit.activeCourseLimit,
     aiMessagesPerMonth: limit.aiMessagesPerMonth,
+    monthlyExperienceGenerationLimit: limit.monthlyExperienceGenerationLimit,
+    firstModuleOnly: limit.firstModuleOnly,
+    requiresOwnOpenAiKey: limit.requiresOwnOpenAiKey,
     currentPeriodEnd: typeof record?.current_period_end === "string" ? record.current_period_end : null
   };
 }

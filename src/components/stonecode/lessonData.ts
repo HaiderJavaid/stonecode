@@ -1,4 +1,9 @@
-import { Course, GeneratedCourseBlock, GeneratedCourseSection, GeneratedCourseStep } from "@/data/courses";
+import { Course, GeneratedCourseBlock, GeneratedCourseLearningBlock, GeneratedCourseSection, GeneratedCourseStep, GeneratedExerciseWorkspaceFile, LearningExperienceType, toGeneratedCourseContentV2 } from "@/data/courses";
+import { defaultFilePath, defaultStarterCode, resolveEditorLanguage } from "@/services/editorLanguages";
+import { createSimpleVisualPreviewFile, inspectSimpleVisualSource } from "@/services/simpleVisualPreview.mjs";
+
+type GeneratedPracticalStep = Extract<GeneratedCourseStep, { type: "workshop" | "lab" | "project" }>;
+type GeneratedWorkshopStep = GeneratedPracticalStep & { type: "workshop" };
 
 export type LessonDifficulty = "Beginner" | "Intermediate" | "Advanced";
 
@@ -8,13 +13,20 @@ export type LessonOption = {
 
 export type LessonCodeExercise = {
   type: "code_exercise";
+  exerciseKind: "workshop" | "lab" | "project";
   language: string;
   filePath: string;
   prompt: string;
   starterCode: string;
+  resultCode?: string;
+  expectedChange?: string;
+  codeExplanation?: string;
   acceptanceCriteria: string[];
   context?: string;
   requiresPreview?: boolean;
+  requiresTerminal?: boolean;
+  workspaceView?: "code" | "preview" | "terminal";
+  workspaceFiles?: GeneratedExerciseWorkspaceFile[];
 };
 
 export type LessonStep = {
@@ -139,17 +151,20 @@ The first item added is the first item removed. This is **FIFO**: first in, firs
 
 export function resolveCourseLessonSteps(course: Course): LessonStep[] {
   if (!course.courseContent) return lessonSteps;
-  if (course.courseContent.schemaVersion === "course-content/v2") {
-    const generatedSteps = course.courseContent.modules.flatMap((module, moduleIndex) =>
+  if (course.courseContent.schemaVersion !== "course-content/v1") {
+    const navigableContent = toGeneratedCourseContentV2(course.courseContent);
+    const generatedSteps = navigableContent.modules.flatMap((module, moduleIndex) =>
       module.topics.flatMap((topic, topicIndex) =>
-        topic.blocks.flatMap((block) =>
-          block.steps.map((step, stepIndex) => generatedCourseStepToLesson({
+        topic.blocks.flatMap((block, blockIndex) =>
+          stepsForGeneratedBlock(block).map((step, stepIndex, blockSteps) => generatedCourseStepToLesson({
             blockId: block.id,
+            blockIndex,
             blockKind: block.kind,
             blockTitle: block.title,
             blockSummary: block.summary,
-            blockStepCount: block.steps.length,
+            blockStepCount: blockSteps.length,
             courseSubject: course.subject,
+            experienceType: course.experienceType,
             moduleIndex,
             moduleId: module.id,
             step,
@@ -171,11 +186,13 @@ export function resolveCourseLessonSteps(course: Course): LessonStep[] {
 
 function generatedCourseStepToLesson({
   blockId,
+  blockIndex,
   blockKind,
   blockTitle: title,
   blockSummary,
   blockStepCount,
   courseSubject,
+  experienceType,
   moduleIndex,
   moduleId,
   step,
@@ -185,11 +202,13 @@ function generatedCourseStepToLesson({
   topicIndex
 }: {
   blockId: string;
+  blockIndex: number;
   blockKind: string;
   blockTitle: string;
   blockSummary: string;
   blockStepCount: number;
   courseSubject: string;
+  experienceType: LearningExperienceType;
   moduleIndex: number;
   moduleId: string;
   step: GeneratedCourseStep;
@@ -214,23 +233,36 @@ function generatedCourseStepToLesson({
 
   return {
     kind,
-    label: kind === "theory" ? "Theory" : "Exercise",
+    label: blockKind === "workshop" && step.type === "summary"
+      ? "Workshop recap"
+      : kind === "theory" && experienceType === "guided_project"
+        ? blockIndex === 0 ? "Project intro" : "Project recap"
+        : kind === "theory" ? "Theory" : "Exercise",
     title: stepLessonTitle(title, step.type),
-    tutor: renderGeneratedCourseStep(title, blockSummary, displayStep, topicTitle, moduleIndex, topicIndex, stepIndex, courseSubject),
-    suggestions: ["Explain this slower", "Give me a simple example", "What should I remember?"],
+    tutor: renderGeneratedCourseStep(title, blockSummary, displayStep, topicTitle, moduleIndex, topicIndex, blockIndex, stepIndex, courseSubject, experienceType),
+    suggestions: codeExercise?.type === "workshop"
+      ? workshopSuggestedQuestions(codeExercise)
+      : ["Explain this slower", "Give me a simple example", "What should I remember?"],
     sectionId: `${moduleId}:${topicId}:${blockId}:${stepIndex}`,
     moduleId,
     topicId,
     codeExercise: codeExercise
       ? {
           type: "code_exercise",
+          exerciseKind: codeExercise.type,
           language: codeExercise.language,
           filePath: codeExercise.filePath,
           prompt: codeExercise.prompt,
           starterCode: codeExercise.starterCode,
+          resultCode: codeExercise.resultCode,
+          expectedChange: codeExercise.expectedChange,
+          codeExplanation: codeExercise.codeExplanation,
           acceptanceCriteria: codeExercise.acceptanceCriteria,
           context: codeExercise.context,
-          requiresPreview: codeExercise.requiresPreview
+          requiresPreview: codeExercise.requiresPreview,
+          requiresTerminal: codeExercise.requiresTerminal,
+          workspaceView: codeExercise.workspaceView,
+          workspaceFiles: codeExercise.workspaceFiles
         }
       : undefined,
     blockId,
@@ -239,19 +271,21 @@ function generatedCourseStepToLesson({
     blockStepCount,
     correctOptionIndex: mcq?.correctOptionIndex,
     mcqExplanation: mcq?.explanation,
-    language: codeExercise?.language ?? "JavaScript",
+    language: codeExercise?.language ?? resolveGeneratedExerciseLanguage("", courseSubject, ""),
     difficulty: "Beginner",
     xp: kind === "theory" ? undefined : codeExercise ? 20 : 10,
     options: mcq?.options.map((label) => ({ label })) ?? []
   };
 }
 
-function renderGeneratedCourseStep(blockTitle: string, blockSummary: string, step: GeneratedCourseStep, topicTitle: string, moduleIndex: number, topicIndex: number, stepIndex: number, courseSubject: string) {
+function renderGeneratedCourseStep(blockTitle: string, blockSummary: string, step: GeneratedCourseStep, topicTitle: string, moduleIndex: number, topicIndex: number, blockIndex: number, stepIndex: number, courseSubject: string, experienceType: LearningExperienceType) {
   if (step.type === "theory" || step.type === "analogy" || step.type === "example" || step.type === "summary") {
-    const greeting = moduleIndex === 0 && topicIndex === 0 && stepIndex === 0
-      ? "## Welcome\n\nHi, I'm your personal AI Tutor for this course. We'll start slowly and keep each check tied to what you just learned.\n\n"
-      : stepIndex === 0 && !startsWithHeading(step.markdown, topicTitle)
-        ? `## ${topicTitle}\n\n`
+    const greeting = moduleIndex === 0 && topicIndex === 0 && blockIndex === 0 && stepIndex === 0
+      ? experienceType === "guided_project"
+        ? `## Before you build\n\nThis quick project orientation shows what you are making, why it is useful, and how the finished parts fit together. It refreshes only the ideas needed for **${topicTitle}**; it is not a lesson test.\n\n`
+        : `## ${courseSubject}\n\nThis course builds your understanding of ${courseSubject} through clear mental models, small examples, guided workshops, and later independent projects. We begin with **${topicTitle}** because it supplies the foundation the rest of the course will reuse.\n\n`
+      : blockIndex === 0 && stepIndex === 0
+        ? `## ${topicTitle}\n\nThis chapter focuses on **${topicTitle}** and how it supports the larger goal of learning ${courseSubject}. ${cleanLearnerText(blockSummary)} We will build the mental model first, then connect it to a small code example before practice.\n\n`
         : "";
     return `${greeting}${normalizeTheoryMarkdownForDisplay(step.markdown, courseSubject)}`;
   }
@@ -259,15 +293,115 @@ function renderGeneratedCourseStep(blockTitle: string, blockSummary: string, ste
   if (step.type === "reflection") return `## Answer in chat\n\n${cleanLearnerText(step.prompt)}`;
   if (step.type === "workshop" || step.type === "lab" || step.type === "project") {
     const contextText = normalizeExerciseContextForDisplay(step.context, step.language);
-    const context = contextText ? `\n\n## Context\n\n${contextText}` : "";
-    const buildHeading = step.type === "workshop" ? "## What we are building" : "## What you are solving";
+    const context = contextText && (step.type !== "workshop" || stepIndex === 0) ? `\n\n${contextText}` : "";
+    const buildHeading = step.type === "workshop" && stepIndex === 0 ? `## ${blockTitle}` : step.type === "workshop" ? "" : "## What you are solving";
     const tutorial = step.type === "workshop"
-      ? `\n\n## Step ${stepIndex + 1}\n\n${normalizeWorkshopPromptForDisplay(step.prompt, step.language)}${buildSyntaxReminder(step.language, step.starterCode)}\n\n## What the code means\n\n${explainStarterCode(step.language, step.starterCode)}\n\n## Your exact move\n\n${buildWorkshopMove(step)}`
+      ? renderCompactWorkshopStep(step as GeneratedWorkshopStep, stepIndex)
       : `\n\n## Task\n\n${cleanLearnerText(step.prompt)}${buildSyntaxReminder(step.language, step.starterCode)}`;
-    const previewNote = step.requiresPreview ? "\n\n## Visual check\n\nAfter editing, switch the center editor to Visual view and inspect the change before submitting." : "";
-    return `${buildHeading}${context}${tutorial}${previewNote}\n\n**Use Check to verify the middle editor. When every checklist item passes, the button becomes Submit and next.**\n\n## MVP checklist\n\n${step.acceptanceCriteria.map((criterion) => `- ${cleanLearnerText(criterion)}`).join("\n")}`;
+    const viewNote = step.requiresPreview
+      ? "\n\n## Visual check\n\nThe Visual tab opens for this step. Compare the scene before and after your edit."
+      : step.requiresTerminal
+        ? "\n\n## Terminal check\n\nThe Terminal tab opens for this step. Run the active file and inspect its output."
+        : "";
+    const projectNote = step.workspaceFiles && step.workspaceFiles.length > 1
+      ? `\n\n## Project files\n\nThis step uses ${step.workspaceFiles.map((file) => `\`${file.path}\``).join(", ")}. The tutor can reason across all of them.`
+      : "";
+    return `${buildHeading}${context}${tutorial}${viewNote}${projectNote}`;
   }
   return `## ${blockTitle}\n\n${blockSummary}`;
+}
+
+export function stepsForGeneratedBlock(block: GeneratedCourseLearningBlock): GeneratedCourseStep[] {
+  if (block.kind !== "workshop") return block.steps;
+  const displaySteps = block.steps.filter((step) => !isLegacyRunOnlyWorkshopStep(step));
+  if (displaySteps.at(-1)?.type === "summary") return displaySteps;
+  const workshopSteps = displaySteps.filter((step): step is GeneratedWorkshopStep => step.type === "workshop");
+  if (!workshopSteps.length) return displaySteps;
+  return [...displaySteps, buildWorkshopRecapStep(block, workshopSteps)];
+}
+
+function isLegacyRunOnlyWorkshopStep(step: GeneratedCourseStep) {
+  if (step.type !== "workshop") return false;
+  const hasCodeChange = Boolean(step.resultCode?.trim() && step.resultCode.trim() !== step.starterCode.trim());
+  const requestsCodeEdit = /\b(?:add|write|change|replace|create|define|call|import|remove|move|wrap)\b/i.test(step.prompt);
+  const requestsOnlyVerification = /\b(?:run|open|inspect|confirm|read|check)\b/i.test(step.prompt);
+  return !hasCodeChange && !requestsCodeEdit && requestsOnlyVerification;
+}
+
+function buildWorkshopRecapStep(
+  block: GeneratedCourseLearningBlock,
+  workshopSteps: GeneratedWorkshopStep[]
+): GeneratedCourseStep {
+  const finalStep = workshopSteps.at(-1);
+  const changes = workshopSteps
+    .map((step) => cleanLearnerText(step.expectedChange || step.prompt))
+    .filter(Boolean)
+    .map((change) => `- ${change.replace(/^Step\s+\d+\s*:\s*/i, "")}`)
+    .join("\n");
+  const finalCode = finalStep?.resultCode?.trim();
+  const code = finalCode ? `\n\n## The finished code\n\n\`\`\`${markdownLanguage(finalStep?.language || "text")}\n${finalCode}\n\`\`\`` : "";
+  return {
+    type: "summary",
+    markdown: `## Workshop complete\n\nYou finished **${block.title}**. ${block.summary}\n\n## What the code now does\n\n${changes || "- It combines the workshop's small edits into one working behavior."}${code}\n\n## Why this matters\n\nThis is the complete pattern you practiced, not another coding task. You can ask the tutor to explain any line before moving to the next checkpoint.`
+  };
+}
+
+function renderCompactWorkshopStep(
+  step: GeneratedWorkshopStep,
+  stepIndex: number
+) {
+  const code = extractWorkshopCodeChange(step.starterCode, step.resultCode || "");
+  const codeSection = code
+    ? `\n\n## Type this\n\n\`\`\`${markdownLanguage(step.language)}\n${code}\n\`\`\``
+    : "";
+  const explanation = cleanLearnerText(step.codeExplanation || explainWorkshopCodeChange(code, step.language, step.expectedChange));
+  const explanationSection = explanation ? `\n\n## What this code means\n\n${explanation}` : "";
+  return `\n\n## Step ${stepIndex + 1}\n\n${normalizeWorkshopPromptForDisplay(step.prompt, step.language)}${codeSection}${explanationSection}`;
+}
+
+function extractWorkshopCodeChange(starterCode: string, resultCode: string) {
+  if (!resultCode.trim()) return "";
+  const before = starterCode.replace(/\r\n/g, "\n").split("\n");
+  const after = resultCode.replace(/\r\n/g, "\n").split("\n");
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < before.length - prefix
+    && suffix < after.length - prefix
+    && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) suffix += 1;
+  return after.slice(prefix, after.length - suffix).join("\n").trim();
+}
+
+function explainWorkshopCodeChange(code: string, language: string, expectedChange?: string) {
+  const line = code.trim();
+  if (!line) return cleanLearnerText(expectedChange || "Make only the requested micro-change.");
+  if (/^import\s+[A-Za-z_][\w.]*/.test(line)) {
+    const packageName = line.match(/^import\s+([A-Za-z_][\w.]*)/)?.[1] ?? "the package";
+    return `\`import\` loads code from the \`${packageName}\` package so this file can use its tools.`;
+  }
+  if (/^[A-Za-z_]\w*\s*=/.test(line)) {
+    const name = line.match(/^([A-Za-z_]\w*)/)?.[1] ?? "The name";
+    return `\`${name}\` stores the value produced on the right side of \`=\`, so later steps can reuse it.`;
+  }
+  if (/^while\s+.+:/.test(line)) return "`while` repeats the indented code while its condition stays true. The colon starts that loop block.";
+  if (/\w+\.\w+\s*\(/.test(line)) return "The dot selects a tool from the object or package. Parentheses call that tool with the values inside them.";
+  return cleanLearnerText(expectedChange || `This is the only new ${language} code required in this step.`);
+}
+
+function workshopSuggestedQuestions(step: Extract<GeneratedCourseStep, { type: "workshop" | "lab" | "project" }>) {
+  const generated = step.suggestedQuestions?.map(cleanLearnerText).filter(Boolean).slice(0, 3) ?? [];
+  const defaults = [
+    "Explain the new code line",
+    "Why does this step come next?",
+    "What happens if I change this value?"
+  ];
+  return [...new Set([...generated, ...defaults])].slice(0, 3);
+}
+
+function markdownLanguage(language: string) {
+  return language.toLowerCase().replace(/[^a-z0-9+#]/g, "") || "text";
 }
 
 function normalizeTheoryMarkdownForDisplay(markdown: string, courseSubject: string) {
@@ -293,8 +427,8 @@ function buildWorkshopMove(step: Extract<GeneratedCourseStep, { type: "workshop"
   return [
     `1. In the editor, make this one change: ${actionSentence}`,
     "2. Keep the earlier workshop code unless this step explicitly tells you to change it.",
-    "3. Press Check. Use the checklist feedback to fix only the missing items.",
-    "4. When every item passes, submit and continue."
+    "3. Run or preview the result when this step asks you to.",
+    "4. If something is unclear, ask the tutor about this exact change."
   ].join("\n");
 }
 
@@ -331,69 +465,79 @@ function normalizeGeneratedExerciseStep(
 ): Extract<GeneratedCourseStep, { type: "workshop" | "lab" | "project" }> {
   const resolvedLanguage = resolveGeneratedExerciseLanguage(step.language, courseSubject, step.filePath);
   const languageDefaults = generatedLanguageDefaults(resolvedLanguage);
+  const resolvedFilePath = resolveEditorLanguage(step.filePath).id === resolveEditorLanguage(resolvedLanguage).id
+    ? step.filePath
+    : languageDefaults.filePath;
   const starterCode = isMismatchedStarterForDisplay(step.starterCode, resolvedLanguage)
     ? languageDefaults.starterCode
     : step.starterCode;
   const acceptanceCriteria = normalizeAcceptanceCriteriaForDisplay(step.acceptanceCriteria, resolvedLanguage, step.type);
+  let workspaceFiles = (step.workspaceFiles ?? []).map((file) => file.path === step.filePath
+    ? { ...file, path: resolvedFilePath, content: starterCode }
+    : file);
+  const visualInspection = inspectSimpleVisualSource({
+    path: resolvedFilePath,
+    content: starterCode,
+    language: resolvedLanguage,
+    context: [courseSubject, step.context].filter(Boolean).join(" · "),
+    prompt: step.prompt,
+    requiresPreview: step.requiresPreview
+  });
+  const hasConnectedPreview = workspaceFiles.some((file) => {
+    if (!/\.html?$/i.test(file.path)) return false;
+    const sourceName = resolvedFilePath.split("/").at(-1) ?? resolvedFilePath;
+    return file.path === resolvedFilePath || file.content.includes(sourceName) || /stonecode-source/i.test(file.content);
+  });
+  const previewFile = !hasConnectedPreview && visualInspection.supported
+    ? createSimpleVisualPreviewFile({
+        path: resolvedFilePath,
+        content: starterCode,
+        language: resolvedLanguage,
+        context: [courseSubject, step.context].filter(Boolean).join(" · "),
+        prompt: step.prompt,
+        requiresPreview: true
+      }, workspaceFiles.map((file) => file.path))
+    : null;
+  if (previewFile) workspaceFiles = [...workspaceFiles, previewFile];
+  const usesSimpleNativeVisual = visualInspection.supported && !["html", "css", "javascript", "typescript"].includes(resolveEditorLanguage(resolvedFilePath).id);
+  const suppressRuntimeRequirements = visualInspection.excludedEngine || usesSimpleNativeVisual;
 
   return {
     ...step,
     language: resolvedLanguage,
-    filePath: languageDefaults.filePath,
+    filePath: resolvedFilePath,
     starterCode,
+    workspaceFiles,
+    requiresPreview: visualInspection.excludedEngine ? false : Boolean(step.requiresPreview || previewFile),
+    requiresTerminal: suppressRuntimeRequirements ? false : step.requiresTerminal,
+    workspaceView: suppressRuntimeRequirements && step.workspaceView === "terminal"
+      ? "code"
+      : visualInspection.excludedEngine && step.workspaceView === "preview"
+        ? "code"
+        : step.workspaceView,
     acceptanceCriteria
   };
 }
 
 function resolveGeneratedExerciseLanguage(language: string, courseSubject: string, filePath: string) {
-  const target = `${courseSubject} ${language} ${filePath}`.toLowerCase();
-  if (/c#|csharp|dotnet|\.cs\b/.test(target)) return "C#";
-  if (/c\+\+|cpp|cplusplus|\.cpp\b|\.cc\b|\.cxx\b/.test(target)) return "C++";
-  if (/\bjava\b|\.java\b/.test(target)) return "Java";
-  if (/python|\.py\b/.test(target)) return "Python";
-  if (/typescript|\.ts\b/.test(target)) return "TypeScript";
-  if (/javascript|\bjs\b|\.js\b/.test(target)) return "JavaScript";
-  if (/\bgo\b|golang|\.go\b/.test(target)) return "Go";
-  if (/rust|\.rs\b/.test(target)) return "Rust";
-  if (/php|\.php\b/.test(target)) return "PHP";
-  if (/ruby|\.rb\b/.test(target)) return "Ruby";
-  if (/swift|\.swift\b/.test(target)) return "Swift";
-  if (/sql|\.sql\b/.test(target)) return "SQL";
-  return language || "JavaScript";
+  const declared = resolveEditorLanguage(language);
+  if (declared.id !== "plaintext") return declared.displayName;
+  const explicit = resolveEditorLanguage(filePath || language);
+  if (explicit.id !== "plaintext") return explicit.displayName;
+  const fromCourse = resolveEditorLanguage(courseSubject);
+  return fromCourse.id !== "plaintext" ? fromCourse.displayName : language || "JavaScript";
 }
 
 function generatedLanguageDefaults(language: string) {
-  const label = language.toLowerCase();
-  if (label === "c#") {
-    return {
-      filePath: "Program.cs",
-      starterCode: "using System;\n\nclass Program {\n  static string Describe(string value) {\n    return \"Value: \" + value;\n  }\n\n  static void Main() {\n    Console.WriteLine(Describe(\"stone\"));\n  }\n}\n"
-    };
-  }
-  if (label === "c++") {
-    return {
-      filePath: "main.cpp",
-      starterCode: "#include <iostream>\n#include <string>\n\nstd::string describe(const std::string& value) {\n  return \"Value: \" + value;\n}\n\nint main() {\n  std::cout << describe(\"stone\") << std::endl;\n  return 0;\n}\n"
-    };
-  }
-  if (label === "java") {
-    return {
-      filePath: "Main.java",
-      starterCode: "public class Main {\n  static String describe(String value) {\n    return \"Value: \" + value;\n  }\n\n  public static void main(String[] args) {\n    System.out.println(describe(\"stone\"));\n  }\n}\n"
-    };
-  }
-  if (label === "python") {
-    return { filePath: "main.py", starterCode: "def describe(value):\n    return f\"Value: {value}\"\n\nprint(describe(\"stone\"))\n" };
-  }
   return {
-    filePath: label === "typescript" ? "main.ts" : "main.js",
-    starterCode: "function describe(value) {\n  return `Value: ${value}`;\n}\n\nconsole.log(describe('stone'));\n"
+    filePath: defaultFilePath(language),
+    starterCode: defaultStarterCode(language)
   };
 }
 
 function isMismatchedStarterForDisplay(code: string, language: string) {
   const normalized = code.toLowerCase();
-  if (!normalized.trim()) return true;
+  if (!normalized.trim()) return false;
   if (language.toLowerCase() === "c#") return /\bprintf\s*\(|#include\s*<stdio\.h>|int\s+main\s*\(/.test(normalized);
   return false;
 }
@@ -423,6 +567,14 @@ function outputCallForLanguage(language: string) {
   if (label === "c++") return "std::cout";
   if (label === "go") return "fmt.Println";
   if (label === "rust") return "println!";
+  if (label === "kotlin" || label === "julia") return "println";
+  if (label === "dart" || label === "swift" || label === "r") return "print";
+  if (label === "ruby") return "puts";
+  if (label === "php") return "echo";
+  if (label === "fortran") return "print";
+  if (label === "cobol") return "DISPLAY";
+  if (label === "basic") return "PRINT";
+  if (label === "sql") return "SELECT";
   return "console.log";
 }
 
@@ -499,6 +651,8 @@ function explainStarterCode(language: string, starterCode: string) {
   if (label === "python") return explainPythonStarter(starterCode);
   if (label === "c++") return explainCppStarter(starterCode);
   if (label === "c#") return explainCsharpStarter(starterCode);
+  if (label === "html") return explainHtmlStarter(starterCode);
+  if (label === "css") return explainCssStarter(starterCode);
   if (label === "javascript" || label === "typescript") return explainJavaScriptStarter(starterCode);
   return explainGenericStarter(starterCode);
 }
@@ -565,6 +719,28 @@ function explainJavaScriptStarter(starterCode: string) {
   return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`javascript\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
 }
 
+function explainHtmlStarter(starterCode: string) {
+  const notes = [
+    "`<section>` creates a grouped area on the page.",
+    "`class=\"hero\"` gives that element a reusable styling name.",
+    "`<h1>` is the main heading.",
+    "`<p>` is a paragraph of text.",
+    "Closing tags like `</section>` mark where an element ends."
+  ];
+  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`html\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
+}
+
+function explainCssStarter(starterCode: string) {
+  const notes = [
+    "A selector like `.hero` chooses which HTML element to style.",
+    "`{ ... }` wraps the style rules for that selector.",
+    "`background-color` sets the element's background.",
+    "`color` sets the text color.",
+    "`padding` adds inside spacing around the content."
+  ];
+  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`css\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
+}
+
 function explainGenericStarter(starterCode: string) {
   return `Read this starter one line at a time. First find the input, then the rule, then the visible output.\n\n\`\`\`\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
 }
@@ -621,7 +797,7 @@ function generatedBlockToLesson(section: GeneratedCourseSection, chapterId: stri
     sectionId: block ? `${section.id}:${blockIndex}` : section.id,
     chapterId,
     generatedBlocks: block ? [block] : [],
-    codeExercise: codeExercise ?? undefined,
+    codeExercise: codeExercise ? { ...codeExercise, exerciseKind: "lab" } : undefined,
     correctOptionIndex: mcq?.correctOptionIndex,
     mcqExplanation: mcq?.explanation,
     language: codeExercise?.language ?? "JavaScript",
@@ -638,7 +814,7 @@ function renderGeneratedBlock(section: GeneratedCourseSection, block: GeneratedC
 
   if (block.type === "theory" || block.type === "extra_explanation" || block.type === "canvas" || block.type === "code_showcase") {
     const greeting = sectionIndex === 0 && blockIndex === 0 && chapterId === "chapter-1"
-      ? "## Welcome\n\nHi, I'm your personal AI Tutor for this course. We'll start slowly: first the idea, then an analogy, then a simple example. No exercise yet.\n\n"
+      ? `## ${section.title}\n\nThis opening chapter gives you the mental model behind ${section.title} before you write code. You will connect each new idea to a concrete example, then use it in guided practice later in the course.\n\n`
       : sectionIndex === 0 && blockIndex === 0 && !startsWithHeading(block.markdown, section.title)
         ? `## ${section.title}\n\n`
       : "";
@@ -651,7 +827,7 @@ function renderGeneratedBlock(section: GeneratedCourseSection, block: GeneratedC
     return `## Answer in chat\n\n${block.prompt}`;
   }
   if (block.type === "code_exercise") {
-    return `## Code exercise\n\n${block.prompt}\n\n**Submit from the middle editor.**\n\n${block.acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n")}`;
+    return `## Code exercise\n\n${block.prompt}`;
   }
   return "";
 }

@@ -7,9 +7,9 @@ Stonecode is a subscription AI programming tutor for self-taught beginners.
 The core value is a persistent course workspace:
 
 - dashboard starts empty for new users.
-- user adds what they want to learn.
-- guided setup asks subject, asks whether the user is ready for prerequisite assessment, then runs adaptive assessment exercises step by step with Skip available.
-- course generation waits until assessment review completes, then the user finalizes before Stonecode builds and saves a personalized freeCodeCamp-style full course.
+- user starts one AI conversation and chooses a full course, short course, coding practice, or guided project.
+- discovery asks only missing questions with contextual suggestions and free typing, captures prior knowledge for courses/projects, then offers an optional late assessment before confirmation.
+- every confirmed experience receives its own persistent workspace, files, tutor context, and progress.
 - course hierarchy is Course -> Modules -> Topics -> Blocks -> Steps.
 - left panel has Modules and Files tabs; Modules shows expandable modules/topics/blocks/steps, step tiles navigate the lesson conversation, and Files keeps the existing file tree.
 - Start project creates one reusable whiteboard file, then opens the learning workspace.
@@ -37,20 +37,41 @@ Required before selling:
 
 Active implementation direction:
 
-- `course-content/v2` assessment-first generation is implemented locally from `docs/superpowers/plans/2026-06-30-personalized-freecodecamp-course-generation.md`.
+- Verified account onboarding now flows compact signup -> branded eight-digit email code -> immediate sign-in-style IDE zoom -> dashboard. Plan choice and the encrypted OpenAI-key gate are deferred until the learner starts an AI-backed learning or generation action. The auth page preserves its staged first-load reveal; login/signup switches use immediate mirrored directional transitions. Mobile recenters without horizontal overflow.
+- Free key setup is dismissible for dashboard browsing, but all AI-backed entry points remain gated until the existing server credential API verifies and encrypts a key. Active/trialing paid subscriptions never receive the prompt.
+- Dashboard and course-workspace backgrounds use a slightly brighter continuation of the sign-in vignette with no grain/grid. The auth handoff fades only to the workspace target darkness to avoid a bright flash; original application rays remain unchanged, while stone texture stays on panels and cards.
+- The auth preview IDE uses the dashboard editor's exact surface, border, shadow, and code lighting through the zoom handoff. The dashboard learning list fills the lane down to Settings, with a full-height centered empty-state card and inline Start learning action.
+
+- `course-content/v2` personalized generation is implemented locally from `docs/superpowers/plans/2026-06-30-personalized-freecodecamp-course-generation.md`.
+- Universal learning orchestration now dispatches confirmed briefs to course, short-course, exercise, or guided-project generators while keeping existing course generation behind the course branch.
+- Practice discovery now resolves purpose, whole-language versus topic scope, exact count, and coding/MCQ split; the default is ten exercises with a mostly-coding proposal and an editable compact review.
+- Generated exercise sessions are pure independent practice with exact validated MCQ/code counts and no theory or workshop blocks.
+- Progression now models a primary technology, parent language, topics, and domains per verified exercise. The Settings solved chart uses skill percentages while Language XP remains the base-language view.
+- Configurable title badges now cover Frontend Developer, Backend Engineer, Game Developer, Mobile Developer, and Full-stack Developer using completed-program plus verified-XP gates.
+- Guided project and workshop are one experience: a single generated project module with a 1–3-step project orientation/refresher, one continuous 10–20-step micro-edit build, and a 1–2-step finished-code recap.
+- Prerequisite assessment is optional, offered only after conversational discovery has captured the learner's goal, stack, outcome, and prior knowledge; it is capped at three questions.
+- Courses are generated fresh per learner; deterministic code defines the curriculum contract rather than storing a hard-coded course library.
+- Standalone language fundamentals do not need assessment. Frameworks, libraries, advanced specializations, and applied paths may offer the optional prerequisite check.
+- Course discovery resolves vague outcome-first requests into specific teachable targets before applying that assessment policy.
+- Initial generation fills Module 1 only, and the learner keeps the explicit Finalize action.
 - Finalized generated courses open with module/topic/block/step navigation in the left panel Modules tab, not the old Course Roadmap button.
 - Generated course block kinds are explicit: `theory`, `quiz`, `workshop`, `lab`, `project`, and `review`.
+- Scratch workshops begin blank/minimal and teach one exact code delta per step; preloaded code is reserved for repair/add-feature tasks. Native visual builds carry a source-linked synchronized scene while Terminal remains the real runtime.
+- Existing and future lightweight visual steps can receive a deterministic preview repair for browser Canvas, Pygame/Turtle/Tkinter/Matplotlib, raylib/SDL/SFML, Java/.NET 2D, and simple mobile UI representations. Visual recomputes from current source without Terminal; Unity-class external engines are excluded.
 - Assessment MCQs can include course-shaping language/library/tool preferences; those answers customize the course and are not graded.
 - Course generation now avoids a fixed concept -> analogy -> example template, keeps assessment recommendations visible in the generated modules, and normalizes MCQ answer positions away from A/B bias.
 - Course generation now fully loads/unlocks module 1, leaves later modules as locked shell buttons, and requires exercise context/checklists tied to the just-taught topic.
+- Course generation retries incomplete JSON, repairs warned topics concurrently without rewriting unrelated blocks, and returns to the assessment review on unrecoverable output instead of saving recovery content.
 - Editor language support is centralized in `src/services/editorLanguages.ts`; syntax/file defaults cover JS/TS/Python/HTML/CSS/SQL/Java/C/C++/C#/Go/Rust/PHP/Ruby/Swift/shell/YAML/XML/Vue/Svelte-style files. Browser Run remains JavaScript-only until a backend sandbox exists.
 - Course challenges remain unlimited and affect course completion.
-- Independent exercises use different scenarios, are locally limited by plan for the initial UI, and do not affect course completion.
+- Independent exercises use different scenarios and do not affect course completion; the freemium boundary is three generated experiences per month rather than a daily completion limit.
+- Free users connect an OpenAI key stored with server-side AES-256-GCM encryption. Basic and Pro continue through Stonecode-funded provider configuration.
+- The public landing retains the existing section flow and stone direction while replacing DSA positioning, unsupported social proof, fake statistics, and placeholder media with the current personalized learning product.
 
 Implemented on 2026-06-25:
 
 - Three-step guided setup with an amendable structured proposal.
-- Course home with summary, progress, languages, tags, and Start/Resume, Exercises, and roadmap actions.
+- Course home with summary, progress, languages, tags, and Start/Resume actions. Practice is a standalone conversation, not a nested course action.
 - Roadmap navigation backed by the course syllabus.
 - Curated independent JavaScript, CSS, and Python scenarios.
 - Local account-wide exercise limits, one daily skip, one hint per exercise, repeatable Run, Next after success, and mock XP feedback.

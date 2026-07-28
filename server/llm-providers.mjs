@@ -1,9 +1,30 @@
 const openAiDefaultModel = "gpt-5.4-mini";
 
-export function resolveTutorProviderConfig(env) {
+const modelRoleByTask = {
+  tutor_chat: "low",
+  setup_reply: "low",
+  learning_discovery: "low",
+  assessment_plan: "high",
+  assessment_question: "high",
+  assessment_review: "reasoning",
+  course_structure: "reasoning",
+  short_course: "high",
+  exercise_generation: "high",
+  guided_project: "reasoning",
+  project_milestone: "high",
+  module_content: "high",
+  course_repair: "grader",
+  chapter_content: "medium",
+  reflection_grade: "grader",
+  code_grade: "grader"
+};
+
+export function resolveProviderConfig(env, task = "tutor_chat") {
   const provider = "openai";
   const apiKey = env.OPENAI_API_KEY;
-  const model = env.OPENAI_MODEL ?? openAiDefaultModel;
+  const role = modelRoleByTask[task] ?? "medium";
+  const roleKey = `OPENAI_MODEL_${role.toUpperCase()}`;
+  const model = env[roleKey] ?? env.OPENAI_MODEL ?? openAiDefaultModel;
 
   if (!apiKey) {
     return {
@@ -14,7 +35,11 @@ export function resolveTutorProviderConfig(env) {
     };
   }
 
-  return { provider, model, apiKey, error: null };
+  return { provider, model, apiKey, role, task, error: null };
+}
+
+export function resolveTutorProviderConfig(env, task = "tutor_chat") {
+  return resolveProviderConfig(env, task);
 }
 
 export async function requestTutorStream({ config, context, instructions }) {
@@ -48,7 +73,8 @@ export async function requestCourseGenerationJson({ config, prompt, maxTokens = 
   const instructions = "You generate Stonecode course content. Return valid JSON only. Do not wrap JSON in markdown.";
 
   let lastResult = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  let tokenBudget = maxTokens;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -62,17 +88,29 @@ export async function requestCourseGenerationJson({ config, prompt, maxTokens = 
         text: {
           format: { type: "json_object" }
         },
-        max_output_tokens: maxTokens
+        max_output_tokens: tokenBudget
       })
     });
     const payload = await response.json().catch(() => null);
     const isComplete = !payload?.status || payload.status === "completed";
+    const incompleteReason = typeof payload?.incomplete_details?.reason === "string"
+      ? payload.incomplete_details.reason
+      : null;
     lastResult = {
       ok: response.ok && isComplete,
       text: payload?.output_text ?? payload?.output?.[0]?.content?.[0]?.text ?? "",
-      error: payload?.error?.message ?? (!response.ok ? `OpenAI request failed with HTTP ${response.status}.` : !isComplete ? `OpenAI response was ${payload?.status}.` : null)
+      error: payload?.error?.message ?? (!response.ok
+        ? `OpenAI request failed with HTTP ${response.status}.`
+        : !isComplete
+          ? `OpenAI response was ${payload?.status}${incompleteReason ? ` (${incompleteReason})` : ""}.`
+          : null),
+      incompleteReason,
+      attempts: attempt + 1
     };
-    if (lastResult.ok || response.status < 500) return lastResult;
+    if (lastResult.ok) return lastResult;
+    const retryableIncomplete = response.ok && !isComplete;
+    if (!retryableIncomplete && response.status < 500) return lastResult;
+    tokenBudget = Math.min(Math.ceil(tokenBudget * 1.6), 16000);
     await wait(600 * (attempt + 1));
   }
   return lastResult;

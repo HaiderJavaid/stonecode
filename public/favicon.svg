@@ -1,5 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="stonecode-mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f4ee" stop-opacity=".68"/>
+      <stop offset="1" stop-color="#f4f4ee" stop-opacity=".18"/>
+    </linearGradient>
+  </defs>
   <rect width="64" height="64" rx="14" fill="#101111"/>
-  <path d="M14 20h36v24H14z" fill="#191a1a" stroke="#5f625c" stroke-opacity=".55" stroke-width="2"/>
-  <path d="M22 28h20M22 36h13" stroke="#d8d8cf" stroke-opacity=".62" stroke-width="3" stroke-linecap="round"/>
+  <g transform="rotate(45 32 32)">
+    <rect x="19" y="19" width="26" height="26" rx="7" fill="url(#stonecode-mark)" stroke="#ebede5" stroke-opacity=".22" stroke-width="1.5"/>
+    <rect x="29" y="19" width="6" height="26" fill="#080909" fill-opacity=".72"/>
+    <rect x="20.5" y="20.5" width="23" height="23" rx="5.5" fill="none" stroke="#fff" stroke-opacity=".1"/>
+  </g>
 </svg>

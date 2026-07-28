@@ -8,9 +8,18 @@ type AuthContextValue = {
   session: Session | null;
   user: User | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (input: SignUpInput) => Promise<void>;
+  verifySignupCode: (email: string, code: string) => Promise<void>;
+  resendSignupCode: (email: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
+};
+
+export type SignUpInput = {
+  displayName: string;
+  email: string;
+  password: string;
+  termsAcceptedAt: string;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -48,15 +57,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       },
-      async signUp(email, password) {
+      async signUp({ displayName, email, password, termsAcceptedAt }) {
         if (!supabase) throw new Error("Supabase is not configured.");
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`
+            data: {
+              display_name: displayName.trim(),
+              terms_accepted_at: termsAcceptedAt
+            }
           }
         });
+        if (error) throw error;
+      },
+      async verifySignupCode(email, code) {
+        if (!supabase) throw new Error("Supabase is not configured.");
+        const { error } = await supabase.auth.verifyOtp({ email, token: code, type: "signup" });
+        if (error) throw error;
+      },
+      async resendSignupCode(email) {
+        if (!supabase) throw new Error("Supabase is not configured.");
+        const { error } = await supabase.auth.resend({ type: "signup", email });
         if (error) throw error;
       },
       async resetPassword(email) {

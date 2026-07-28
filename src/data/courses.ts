@@ -2,6 +2,8 @@ import { topics, TopicFile } from "@/data/topics";
 
 export type Course = {
   id: string;
+  experienceType: LearningExperienceType;
+  learningBrief?: LearningBrief | null;
   title: string;
   subject: string;
   mode: "fundamentals" | "project" | "leetcode" | "mixed";
@@ -15,7 +17,30 @@ export type Course = {
   languages: string[];
   tags: string[];
   syllabus: CourseSyllabusSection[];
-  courseContent?: GeneratedCourseContent | null;
+  courseContent?: GeneratedLearningContent | null;
+};
+
+export type LearningExperienceType = "course" | "short_course" | "exercise" | "guided_project";
+
+export type LearningBrief = {
+  type: LearningExperienceType;
+  goal: string;
+  subject?: string;
+  language?: string;
+  framework?: string;
+  platform?: string;
+  desiredOutcome?: string;
+  motivation?: string;
+  priorKnowledge?: string;
+  practiceScope?: "all" | "topics" | "weaknesses" | "random";
+  topics?: string[];
+  difficulty?: "beginner" | "intermediate" | "advanced" | "adaptive" | "random";
+  exerciseCount?: number;
+  exerciseMixPreference?: "ai" | "custom";
+  codingPercent?: number;
+  codingCount?: number;
+  mcqCount?: number;
+  supportMode?: "standard" | "teaching_heavy";
 };
 
 export type CourseSyllabusSection = {
@@ -28,6 +53,75 @@ export type CourseSyllabusSection = {
 };
 
 export type GeneratedCourseContent = GeneratedCourseContentV1 | GeneratedCourseContentV2;
+
+export type GeneratedLearningContent =
+  | GeneratedCourseContent
+  | GeneratedShortCourseContent
+  | GeneratedExerciseSessionContent
+  | GeneratedGuidedProjectContent;
+
+type GeneratedLearningContentBase = {
+  title: string;
+  subject: string;
+  description: string;
+  languages: string[];
+  tags: string[];
+  learningBrief: LearningBrief;
+};
+
+export type GeneratedShortCourseContent = GeneratedLearningContentBase & {
+  schemaVersion: "short-course-content/v1";
+  generationDepth: "full_short_course";
+  sections: GeneratedCourseTopic[];
+};
+
+export type GeneratedExerciseSessionContent = GeneratedLearningContentBase & {
+  schemaVersion: "exercise-session/v1";
+  generationDepth: "full_exercise_session";
+  strategy: "topic" | "random" | "weakness" | "adaptive";
+  diagnosticCount: number;
+  problems: GeneratedPracticeProblem[];
+};
+
+export type GeneratedPracticeProblem = GeneratedCourseTopic & {
+  kind: "mcq" | "code";
+  difficulty: "Beginner" | "Intermediate" | "Advanced";
+  primarySkill: string;
+  parentLanguage?: string | null;
+  topicIds: string[];
+  domainIds: string[];
+};
+
+export type GeneratedGuidedProjectContentV1 = GeneratedLearningContentBase & {
+  schemaVersion: "guided-project-content/v1";
+  generationDepth: "project_outline_first_milestone" | "full_project";
+  assessmentReview: GeneratedAssessmentReview;
+  architecture: {
+    deliverable: string;
+    stack: string[];
+    capabilities: string[];
+  };
+  milestones: GeneratedCourseModule[];
+};
+
+export type GeneratedGuidedProjectContentV2 = GeneratedLearningContentBase & {
+  schemaVersion: "guided-project-content/v2";
+  generationDepth: "full_project";
+  assessmentReview: GeneratedAssessmentReview;
+  architecture: {
+    deliverable: string;
+    stack: string[];
+    capabilities: string[];
+  };
+  module: {
+    id: string;
+    title: string;
+    summary: string;
+    blocks: GeneratedCourseLearningBlock[];
+  };
+};
+
+export type GeneratedGuidedProjectContent = GeneratedGuidedProjectContentV1 | GeneratedGuidedProjectContentV2;
 
 export type GeneratedCourseContentV1 = {
   schemaVersion: "course-content/v1";
@@ -47,7 +141,7 @@ export type GeneratedCourseContentV2 = {
   description: string;
   languages: string[];
   tags: string[];
-  generationDepth: "full_course";
+  generationDepth: "full_structure_first_module" | "full_course";
   assessmentReview: GeneratedAssessmentReview;
   courseBlueprint?: GeneratedCourseBlueprint;
   ragSources?: GeneratedCourseRagSource[];
@@ -119,7 +213,33 @@ export type GeneratedCourseStep =
   | { type: "theory" | "analogy" | "example" | "summary"; markdown: string }
   | { type: "mcq"; prompt: string; options: string[]; correctOptionIndex: number; explanation: string }
   | { type: "reflection"; prompt: string; rubric: string }
-  | { type: "workshop" | "lab" | "project"; language: string; filePath: string; prompt: string; starterCode: string; acceptanceCriteria: string[]; context?: string; requiresPreview?: boolean };
+  | {
+      type: "workshop" | "lab" | "project";
+      id?: string;
+      language: string;
+      filePath: string;
+      prompt: string;
+      starterCode: string;
+      resultCode?: string;
+      expectedChange?: string;
+      codeExplanation?: string;
+      suggestedQuestions?: string[];
+      buildsOnStepId?: string | null;
+      conceptIds?: string[];
+      acceptanceCriteria: string[];
+      context?: string;
+      requiresPreview?: boolean;
+      requiresTerminal?: boolean;
+      workspaceView?: "code" | "preview" | "terminal";
+      workspaceFiles?: GeneratedExerciseWorkspaceFile[];
+    };
+
+export type GeneratedExerciseWorkspaceFile = {
+  path: string;
+  content: string;
+  purpose?: string;
+  editable?: boolean;
+};
 
 export type GeneratedCourseChapter = {
   id: string;
@@ -152,6 +272,8 @@ export const starterCourseFiles: TopicFile[] = [
 ];
 
 export function createLearningCourse({
+  experienceType = "course",
+  learningBrief = null,
   title,
   subject,
   description,
@@ -161,13 +283,15 @@ export function createLearningCourse({
   courseContent,
   files = starterCourseFiles
 }: {
+  experienceType?: LearningExperienceType;
+  learningBrief?: LearningBrief | null;
   title: string;
   subject: string;
   description: string;
   languages?: string[];
   tags?: string[];
   syllabus?: CourseSyllabusSection[];
-  courseContent?: GeneratedCourseContent | null;
+  courseContent?: GeneratedLearningContent | null;
   files?: TopicFile[];
 }): Course {
   const slug = title
@@ -180,6 +304,8 @@ export function createLearningCourse({
 
   return {
     id: `${slug || "course"}-${Date.now().toString(36)}`,
+    experienceType,
+    learningBrief: learningBrief ?? (courseContent && "learningBrief" in courseContent ? courseContent.learningBrief : null),
     title,
     subject,
     mode: "mixed",
@@ -197,8 +323,8 @@ export function createLearningCourse({
   };
 }
 
-export function buildSyllabusFromGeneratedContent(content: GeneratedCourseContent): CourseSyllabusSection[] {
-  if (content.schemaVersion === "course-content/v2") return buildSyllabusFromGeneratedContentV2(content);
+export function buildSyllabusFromGeneratedContent(content: GeneratedLearningContent): CourseSyllabusSection[] {
+  if (content.schemaVersion !== "course-content/v1") return buildSyllabusFromGeneratedContentV2(toGeneratedCourseContentV2(content));
 
   let lessonIndex = 0;
   return content.chapters.flatMap((chapter, chapterIndex) =>
@@ -215,12 +341,101 @@ export function buildSyllabusFromGeneratedContent(content: GeneratedCourseConten
   );
 }
 
+export function toGeneratedCourseContentV2(content: Exclude<GeneratedLearningContent, GeneratedCourseContentV1>): GeneratedCourseContentV2 {
+  if (content.schemaVersion === "course-content/v2") return content;
+  if (content.schemaVersion === "short-course-content/v1") {
+    return {
+      schemaVersion: "course-content/v2",
+      title: content.title,
+      subject: content.subject,
+      description: content.description,
+      languages: content.languages,
+      tags: content.tags,
+      generationDepth: "full_course",
+      assessmentReview: { strengths: ["Focused concept path"], gaps: [], suggestedModules: content.sections.map((section) => section.title) },
+      modules: [{ id: "short-course", title: "Short course", summary: content.description, order: 0, unlocked: true, topics: content.sections }]
+    };
+  }
+  if (content.schemaVersion === "exercise-session/v1") {
+    return {
+      schemaVersion: "course-content/v2",
+      title: content.title,
+      subject: content.subject,
+      description: content.description,
+      languages: content.languages,
+      tags: content.tags,
+      generationDepth: "full_course",
+      assessmentReview: { strengths: [], gaps: [], suggestedModules: content.problems.map((problem) => problem.title) },
+      modules: [{ id: "practice-session", title: "Problems", summary: content.description, order: 0, unlocked: true, topics: content.problems }]
+    };
+  }
+  if (content.schemaVersion === "guided-project-content/v2") {
+    return {
+      schemaVersion: "course-content/v2",
+      title: content.title,
+      subject: content.subject,
+      description: content.description,
+      languages: content.languages,
+      tags: content.tags,
+      generationDepth: "full_course",
+      assessmentReview: content.assessmentReview,
+      modules: [{
+        id: content.module.id,
+        title: content.module.title,
+        summary: content.module.summary,
+        order: 0,
+        unlocked: true,
+        topics: [{
+          id: `${content.module.id}-build`,
+          title: content.module.title,
+          summary: content.module.summary,
+          order: 0,
+          unlocked: true,
+          blocks: content.module.blocks
+        }]
+      }]
+    };
+  }
+  return {
+    schemaVersion: "course-content/v2",
+    title: content.title,
+    subject: content.subject,
+    description: content.description,
+    languages: content.languages,
+    tags: content.tags,
+    generationDepth: content.generationDepth === "full_project" ? "full_course" : "full_structure_first_module",
+    assessmentReview: content.assessmentReview,
+    modules: content.milestones
+  };
+}
+
+export function experienceTypeFromContent(content: GeneratedLearningContent | null | undefined): LearningExperienceType {
+  if (!content || content.schemaVersion === "course-content/v1" || content.schemaVersion === "course-content/v2") return "course";
+  if (content.schemaVersion === "short-course-content/v1") return "short_course";
+  if (content.schemaVersion === "exercise-session/v1") return "exercise";
+  return "guided_project";
+}
+
+export function learningNavigationLabel(type: LearningExperienceType) {
+  if (type === "short_course") return "Sections";
+  if (type === "exercise") return "Problems";
+  if (type === "guided_project") return "Project";
+  return "Modules";
+}
+
+export function learningExperienceLabel(type: LearningExperienceType) {
+  if (type === "short_course") return "Short course";
+  if (type === "exercise") return "Practice";
+  if (type === "guided_project") return "Guided project";
+  return "Course";
+}
+
 function buildSyllabusFromGeneratedContentV2(content: GeneratedCourseContentV2): CourseSyllabusSection[] {
   let lessonIndex = 0;
   return content.modules.flatMap((module, moduleIndex) =>
     module.topics.flatMap((topic, topicIndex) =>
       topic.blocks.flatMap((block) =>
-        block.steps.map((step, stepIndex) => ({
+        syllabusStepsForBlock(block).map((step, stepIndex) => ({
           id: `${module.id}:${topic.id}:${block.id}:${stepIndex}`,
           title: `${moduleIndex + 1}.${topicIndex + 1} ${stepTitle(block.title, step.type)}`,
           summary: stepSummary(block.summary, step.type),
@@ -230,6 +445,11 @@ function buildSyllabusFromGeneratedContentV2(content: GeneratedCourseContentV2):
       )
     )
   );
+}
+
+function syllabusStepsForBlock(block: GeneratedCourseLearningBlock): GeneratedCourseStep[] {
+  if (block.kind !== "workshop" || block.steps.at(-1)?.type === "summary") return block.steps;
+  return [...block.steps, { type: "summary", markdown: "## Workshop complete\n\nReview the finished code before continuing." }];
 }
 
 function stepTitle(blockTitleText: string, type: GeneratedCourseStep["type"]) {
@@ -319,6 +539,7 @@ export function createDefaultCourseMetadata(subject: string): Pick<Course, "lang
 export const courses: Course[] = [
   {
     id: "javascript-rendering",
+    experienceType: "course",
     title: "JavaScript Rendering",
     subject: "JavaScript",
     mode: "project",
@@ -333,6 +554,7 @@ export const courses: Course[] = [
   },
   {
     id: "data-structures",
+    experienceType: "course",
     title: "Data Structures",
     subject: "Computer Science",
     mode: "fundamentals",

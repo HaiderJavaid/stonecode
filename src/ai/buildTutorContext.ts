@@ -1,10 +1,11 @@
-import { Course } from "@/data/courses";
+import { Course, toGeneratedCourseContentV2 } from "@/data/courses";
 import { StoredChatMessage } from "@/services/courseStorage";
-import { WorkspaceFile } from "@/services/workspaceFiles";
+import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
 
 export type TutorContextInput = {
   course: Course;
   files: WorkspaceFile[];
+  folders?: WorkspaceFolder[];
   currentFile: WorkspaceFile | null;
   recentMessages: StoredChatMessage[];
   userMessage: string;
@@ -37,6 +38,8 @@ export type TutorContextInput = {
 
 export type TutorContext = {
   courseId: string;
+  experienceType: Course["experienceType"];
+  learningBrief: Course["learningBrief"];
   courseTitle: string;
   courseSubject: string;
   courseMode: Course["mode"];
@@ -55,6 +58,7 @@ export type TutorContext = {
   currentFilePath: string | null;
   currentFileContent: string | null;
   fileTree: string[];
+  workspaceFolders: string[];
   workspaceFiles: Array<{
     path: string;
     content: string;
@@ -97,6 +101,8 @@ export type TutorContext = {
 export function buildTutorContext(input: TutorContextInput): TutorContext {
   return {
     courseId: input.course.id,
+    experienceType: input.course.experienceType,
+    learningBrief: input.course.learningBrief ?? null,
     courseTitle: input.course.title,
     courseSubject: input.course.subject,
     courseMode: input.course.mode,
@@ -114,7 +120,11 @@ export function buildTutorContext(input: TutorContextInput): TutorContext {
     checkpoint: input.course.checkpoint,
     currentFilePath: input.currentFile?.path ?? null,
     currentFileContent: input.currentFile?.content ?? null,
-    fileTree: input.files.map((file) => file.path),
+    fileTree: [
+      ...(input.folders ?? []).map((folder) => `${folder.path}/`),
+      ...input.files.map((file) => file.path)
+    ],
+    workspaceFolders: (input.folders ?? []).map((folder) => folder.path),
     workspaceFiles: input.files.map((file) => ({
       path: file.path,
       content: file.content
@@ -135,11 +145,12 @@ function resolveCurrentCourseStepContext(
   courseContent: Course["courseContent"] | null,
   lesson: TutorContextInput["lesson"] | undefined
 ): TutorContext["currentCourseStep"] {
-  if (!courseContent || courseContent.schemaVersion !== "course-content/v2" || !lesson) return null;
+  if (!courseContent || courseContent.schemaVersion === "course-content/v1" || !lesson) return null;
+  const navigableContent = toGeneratedCourseContentV2(courseContent);
   const ids = resolveStepIds(lesson);
   if (!ids) return null;
 
-  const module = courseContent.modules.find((item) => item.id === ids.moduleId);
+  const module = navigableContent.modules.find((item) => item.id === ids.moduleId);
   const topic = module?.topics.find((item) => item.id === ids.topicId);
   const block = topic?.blocks.find((item) => item.id === ids.blockId);
   const stepIndex = ids.stepIndex;

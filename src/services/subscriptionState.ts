@@ -9,6 +9,11 @@ export type SubscriptionState = {
   planName: "Free" | "Basic" | "Pro";
   activeCourseLimit: number;
   aiMessagesPerMonth: number;
+  monthlyExperienceGenerationLimit: number | null;
+  firstModuleOnly: boolean;
+  requiresOwnOpenAiKey: boolean;
+  generatedExperiencesThisMonth: number;
+  remainingExperienceGenerations: number | null;
   currentPeriodEnd: string | null;
 };
 
@@ -18,6 +23,11 @@ export const defaultSubscriptionState: SubscriptionState = {
   planName: "Free",
   activeCourseLimit: planLimits.free.activeCourseLimit,
   aiMessagesPerMonth: planLimits.free.aiMessagesPerMonth,
+  monthlyExperienceGenerationLimit: planLimits.free.monthlyExperienceGenerationLimit,
+  firstModuleOnly: planLimits.free.firstModuleOnly,
+  requiresOwnOpenAiKey: planLimits.free.requiresOwnOpenAiKey,
+  generatedExperiencesThisMonth: 0,
+  remainingExperienceGenerations: planLimits.free.monthlyExperienceGenerationLimit,
   currentPeriodEnd: null
 };
 

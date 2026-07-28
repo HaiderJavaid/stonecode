@@ -1,3 +1,5 @@
+import { normalizeBadgeDefinition } from "./skill-taxonomy.mjs";
+
 const DAY_MS = 86_400_000;
 
 export const FIRST_STEPS_BADGE = {
@@ -62,21 +64,7 @@ export function resolveFirstStepsBadge(activity) {
 }
 
 export function normalizeBadgeRows(rows) {
-  return rows.map((row) => {
-    const id = row.badge_key ?? row.badge_id;
-    if (id === FIRST_STEPS_BADGE.id) {
-      return {
-        ...FIRST_STEPS_BADGE,
-        earnedAt: row.earned_at
-      };
-    }
-    return {
-      id,
-      title: row.title ?? id,
-      description: row.description ?? "",
-      earnedAt: row.earned_at
-    };
-  });
+  return rows.map((row) => normalizeBadgeDefinition(row.badge_key ?? row.badge_id, row.earned_at));
 }
 
 export function resolveXpBand(xp) {
@@ -92,15 +80,23 @@ export function buildProgressionSummary({
   badges,
   equippedBadgeId,
   completedCourses,
-  nowDateKey
+  nowDateKey,
+  achievements = []
 }) {
   const byDifficulty = { Beginner: 0, Intermediate: 0, Advanced: 0 };
   const languageTotals = new Map();
+  const skillTotals = new Map();
   const dailyTotals = new Map();
 
   for (const item of activity) {
     if (item.difficulty in byDifficulty) byDifficulty[item.difficulty] += 1;
-    languageTotals.set(item.language, (languageTotals.get(item.language) ?? 0) + item.xp);
+    const language = item.parent_language || item.language;
+    const skill = item.primary_skill || item.language;
+    languageTotals.set(language, (languageTotals.get(language) ?? 0) + item.xp);
+    const currentSkill = skillTotals.get(skill) ?? { solvedCount: 0, xp: 0, parentLanguage: language };
+    currentSkill.solvedCount += 1;
+    currentSkill.xp += item.xp;
+    skillTotals.set(skill, currentSkill);
     const day = dailyTotals.get(item.earned_on) ?? { xp: 0, languages: {} };
     day.xp += item.xp;
     day.languages[item.language] = (day.languages[item.language] ?? 0) + item.xp;
@@ -109,7 +105,7 @@ export function buildProgressionSummary({
 
   const activeDates = [...dailyTotals.keys()].sort();
   const { currentStreak, longestStreak } = calculateStreaks(activeDates, nowDateKey);
-  const equippedBadge = badges.find((badge) => badge?.id === equippedBadgeId) ?? badges.at(-1) ?? null;
+  const equippedBadge = badges.find((badge) => badge?.id === equippedBadgeId) ?? null;
 
   return {
     totalXp: activity.reduce((total, item) => total + item.xp, 0),
@@ -118,6 +114,7 @@ export function buildProgressionSummary({
     languageXp: [...languageTotals.entries()]
       .map(([language, xp]) => ({ language, xp }))
       .sort((a, b) => b.xp - a.xp || a.language.localeCompare(b.language)),
+    skillBreakdown: buildSkillBreakdown(skillTotals, activity.length),
     heatmap: buildHeatmap(dailyTotals, nowDateKey),
     currentStreak,
     longestStreak,
@@ -125,8 +122,21 @@ export function buildProgressionSummary({
     badges: badges.filter(Boolean),
     equippedBadgeId: equippedBadge?.id ?? null,
     equippedTitle: equippedBadge?.title ?? null,
-    latestActivityAt: activity[0]?.created_at ?? null
+    latestActivityAt: activity[0]?.created_at ?? null,
+    achievements
   };
+}
+
+function buildSkillBreakdown(skillTotals, solvedExercises) {
+  return [...skillTotals.entries()]
+    .map(([skill, values]) => ({
+      skill,
+      parentLanguage: values.parentLanguage || null,
+      solvedCount: values.solvedCount,
+      xp: values.xp,
+      percentage: solvedExercises ? Math.round(values.solvedCount / solvedExercises * 1000) / 10 : 0
+    }))
+    .sort((a, b) => b.solvedCount - a.solvedCount || b.xp - a.xp || a.skill.localeCompare(b.skill));
 }
 
 function buildHeatmap(dailyTotals, nowDateKey) {

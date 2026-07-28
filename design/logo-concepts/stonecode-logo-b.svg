@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 160" role="img" aria-labelledby="title desc">
+  <title id="title">Stonecode logo concept B</title>
+  <desc id="desc">Minimal split diamond inspired by the existing authentication mark.</desc>
+  <rect width="720" height="160" rx="28" fill="#050505"/>
+  <path d="M84 22 136 80 84 138 32 80Zm0 22L52 80l32 36V97L68 80l16-17Z" fill="#F4F5EF" fill-rule="evenodd"/>
+  <path d="M84 44 116 80l-32 36V97l16-17-16-17Z" fill="#F4F5EF"/>
+  <rect x="80" y="74" width="8" height="12" rx="1" fill="#65B960"/>
+  <text x="172" y="99" fill="#F4F5EF" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="66" font-weight="560" letter-spacing="-2.6">stonecode</text>
+</svg>

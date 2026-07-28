@@ -1,35 +1,28 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Course, GeneratedCourseContent, buildSyllabusFromGeneratedContent, createDefaultCourseMetadata, createLearningCourse } from "@/data/courses";
+import {
+  Course,
+  GeneratedLearningContent,
+  LearningBrief,
+  buildSyllabusFromGeneratedContent,
+  createDefaultCourseMetadata,
+  createLearningCourse,
+  learningExperienceLabel
+} from "@/data/courses";
 import { useTypedText } from "@/hooks/useTypedText";
 import {
   AssessmentAnswer,
   AssessmentQuestion,
   AssessmentReview,
-  requestAssessmentPlan,
-  requestAssessmentQuestion,
-  requestAssessmentReview,
-  requestGeneratedCourseFromAssessment
+  requestGeneratedLearningExperience,
+  requestLearningAssessmentPlan,
+  requestLearningAssessmentQuestion,
+  requestLearningAssessmentReview,
+  requestLearningDiscoveryTurn
 } from "@/services/courseGeneration";
 
-const favoriteIdeas = [
-  "Machine learning",
-  "Beginner web development",
-  "React from zero",
-  "Data structures basics",
-  "Python automation",
-  "JavaScript fundamentals"
-];
+const assessmentMaxQuestionCount = 3;
 
-const greetingOptions = [
-  "Hi, I'm your personal AI Tutor. What do you want to learn today?",
-  "Welcome back. What skill should we turn into a course?",
-  "Tell me what you want to learn, and I’ll build the path around it.",
-  "What topic should we start with today?"
-];
-
-const assessmentMaxQuestionCount = 7;
-
-type SetupPhase = "subject" | "ready" | "assessment" | "review" | "generating";
+type SetupPhase = "discovery" | "ready" | "assessment" | "gap-choice" | "review" | "generating";
 
 type SetupMessage = {
   role: "assistant" | "user";
@@ -37,25 +30,46 @@ type SetupMessage = {
   id?: string;
 };
 
+export type CourseSetupServices = {
+  requestDiscoveryTurn: typeof requestLearningDiscoveryTurn;
+  requestAssessmentPlan: typeof requestLearningAssessmentPlan;
+  requestAssessmentQuestion: typeof requestLearningAssessmentQuestion;
+  requestAssessmentReview: typeof requestLearningAssessmentReview;
+  requestGeneratedExperience: typeof requestGeneratedLearningExperience;
+};
+
+const defaultCourseSetupServices: CourseSetupServices = {
+  requestDiscoveryTurn: requestLearningDiscoveryTurn,
+  requestAssessmentPlan: requestLearningAssessmentPlan,
+  requestAssessmentQuestion: requestLearningAssessmentQuestion,
+  requestAssessmentReview: requestLearningAssessmentReview,
+  requestGeneratedExperience: requestGeneratedLearningExperience
+};
+
 export function CourseSetupCard({
   error,
   isFinalizing = false,
   onCancel,
-  onFinalize
+  onFinalize,
+  services
 }: {
   error?: string | null;
   isOpen: boolean;
   isFinalizing?: boolean;
   onCancel: () => void;
   onFinalize: (course: Course) => void | Promise<void>;
+  services?: Partial<CourseSetupServices>;
 }) {
-  const [phase, setPhase] = useState<SetupPhase>("subject");
-  const [messages, setMessages] = useState<SetupMessage[]>([
-    { role: "assistant", content: pickSessionGreeting(), id: createSetupMessageId() }
-  ]);
+  const setupServices = useMemo(() => ({ ...defaultCourseSetupServices, ...services }), [services]);
+  const [phase, setPhase] = useState<SetupPhase>("discovery");
+  const [messages, setMessages] = useState<SetupMessage[]>([]);
   const [typingMessageIndex, setTypingMessageIndex] = useState(0);
   const [suggestionsReady, setSuggestionsReady] = useState(false);
+  const [discoverySuggestions, setDiscoverySuggestions] = useState<string[]>([]);
+  const [discoveryTurn, setDiscoveryTurn] = useState(0);
+  const [isLoadingDiscovery, setIsLoadingDiscovery] = useState(false);
   const [subject, setSubject] = useState("");
+  const [brief, setBrief] = useState<LearningBrief | null>(null);
   const [questions, setQuestions] = useState<AssessmentQuestion[]>([]);
   const [answers, setAnswers] = useState<AssessmentAnswer[]>([]);
   const [assessmentTargetCount, setAssessmentTargetCount] = useState(3);
@@ -63,18 +77,25 @@ export function CourseSetupCard({
   const [writtenAnswer, setWrittenAnswer] = useState("");
   const [codeAnswer, setCodeAnswer] = useState("");
   const [assessmentReview, setAssessmentReview] = useState<AssessmentReview | null>(null);
-  const [generatedContent, setGeneratedContent] = useState<GeneratedCourseContent | null>(null);
+  const [generatedContent, setGeneratedContent] = useState<GeneratedLearningContent | null>(null);
   const [generationSource, setGenerationSource] = useState<"ai" | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(false);
   const [isGeneratingCourse, setIsGeneratingCourse] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const finalizedRef = useRef(false);
+  const discoveryStartedRef = useRef(false);
   const currentQuestion = questions[answers.length] ?? null;
   const typingMessage = messages[typingMessageIndex];
   const typingText = typingMessage?.role === "assistant" ? typingMessage.content : "";
   const { typedText: typedContent } = useTypedText(typingText, { enabled: Boolean(typingText) });
-  const plan = useMemo(() => generatedContent ? createPlanFromGeneratedContent(generatedContent) : createDraftPlan(subject, assessmentReview), [assessmentReview, generatedContent, subject]);
+  const plan = useMemo(() => generatedContent ? createPlanFromGeneratedContent(generatedContent) : createDraftPlan(subject, assessmentReview, brief), [assessmentReview, brief, generatedContent, subject]);
+
+  useEffect(() => {
+    if (discoveryStartedRef.current) return;
+    discoveryStartedRef.current = true;
+    void continueLearningDiscovery([], 0);
+  }, []);
 
   useEffect(() => {
     const lastAssistantIndex = messages.map((message) => message.role).lastIndexOf("assistant");
@@ -94,8 +115,8 @@ export function CourseSetupCard({
   useEffect(() => {
     const scrollElement = chatScrollRef.current;
     if (!scrollElement) return;
-    scrollElement.scrollTop = scrollElement.scrollHeight;
-  }, [messages, typedContent, currentQuestion, assessmentReview]);
+    scrollElement.scrollTop = phase === "assessment" ? 0 : scrollElement.scrollHeight;
+  }, [messages, typedContent, currentQuestion, assessmentReview, phase]);
 
   useEffect(() => {
     if (phase !== "assessment" || currentQuestion || questions.length >= assessmentTargetCount || isLoadingQuestion) return;
@@ -112,70 +133,138 @@ export function CourseSetupCard({
     const form = event.currentTarget;
     const formData = new FormData(form);
     const message = String(formData.get("message") ?? "").trim();
-    if (!message || phase === "assessment" || phase === "generating") return;
+    if (!message || phase === "assessment" || phase === "generating" || isLoadingDiscovery) return;
     form.reset();
     void handleSetupText(message);
   }
 
   async function handleSetupText(message: string) {
     const userMessage: SetupMessage = { role: "user", content: message, id: createSetupMessageId() };
-    if (phase === "subject") {
-      const nextSubject = message;
-      setGenerationError(null);
-      let assessmentPlan;
-      try {
-        assessmentPlan = (await requestAssessmentPlan({ subject: nextSubject })).plan;
-      } catch (caughtError) {
-        setMessages((current) => [...current, userMessage]);
-        setGenerationError(caughtError instanceof Error ? caughtError.message : "AI assessment planning failed.");
-        return;
-      }
-      if (!assessmentPlan.supported) {
-        setMessages((current) => [...current, userMessage, {
-          role: "assistant",
-          content: assessmentPlan.reason || "Stonecode currently supports programming, software, scripting, and code-related courses only. Try something like C++ game dev, Unity scripting, React, backend APIs, Python automation, or data science with code.",
-          id: createSetupMessageId()
-        }]);
-        return;
-      }
-      const plannedSubject = assessmentPlan.targetSubject || nextSubject;
-      setSubject(plannedSubject);
-      setAssessmentTargetCount(Math.min(assessmentMaxQuestionCount, Math.max(1, assessmentPlan.prerequisiteAreas.length)));
-      if (!assessmentPlan.requiresAssessment) {
-        setMessages((current) => [...current, userMessage, {
-          role: "assistant",
-          content: `Got it: ${plannedSubject}. This can start from foundations, so I do not need a prerequisite assessment first. I’ll build the course from zero with tiny examples before workshops.`,
-          id: createSetupMessageId()
-        }]);
-        setPhase("review");
-        requestAssessmentReview({ subject: plannedSubject, answers: [] })
-          .then((result) => setAssessmentReview(result.review))
-          .catch((caughtError) => {
-            setAssessmentReview(null);
-            setGenerationError(caughtError instanceof Error ? caughtError.message : "AI assessment review failed.");
-          });
-        return;
-      }
+    if (phase === "discovery") {
+      const nextMessages = [...messages, userMessage];
+      setMessages(nextMessages);
+      setDiscoverySuggestions([]);
+      await continueLearningDiscovery(nextMessages, discoveryTurn + 1);
+      return;
+    }
+
+    if (phase === "gap-choice" && brief) {
+      const chooseFoundation = /foundation|course first/i.test(message);
+      const nextBrief: LearningBrief = chooseFoundation
+        ? { ...brief, type: "course", goal: `Learn the prerequisites for ${brief.goal}`, subject: brief.language || brief.framework || brief.subject || brief.goal, supportMode: "standard" }
+        : { ...brief, supportMode: "teaching_heavy" };
+      setBrief(nextBrief);
+      setSubject(nextBrief.subject || nextBrief.goal);
       setMessages((current) => [...current, userMessage, {
         role: "assistant",
-        content: `Got it: ${plannedSubject}. This needs prerequisite checks first: ${assessmentPlan.prerequisiteAreas.map((area) => area.title).join(", ")}. I’ll start around entry/mid level, then drop down if you miss or choose “I don’t know.” Ready?`,
+        content: chooseFoundation
+          ? "Good call. I changed this into a focused foundation course. Review it below, then confirm."
+          : "Got it. We’ll build the project slowly, with narrow refreshers inside the introduction and guided build where you need them.",
         id: createSetupMessageId()
       }]);
-      setPhase("ready");
+      setPhase("review");
       return;
     }
 
     if (phase === "ready") {
-      setMessages((current) => [...current, userMessage, { role: "assistant", content: "Good. I’ll generate a few prerequisite MCQ checks. Take your time; you can skip anything you do not know.", id: createSetupMessageId() }]);
+      if (!/\b(take|start|quick|assessment|check me)\b/i.test(message) || /\b(skip|without|no|not now|review plan)\b/i.test(message)) {
+        setAssessmentReview(createDirectReview(brief!));
+        setMessages((current) => [...current, userMessage, { role: "assistant", content: "No problem—assessment skipped. I’ll use the experience you described and teach from there. Review the plan below and change anything you want.", id: createSetupMessageId() }]);
+        setPhase("review");
+        return;
+      }
+      setMessages((current) => [...current, userMessage, { role: "assistant", content: "Okay. This is a quick optional prerequisite check—up to three questions. You can skip anything you do not know.", id: createSetupMessageId() }]);
       setPhase("assessment");
     }
+  }
+
+  async function continueLearningDiscovery(conversation: SetupMessage[], turn: number) {
+    setIsLoadingDiscovery(true);
+    setGenerationError(null);
+    try {
+      const result = await setupServices.requestDiscoveryTurn({
+        messages: conversation.map(({ role, content }) => ({ role, content })),
+        turn
+      });
+      const assistantMessage: SetupMessage = { role: "assistant", content: result.discovery.reply, id: createSetupMessageId() };
+      setMessages((current) => [...current, assistantMessage]);
+      setDiscoverySuggestions(result.discovery.suggestions);
+      setDiscoveryTurn(turn);
+      if (result.discovery.status === "ready" && result.discovery.brief) {
+        await prepareLearningBrief(result.discovery.brief, result.discovery.nextAction);
+      }
+    } catch (caughtError) {
+      setGenerationError(caughtError instanceof Error ? caughtError.message : "AI course discovery failed.");
+    } finally {
+      setIsLoadingDiscovery(false);
+    }
+  }
+
+  async function prepareLearningBrief(nextBrief: LearningBrief, nextAction: "clarify" | "confirm" | "assessment_offer" | "assessment_plan") {
+    if (brief && assessmentSignature(brief) !== assessmentSignature(nextBrief)) {
+      setQuestions([]);
+      setAnswers([]);
+      setAssessmentReview(null);
+      setAssessmentTargetCount(3);
+    }
+    setBrief(nextBrief);
+    const nextSubject = nextBrief.subject || nextBrief.framework || nextBrief.language || nextBrief.goal;
+    setSubject(nextSubject);
+    if (nextAction === "confirm") {
+      setAssessmentReview(createDirectReview(nextBrief));
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: confirmationSummary(nextBrief),
+        id: createSetupMessageId()
+      }]);
+      setPhase("review");
+      return;
+    }
+
+    let assessmentPlan;
+    try {
+      assessmentPlan = (await setupServices.requestAssessmentPlan({ brief: nextBrief })).plan;
+    } catch (caughtError) {
+      setGenerationError(caughtError instanceof Error ? caughtError.message : "AI assessment planning failed.");
+      return;
+    }
+    if (!assessmentPlan.supported) {
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: assessmentPlan.reason || "Stonecode currently supports programming, software, scripting, and code-related courses only. Tell me another programming goal and I’ll help narrow it down.",
+        id: createSetupMessageId()
+      }]);
+      setDiscoverySuggestions([]);
+      return;
+    }
+    const plannedSubject = assessmentPlan.targetSubject || nextSubject;
+    const plannedQuestionCount = Math.min(assessmentMaxQuestionCount, Math.max(1, assessmentPlan.prerequisiteAreas.length));
+    setSubject(plannedSubject);
+    setAssessmentTargetCount(plannedQuestionCount);
+    if (!assessmentPlan.requiresAssessment) {
+      setAssessmentReview(createDirectReview(nextBrief));
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: `Great—we’ll make this a ${plannedSubject} ${learningExperienceLabel(nextBrief.type).toLowerCase()}. It starts from the right foundation, so a prerequisite check would not add much. Review the plan below.`,
+        id: createSetupMessageId()
+      }]);
+      setPhase("review");
+      return;
+    }
+    setMessages((current) => [...current, {
+      role: "assistant",
+        content: `I have enough to plan this ${learningExperienceLabel(nextBrief.type).toLowerCase()}. If you want, take a quick ${plannedQuestionCount === 1 ? "one-question" : `${plannedQuestionCount}-question`} prerequisite check so I can target refreshers. Or skip it and I’ll use what you already told me.`,
+      id: createSetupMessageId()
+    }]);
+    setPhase("ready");
   }
 
   async function loadAssessmentQuestion() {
     setIsLoadingQuestion(true);
     setGenerationError(null);
     try {
-      const result = await requestAssessmentQuestion({ subject, step: questions.length, answers });
+      if (!brief) return;
+      const result = await setupServices.requestAssessmentQuestion({ brief, step: questions.length, answers });
       setQuestions((current) => [...current, result.question]);
       if (result.question.type === "code") setCodeAnswer(result.question.starterCode);
     } catch (caughtError) {
@@ -196,10 +285,6 @@ export function CourseSetupCard({
           : codeAnswer.trim();
     const isCourseShaping = currentQuestion.type === "mcq" && currentQuestion.questionKind === "course_shaping";
     const isCorrect = currentQuestion.type === "mcq" && !isCourseShaping && !skipped && selectedOption === currentQuestion.correctOptionIndex;
-    const needsFollowUp = !isCourseShaping && (skipped || (currentQuestion.type === "mcq" && !isCorrect));
-    if (needsFollowUp) {
-      setAssessmentTargetCount((current) => Math.min(current + 1, assessmentMaxQuestionCount));
-    }
     setAnswers((current) => [...current, {
       questionId: currentQuestion.id,
       type: currentQuestion.type,
@@ -220,25 +305,39 @@ export function CourseSetupCard({
 
   async function finishAssessment() {
     setPhase("review");
-    setMessages((current) => [...current, { role: "assistant", content: "Assessment complete. I’m reviewing your strengths, gaps, and the modules this course should include.", id: createSetupMessageId() }]);
+    setMessages((current) => [...current, { role: "assistant", content: "Quick check complete. I’m using it to tune your learning plan and any focused refreshers.", id: createSetupMessageId() }]);
     try {
-      const result = await requestAssessmentReview({ subject, answers });
+      if (!brief) return;
+      const result = await setupServices.requestAssessmentReview({ brief, answers });
       setAssessmentReview(result.review);
+      if (brief.type === "guided_project" && hasMajorPrerequisiteGaps(result.review)) {
+        setMessages((current) => [...current, {
+          role: "assistant",
+          content: "This project needs a few foundations first. Choose a focused foundation course, or keep the project and let me teach those gaps more slowly inside it.",
+          id: createSetupMessageId()
+        }]);
+        setPhase("gap-choice");
+      }
     } catch (caughtError) {
       setAssessmentReview(null);
       setGenerationError(caughtError instanceof Error ? caughtError.message : "AI assessment review failed.");
     }
   }
 
-  async function generateCourse() {
+  async function generateLearningExperience() {
+    if (!brief || !assessmentReview || finalizedRef.current) return;
+    finalizedRef.current = true;
     setPhase("generating");
     setIsGeneratingCourse(true);
     setGenerationError(null);
     try {
-      const result = await requestGeneratedCourseFromAssessment({ subject, answers, assessmentReview: assessmentReview! });
-      setGeneratedContent(result.content);
-      setGenerationSource(result.source);
-      finalizedRef.current = true;
+      const result = generatedContent
+        ? { content: generatedContent, source: generationSource ?? "ai" as const }
+        : await setupServices.requestGeneratedExperience({ brief, answers, assessmentReview });
+      if (!generatedContent) {
+        setGeneratedContent(result.content);
+        setGenerationSource(result.source);
+      }
       await onFinalize(createLearningCourse({
         title: result.content.title,
         subject: result.content.subject,
@@ -246,9 +345,12 @@ export function CourseSetupCard({
         languages: result.content.languages,
         tags: result.content.tags,
         syllabus: buildSyllabusFromGeneratedContent(result.content),
-        courseContent: result.content
+        courseContent: result.content,
+        experienceType: brief.type,
+        learningBrief: brief
       }));
     } catch (caughtError) {
+      finalizedRef.current = false;
       setGenerationError(caughtError instanceof Error ? caughtError.message : "Course generation failed.");
       setPhase("review");
     } finally {
@@ -256,10 +358,25 @@ export function CourseSetupCard({
     }
   }
 
+  function modifyLearningPlan() {
+    if (!brief) return;
+    finalizedRef.current = false;
+    setGeneratedContent(null);
+    setGenerationSource(null);
+    setGenerationError(null);
+    setMessages((current) => [...current, {
+      role: "assistant",
+      content: `Current plan: ${compactBriefSummary(brief)} Tell me what you want to change.`,
+      id: createSetupMessageId()
+    }]);
+    setDiscoverySuggestions(modificationSuggestions(brief));
+    setPhase("discovery");
+  }
+
   return (
-    <article className="course-setup-card shadow-card is-active has-chat-canvas" aria-label="Course setup" style={{ "--card-y": "0px" } as React.CSSProperties}>
+    <article className="course-setup-card shadow-card is-active has-chat-canvas" aria-label="Learning setup" style={{ "--card-y": "0px" } as React.CSSProperties}>
       <div className="card-top">
-        <h2>New course</h2>
+        <h2>New learning conversation</h2>
         <button className="card-back" onClick={onCancel} type="button">Close</button>
       </div>
       <div className="selection-panel is-chat-canvas setup-selection-panel">
@@ -267,9 +384,9 @@ export function CourseSetupCard({
         <div className="lesson-panel ai-chat-panel">
           <div className="chat-canvas-head">
             <span>Setup</span>
-            <strong>{phase === "assessment" ? "Assessment" : phase === "generating" ? "Generating course" : "Course tutor"}</strong>
+            <strong>{phase === "assessment" ? "Assessment" : phase === "generating" ? "Creating experience" : "AI learning guide"}</strong>
           </div>
-          <div className="ai-chat-scroll setup-chat" aria-label="Course setup conversation" ref={chatScrollRef}>
+          <div className="ai-chat-scroll setup-chat" aria-label="Learning setup conversation" ref={chatScrollRef}>
             {phase === "assessment" ? (
               <AssessmentPanel
                 codeAnswer={codeAnswer}
@@ -293,25 +410,25 @@ export function CourseSetupCard({
                 </div>
               ))
             )}
+            {phase === "discovery" && isLoadingDiscovery && (
+              <div className="proposal-loading is-compact" role="status" aria-live="polite">
+                <i aria-hidden="true" />
+                <p><strong>Learning guide is thinking</strong><span>Finding the most useful next question.</span></p>
+              </div>
+            )}
             {(phase === "review" || phase === "generating") && assessmentReview && (
               <section className="course-proposal" aria-label="Assessment review">
-                <span>Assessment review</span>
+                <span>{brief ? `${learningExperienceLabel(brief.type)} plan` : "Learning plan"}</span>
                 <h3>{plan.title}</h3>
-                <p>{plan.description}</p>
-                <ReviewList title="Strong" items={assessmentReview.strengths} />
-                <ReviewList title="Needs support" items={assessmentReview.gaps} />
-                <ReviewList title="Suggested modules" items={assessmentReview.suggestedModules} />
-                <div className="proposal-tags">
-                  {[...plan.languages, ...plan.tags].map((tag) => <i key={tag}>{tag}</i>)}
-                </div>
+                {brief && <LearningPlanReview brief={brief} review={assessmentReview} />}
               </section>
             )}
             {phase === "generating" && (
               <div className="proposal-loading" role="status" aria-live="polite">
                 <i aria-hidden="true" />
                 <p>
-                  <strong>Generating full course</strong>
-                  <span>{generationSource === "ai" ? "AI course ready. Saving..." : "Building modules, topics, steps, and exercises."}</span>
+                  <strong>Creating {brief ? learningExperienceLabel(brief.type).toLowerCase() : "learning experience"}</strong>
+                  <span>{generationSource === "ai" ? "AI content ready. Saving..." : generationProgressCopy(brief)}</span>
                 </p>
               </div>
             )}
@@ -319,20 +436,21 @@ export function CourseSetupCard({
           </div>
           <div className="chat-dock">
             {phase !== "assessment" && phase !== "review" && phase !== "generating" && (
-              <section className={`reply-suggestions setup-favorites${suggestionsReady ? " is-ready" : ""}`} aria-label="Course suggestions">
-                {getSuggestions(phase).map((idea) => <button key={idea} onClick={() => handleSetupText(idea)} type="button">{idea}</button>)}
+              <section className={`reply-suggestions setup-favorites${suggestionsReady ? " is-ready" : ""}`} aria-label="Suggested answers">
+                {getSuggestions(phase, discoverySuggestions).map((idea) => <button disabled={isLoadingDiscovery} key={idea} onClick={() => void handleSetupText(idea)} type="button">{idea}</button>)}
               </section>
             )}
             {phase === "review" && assessmentReview && (
               <div className="lesson-controls setup-controls">
-                <button disabled={isGeneratingCourse || isFinalizing} onClick={() => void generateCourse()} type="button">
-                  {isGeneratingCourse || isFinalizing ? "Finalizing..." : "Finalize course"}
+                <button className="is-secondary" disabled={isGeneratingCourse || isFinalizing} onClick={modifyLearningPlan} type="button">Modify plan</button>
+                <button disabled={isGeneratingCourse || isFinalizing} onClick={() => void generateLearningExperience()} type="button">
+                  {isGeneratingCourse || isFinalizing ? "Creating..." : confirmationButtonLabel(brief)}
                 </button>
               </div>
             )}
             <form className="chat-compose setup-compose" onSubmit={submitMessage}>
-              <input disabled={phase === "assessment" || phase === "review" || phase === "generating" || isFinalizing} name="message" placeholder={getInputPlaceholder(phase)} type="text" />
-              <button disabled={phase === "assessment" || phase === "review" || phase === "generating" || isFinalizing} type="submit">Send</button>
+              <input disabled={phase === "assessment" || phase === "review" || phase === "generating" || isFinalizing || isLoadingDiscovery} name="message" placeholder={getInputPlaceholder(phase)} type="text" />
+              <button disabled={phase === "assessment" || phase === "review" || phase === "generating" || isFinalizing || isLoadingDiscovery} type="submit">Send</button>
             </form>
             {error && <p className="setup-error">{error}</p>}
           </div>
@@ -409,16 +527,27 @@ function AssessmentPanel({
   );
 }
 
-function ReviewList({ title, items }: { title: string; items: string[] }) {
+function LearningPlanReview({ brief, review }: { brief: LearningBrief; review: AssessmentReview }) {
+  const topics = brief.topics?.length ? brief.topics : review.suggestedModules;
   return (
-    <div className="setup-review-list">
-      <strong>{title}</strong>
-      <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
-    </div>
+    <dl className="setup-plan-summary">
+      <div><dt>Goal</dt><dd>{brief.goal}</dd></div>
+      {brief.motivation && <div><dt>Purpose</dt><dd>{brief.motivation}</dd></div>}
+      {brief.priorKnowledge && <div><dt>Starting point</dt><dd>{brief.priorKnowledge}</dd></div>}
+      {topics.length > 0 && <div><dt>{brief.type === "guided_project" ? "Project flow" : "Topics"}</dt><dd><ul>{topics.map((topic) => <li key={topic}>{topic}</li>)}</ul></dd></div>}
+      {brief.type === "exercise" && (
+        <>
+          <div><dt>Difficulty</dt><dd>{titleCase(brief.difficulty || "adaptive")}</dd></div>
+          <div><dt>Exercises</dt><dd>{brief.exerciseCount ?? 10} total</dd></div>
+          <div><dt>Mix</dt><dd>{brief.codingCount ?? 7} coding · {brief.mcqCount ?? 3} MCQ</dd></div>
+        </>
+      )}
+      {review.gaps.length > 0 && <div><dt>Refreshers</dt><dd><ul>{review.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul></dd></div>}
+    </dl>
   );
 }
 
-function createPlanFromGeneratedContent(content: GeneratedCourseContent): Pick<Course, "title" | "subject" | "description" | "languages" | "tags" | "syllabus"> {
+function createPlanFromGeneratedContent(content: GeneratedLearningContent): Pick<Course, "title" | "subject" | "description" | "languages" | "tags" | "syllabus"> {
   return {
     title: content.title,
     subject: content.subject,
@@ -429,37 +558,47 @@ function createPlanFromGeneratedContent(content: GeneratedCourseContent): Pick<C
   };
 }
 
-function createDraftPlan(subject: string, review: AssessmentReview | null): Pick<Course, "title" | "subject" | "description" | "languages" | "tags" | "syllabus"> {
+function createDraftPlan(subject: string, review: AssessmentReview | null, brief: LearningBrief | null): Pick<Course, "title" | "subject" | "description" | "languages" | "tags" | "syllabus"> {
   const normalized = subject.trim() || "Programming basics";
   const metadata = createDefaultCourseMetadata(inferSubject(normalized));
+  const description = brief?.type === "exercise"
+    ? `${brief.exerciseCount ?? 10} ${brief.difficulty || "adaptive"} practice problems tailored to ${normalized}.`
+    : brief?.type === "short_course"
+      ? `A compact explanation, analogy, checks, and guided workshop for ${normalized}.`
+      : brief?.type === "guided_project"
+        ? `A guided build of ${brief.desiredOutcome || brief.goal}: project introduction, 10–20 micro-steps, then a complete-code recap.`
+        : review
+          ? `Personalized course based on prerequisite assessment. Includes ${review.suggestedModules.join(", ")}.`
+          : `Personalized ${normalized} course.`;
+  const tags = brief?.type === "exercise"
+    ? ["Practice", brief.difficulty || "Adaptive"]
+    : brief?.type === "short_course"
+      ? ["Short course", "Focused concept"]
+      : brief?.type === "guided_project"
+        ? ["Guided project", brief.platform || "Build"]
+        : metadata.tags;
   return {
-    title: normalized.length > 34 ? normalized.slice(0, 34).trim() : normalized,
+    title: brief?.type === "exercise" ? `${normalized} practice`.slice(0, 42) : normalized.length > 42 ? normalized.slice(0, 42).trim() : normalized,
     subject: inferSubject(normalized),
-    description: review ? `Personalized course based on prerequisite assessment. Includes ${review.suggestedModules.join(", ")}.` : `Personalized ${normalized} course.`,
-    ...metadata
+    ...metadata,
+    description,
+    tags
   };
 }
 
-function getSuggestions(phase: SetupPhase) {
-  if (phase === "subject") return favoriteIdeas;
-  if (phase === "ready") return ["I’m ready", "Start assessment", "Not sure, but continue"];
+function getSuggestions(phase: SetupPhase, discoverySuggestions: string[]) {
+  if (phase === "discovery") return discoverySuggestions;
+  if (phase === "ready") return ["Skip assessment and review plan", "Take a quick assessment"];
+  if (phase === "gap-choice") return ["Build it slowly with refreshers", "Create a foundation course first"];
   return [];
 }
 
 function getInputPlaceholder(phase: SetupPhase) {
-  if (phase === "subject") return "I want to learn...";
-  if (phase === "ready") return "I’m ready...";
+  if (phase === "discovery") return "Tell me what you want to learn or build...";
+  if (phase === "ready") return "Choose the quick check or skip it...";
+  if (phase === "gap-choice") return "Choose how you want to continue...";
   if (phase === "review") return "Review ready. Finalize when ready.";
   return "Assessment in progress...";
-}
-
-function pickSessionGreeting() {
-  if (typeof window === "undefined") return greetingOptions[0];
-  const key = "stonecode.setupGreetingSeed";
-  const currentSeed = Number(window.sessionStorage.getItem(key) ?? "-1");
-  const nextSeed = (Number.isFinite(currentSeed) ? currentSeed + 1 : 0) % greetingOptions.length;
-  window.sessionStorage.setItem(key, String(nextSeed));
-  return greetingOptions[nextSeed] ?? greetingOptions[0];
 }
 
 function createSetupMessageId() {
@@ -475,4 +614,72 @@ function inferSubject(message: string) {
   if (value.includes("website") || value.includes("portfolio") || value.includes("web")) return "Web Development";
   if (value.includes("javascript") || value.includes("js")) return "JavaScript";
   return "Programming";
+}
+
+function createDirectReview(brief: LearningBrief): AssessmentReview {
+  const focus = brief.subject || brief.framework || brief.language || brief.goal;
+  if (brief.type === "exercise") {
+    const count = brief.exerciseCount ?? 10;
+    return {
+      strengths: [brief.difficulty === "adaptive" ? "Adaptive starting point" : `${brief.difficulty || "Adaptive"} difficulty`],
+      gaps: [],
+      suggestedModules: brief.topics?.length ? brief.topics : [`${count} ${focus} problem${count === 1 ? "" : "s"}`]
+    };
+  }
+  return {
+    strengths: [brief.priorKnowledge || "Starting point captured in discovery"],
+    gaps: [],
+    suggestedModules: brief.type === "guided_project"
+      ? [`Understand ${brief.desiredOutcome || focus}`, "Build it in guided micro-steps", "Review the finished code and concepts"]
+      : [focus, "Quick checks", "Small guided workshop"]
+  };
+}
+
+function confirmationSummary(brief: LearningBrief) {
+  if (brief.type === "exercise") return `I’ve prepared a concise practice plan with the exact topics and ${brief.codingCount ?? 7}/${brief.mcqCount ?? 3} coding-to-MCQ split. Review it, modify anything you want, then start practice.`;
+  if (brief.type === "short_course") return `This is a focused concept, so I’ll make a compact short course with an explanation, analogy, quick checks, and a small workshop. Review it, then confirm.`;
+  return `I have enough to create your ${learningExperienceLabel(brief.type).toLowerCase()}. Review the brief, then confirm.`;
+}
+
+function confirmationButtonLabel(brief: LearningBrief | null) {
+  if (brief?.type === "short_course") return "Create short course";
+  if (brief?.type === "exercise") return "Start practice";
+  if (brief?.type === "guided_project") return "Start project";
+  return "Finalize course";
+}
+
+function generationProgressCopy(brief: LearningBrief | null) {
+  if (brief?.type === "exercise") return "Building targeted problems and diagnostics.";
+  if (brief?.type === "guided_project") return "Building the project introduction, guided micro-steps, and finished-code recap.";
+  if (brief?.type === "short_course") return "Building theory, checks, and a small workshop.";
+  return "Building modules, topics, steps, and exercises.";
+}
+
+function hasMajorPrerequisiteGaps(review: AssessmentReview) {
+  return review.gaps.length >= 3 && review.gaps.length > review.strengths.length;
+}
+
+function compactBriefSummary(brief: LearningBrief) {
+  const parts = [
+    `${learningExperienceLabel(brief.type)} for ${brief.subject || brief.framework || brief.language || brief.goal}`,
+    brief.topics?.length ? `topics: ${brief.topics.join(", ")}` : "",
+    brief.type === "exercise" ? `${brief.exerciseCount ?? 10} exercises (${brief.codingCount ?? 7} coding, ${brief.mcqCount ?? 3} MCQ)` : "",
+    brief.motivation ? `purpose: ${brief.motivation}` : "",
+    brief.priorKnowledge ? `starting point: ${brief.priorKnowledge}` : ""
+  ].filter(Boolean);
+  return `${parts.join("; ")}.`;
+}
+
+function modificationSuggestions(brief: LearningBrief) {
+  if (brief.type === "exercise") return ["Make it 5 exercises", "Keep 10 exercises", "Make it 20 exercises", "Change the coding/MCQ mix"];
+  if (brief.type === "guided_project") return ["Change the stack", "Change the deliverable", "Add a refresher"];
+  return ["Change the topics", "Make it more advanced", "Change the goal"];
+}
+
+function assessmentSignature(brief: LearningBrief) {
+  return [brief.type, brief.subject, brief.language, brief.framework, brief.platform, brief.desiredOutcome, brief.priorKnowledge].join("|").toLowerCase();
+}
+
+function titleCase(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

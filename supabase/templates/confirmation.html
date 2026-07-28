@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Confirm your Stonecode workspace</title>
+  </head>
+  <body style="margin:0;padding:0;background:#070808;color:#e8e8e1;font-family:Inter,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#070808;">
+      <tr>
+        <td align="center" style="padding:44px 18px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:560px;border:1px solid #303333;border-radius:18px;background:#111313;box-shadow:0 26px 70px rgba(0,0,0,.42);">
+            <tr>
+              <td style="padding:38px 40px 18px;text-align:center;">
+                <div style="width:34px;height:34px;margin:0 auto 18px;border:1px solid #727773;border-radius:9px;background:#bcc0ba;transform:rotate(45deg);box-shadow:inset 0 0 0 7px #2a2d2b;"></div>
+                <div style="font-size:24px;line-height:1;font-weight:600;letter-spacing:.01em;color:#f1f1eb;">stonecode</div>
+                <div style="margin-top:12px;font-family:'Courier New',monospace;font-size:10px;line-height:1.4;letter-spacing:.14em;text-transform:uppercase;color:#7f8983;">workspace verification</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 40px 8px;">
+                <h1 style="margin:0;color:#f0f1eb;font-size:26px;line-height:1.25;font-weight:600;letter-spacing:-.025em;">Enter this code in Stonecode.</h1>
+                <p style="margin:18px 0 0;color:#b8bdb8;font-size:15px;line-height:1.7;">
+                  {{ if .Data.display_name }}Hi {{ .Data.display_name }},{{ else }}Hi there,{{ end }} use this 8-digit code to verify <strong style="color:#e6e8e2;">{{ .Email }}</strong> and finish creating your workspace.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 40px 10px;text-align:center;">
+                <div style="padding:18px 20px;border:1px solid #818b84;border-radius:10px;background:#d9ded9;color:#111312;font-family:'Courier New',monospace;font-size:32px;line-height:1;letter-spacing:.24em;font-weight:700;">{{ .Token }}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 40px 8px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #272b29;border-radius:10px;background:#0b0d0c;">
+                  <tr>
+                    <td style="padding:17px 18px;font-family:'Courier New',monospace;font-size:11px;line-height:1.65;color:#89918c;">
+                      VERIFIED EMAIL → FREE / PRO CHOICE → YOUR DASHBOARD
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 40px 40px;">
+                <p style="margin:0;color:#777f7a;font-size:12px;line-height:1.65;">Return to the Stonecode verification popup and enter the code. Never share it with anyone.</p>
+                <p style="margin:20px 0 0;padding-top:18px;border-top:1px solid #272a28;color:#6f7772;font-size:11px;line-height:1.6;">You received this because an account was created with this email. If that was not you, ignore this message—your workspace will remain unverified.</p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:18px 0 0;font-family:'Courier New',monospace;font-size:10px;letter-spacing:.08em;color:#525955;">STONECODE · IDE-FIRST PROGRAMMING TUTOR</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -263,9 +263,9 @@ Validation rules:
 - Every course has at least one module.
 - Every module has at least one topic.
 - Every topic has at least one `theory` block and one `mcq` block.
-- MCQ blocks may contain one or many MCQ steps.
+- MCQ blocks must contain multiple MCQ steps.
 - Theory blocks may contain one or many theory steps.
-- Workshop blocks must contain two or more steps.
+- Workshop blocks must contain as much steps as possible ranging 5-15 steps with some are 20 steps.
 - Lab blocks are usually one independent task and do not require nested steps.
 - Project blocks are only for broader applied tasks.
 - File paths must be simple and safe: no absolute paths, no `..`, no shell paths.

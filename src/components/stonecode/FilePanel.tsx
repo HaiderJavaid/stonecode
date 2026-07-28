@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { Course, GeneratedCourseStep } from "@/data/courses";
+import { Course, GeneratedCourseStep, learningNavigationLabel, toGeneratedCourseContentV2 } from "@/data/courses";
 import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
 import { readDraggedNode, WorkspaceFileTree } from "@/components/stonecode/WorkspaceFileTree";
 import { StoneSurface } from "@/components/stonecode/StoneSurface";
 import { Link } from "react-router-dom";
+import { resolveCourseLessonSteps, stepsForGeneratedBlock } from "@/components/stonecode/lessonData";
+import { StonecodeLogoMark } from "@/components/stonecode/StonecodeBrand";
 
 export function FilePanel({
   active,
@@ -55,23 +57,14 @@ export function FilePanel({
 
   return (
     <StoneSurface as="aside" variant="side" className={`file-panel${active ? " is-visible" : ""}`} aria-label="Stonecode files" aria-hidden={!active}>
-      <div className="file-panel-brand">
-        <div className="file-panel-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <rect fill="none" height="18" rx="5" stroke="currentColor" strokeWidth="1.5" width="18" x="3" y="3" />
-            <path d="M10 8.6 7.7 12 10 15.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-            <path d="M14 8.6 16.3 12 14 15.4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-          </svg>
-        </div>
-        <strong>stonecode</strong>
-      </div>
+      <FilePanelBrand />
       <div className="file-panel-head">
         <span>Project</span>
         <strong>{activeCourse?.subject ?? "Courses"}</strong>
       </div>
       {activeCourse && (
         <div className="file-panel-tabs" aria-label="Left panel views">
-          <button className={activeTab === "course" ? "is-active" : ""} disabled={!activeCourse.courseContent} onClick={() => setActiveTab("course")} type="button">Modules</button>
+          <button className={activeTab === "course" ? "is-active" : ""} disabled={!activeCourse.courseContent} onClick={() => setActiveTab("course")} type="button">{learningNavigationLabel(activeCourse.experienceType)}</button>
           <button className={activeTab === "files" ? "is-active" : ""} onClick={() => setActiveTab("files")} type="button">Files</button>
         </div>
       )}
@@ -142,12 +135,24 @@ export function FilePanel({
   );
 }
 
+export function FilePanelBrand() {
+  return (
+    <div className="file-panel-brand">
+      <StonecodeLogoMark className="file-panel-mark" />
+      <strong>stonecode</strong>
+    </div>
+  );
+}
+
 function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activeLessonIndex: number; course: Course; onSelectLesson: (lessonIndex: number) => void }) {
   const [selectedModuleIndex, setSelectedModuleIndex] = useState<number | null>(null);
   const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
   const content = course.courseContent;
   const activePath = getActiveCoursePath(course, activeLessonIndex);
+  const lessonIndexBySectionId = new Map(
+    resolveCourseLessonSteps(course).map((lesson, lessonIndex) => [lesson.sectionId, lessonIndex])
+  );
 
   useEffect(() => {
     if (!activePath) return;
@@ -206,7 +211,8 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
     );
   }
 
-  const selectedModule = selectedModuleIndex === null ? null : content.modules[selectedModuleIndex];
+  const navigableContent = toGeneratedCourseContentV2(content);
+  const selectedModule = selectedModuleIndex === null ? null : navigableContent.modules[selectedModuleIndex];
   return (
     <div className="course-module-tree" aria-label="Course modules">
       {selectedModule ? (
@@ -221,9 +227,9 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
               kind: block.kind,
               title: block.title,
               summary: block.summary,
-              steps: block.steps.map((step, stepIndex) => ({
+              steps: stepsForGeneratedBlock(block).map((step, stepIndex) => ({
                 id: `${block.id}-${stepIndex}`,
-                lessonIndex: course.syllabus.find((section) => section.id === `${selectedModule.id}:${topic.id}:${block.id}:${stepIndex}`)?.lessonIndex,
+                lessonIndex: lessonIndexBySectionId.get(`${selectedModule.id}:${topic.id}:${block.id}:${stepIndex}`),
                 title: getStepTitle(step, stepIndex),
                 type: step.type
               }))
@@ -240,7 +246,7 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
           onToggleChapter={(chapterId) => setExpandedChapterId(expandedChapterId === chapterId ? null : chapterId)}
         />
       ) : (
-        content.modules.map((module, index) => (
+        navigableContent.modules.map((module, index) => (
           <button
             className={`course-module-node module-title-button${!module.unlocked ? " is-locked" : ""}${activePath?.moduleIndex === index ? " is-current" : ""}`}
             disabled={!module.unlocked}
@@ -353,15 +359,16 @@ function blockTypeLabel(kind: string | undefined, steps: Array<{ type: string }>
 function getActiveCoursePath(course: Course, activeLessonIndex: number) {
   const content = course.courseContent;
   if (!content) return null;
+  if (content.schemaVersion !== "course-content/v1") {
+    const navigableContent = toGeneratedCourseContentV2(content);
+    const activeLesson = resolveCourseLessonSteps(course)[activeLessonIndex];
+    if (!activeLesson?.moduleId || !activeLesson.topicId || !activeLesson.blockId) return null;
+    const moduleIndex = navigableContent.modules.findIndex((module) => module.id === activeLesson.moduleId);
+    if (moduleIndex < 0) return null;
+    return { moduleIndex, chapterId: activeLesson.topicId, blockId: activeLesson.blockId };
+  }
   const activeSection = course.syllabus.find((section) => section.lessonIndex === activeLessonIndex);
   if (!activeSection) return null;
-
-  if (content.schemaVersion === "course-content/v2") {
-    const [moduleId, chapterId, blockId] = activeSection.id.split(":");
-    const moduleIndex = content.modules.findIndex((module) => module.id === moduleId);
-    if (moduleIndex < 0) return null;
-    return { moduleIndex, chapterId, blockId };
-  }
 
   const chapterIndex = content.chapters.findIndex((chapter) =>
     chapter.sections.some((section) => activeSection.id === section.id || activeSection.id.startsWith(`${section.id}:`))
