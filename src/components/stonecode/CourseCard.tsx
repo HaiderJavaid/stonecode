@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { LessonCodeExercise, resolveCourseLessonSteps } from "@/components/stonecode/lessonData";
 import { renderMarkdown } from "@/components/stonecode/markdown";
 import { CourseCardProps } from "@/components/stonecode/types";
@@ -14,6 +15,8 @@ import { StoneSurface } from "@/components/stonecode/StoneSurface";
 import { buildWorkshopEditorDiagnostics } from "@/services/editorDiagnostics";
 import { normalizeWorkspacePath } from "@/services/workspaceFiles";
 import { learningExperienceLabel } from "@/data/courses";
+import { Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { loadTutorVisualAsset, requestTutorVisual, TutorVisualAttachmentV1 } from "@/services/tutorVisuals";
 
 const coursePanelRevealStorageKey = "stonecode.coursePanelRevealed.v1";
 const lessonIntroAnimationStorageKey = "stonecode.lessonIntroAnimated.v1";
@@ -46,8 +49,12 @@ export function CourseCard({
   progress,
   view,
   onOpen,
+  onDelete,
   onBack,
   onChat,
+  onApplyTutorPatch,
+  onRejectTutorPatch,
+  onUndoTutorPatch,
   requestLessonIntro,
   onExerciseHint,
   onExerciseTemplate,
@@ -81,7 +88,13 @@ export function CourseCard({
   const [isGrading, setIsGrading] = useState(false);
   const [isGeneratingNextSegment, setIsGeneratingNextSegment] = useState(false);
   const [segmentGenerationError, setSegmentGenerationError] = useState<string | null>(null);
+  const [tutorPatchError, setTutorPatchError] = useState<string | null>(null);
+  const [tutorVisual, setTutorVisual] = useState<TutorVisualAttachmentV1 | null>(null);
+  const [tutorVisualUrl, setTutorVisualUrl] = useState<string | null>(null);
+  const [isVisualViewerOpen, setIsVisualViewerOpen] = useState(false);
   const [completedExerciseKeys, setCompletedExerciseKeys] = useState<string[]>([]);
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
   const { progression, refresh: refreshProgression } = useProgression(active && view === "resume");
   const stableLessonKey = lesson.sectionId ?? `${safeLessonIndex}`;
   const lessonAnimationKey = `${course.id}:${stableLessonKey}:intro`;
@@ -96,6 +109,32 @@ export function CourseCard({
   const loadedCodeExerciseKeysRef = useRef<Set<string>>(new Set());
   const repairedExerciseWorkspaceKeysRef = useRef<Set<string>>(new Set());
   const lessonIntroKey = `lesson-intro:${stableLessonKey}`;
+  const completedLessonState = getCompletedLessonState();
+
+  useEffect(() => {
+    if (!active || view !== "resume" || !lesson.visualCue || !lesson.sectionId) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setTutorVisual(null);
+    setTutorVisualUrl(null);
+    requestTutorVisual(course.id, lesson.sectionId)
+      .then(async (visual) => {
+        objectUrl = await loadTutorVisualAsset(visual.contentUrl);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setTutorVisual(visual);
+        setTutorVisualUrl(objectUrl);
+      })
+      .catch(() => {
+        // Optional visual failures never block the text lesson.
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [active, course.id, lesson.sectionId, lesson.visualCue, view]);
   const lessonIntroMessage = useMemo(
     () => canvasMessages.find((message) => message.generatedKey === lessonIntroKey && message.role === "assistant") ?? null,
     [canvasMessages, lessonIntroKey]
@@ -151,10 +190,14 @@ export function CourseCard({
     if (!typingMessageId) onTypingComplete();
   }, [onTypingComplete, typingMessageId]);
 
+  useEffect(() => () => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+  }, []);
+
   useEffect(() => {
     setPanelContentReady(false);
     setSelectedOptionIndex(null);
-    const existingCompletion = getCompletedLessonState();
+    const existingCompletion = completedLessonState;
     setGradingFeedback(existingCompletion && lesson.kind !== "terminal-exercise" ? "Completed earlier." : null);
     setGradingPassed(existingCompletion && lesson.kind !== "terminal-exercise" ? true : null);
     setEditorExerciseFeedback(existingCompletion && lesson.kind === "terminal-exercise" ? "Completed earlier." : null);
@@ -174,7 +217,7 @@ export function CourseCard({
       setPanelContentReady(true);
     }, 460);
     return () => window.clearTimeout(timer);
-  }, [active, course.id, lessonAnimationKey, lesson.kind, onEditorDiagnosticsChange, stableLessonKey, view]);
+  }, [active, completedLessonState, course.id, lesson.codeExercise?.acceptanceCriteria, lessonAnimationKey, lesson.kind, onEditorDiagnosticsChange, stableLessonKey, view]);
 
   useEffect(() => {
     onEditorDiagnosticsChange([]);
@@ -188,7 +231,7 @@ export function CourseCard({
     if (requestedIntroKeysRef.current.has(lessonIntroKey)) return;
     requestedIntroKeysRef.current.add(lessonIntroKey);
     void requestLessonIntro(safeLessonIndex, lesson);
-  }, [active, lesson, safeLessonIndex, lessonIntroKey, lessonIntroMessage, requestLessonIntro, panelContentReady, view]);
+  }, [active, course.courseContent, lesson, lesson.generatedBlocks, safeLessonIndex, lessonIntroKey, lessonIntroMessage, requestLessonIntro, panelContentReady, view]);
 
   useEffect(() => {
     if (!active || view !== "resume" || !panelContentReady) return;
@@ -199,7 +242,7 @@ export function CourseCard({
     if (requestedChapterGenerationRef.current.has(requestKey)) return;
     requestedChapterGenerationRef.current.add(requestKey);
     void onGenerateChapter(chapterIndex);
-  }, [active, course.courseContent, course.id, lesson.chapterId, lesson.generatedBlocks?.length, onGenerateChapter, panelContentReady, view]);
+  }, [active, course.courseContent, course.id, lesson.chapterId, lesson.generatedBlocks, onGenerateChapter, panelContentReady, view]);
 
   useEffect(() => {
     if (!active || view !== "resume" || !panelContentReady || !lesson.codeExercise) return;
@@ -220,7 +263,7 @@ export function CourseCard({
       onLoadExerciseFile(lesson.codeExercise.filePath, lesson.codeExercise.starterCode, replaceExisting);
     }
     markExerciseStarterLoaded(loadKey);
-  }, [active, course.id, lesson.codeExercise, onLoadExerciseFile, onLoadExerciseWorkspace, panelContentReady, stableLessonKey, view]);
+  }, [active, course.id, lesson.blockStepIndex, lesson.codeExercise, onLoadExerciseFile, onLoadExerciseWorkspace, panelContentReady, stableLessonKey, view]);
 
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -303,9 +346,9 @@ export function CourseCard({
       setGradingPassed(Boolean(result.passed));
       setGradingFeedback(result.passed
         ? result.awarded
-          ? `Correct. +${result.xp} XP saved.`
-          : "Correct. Previously completed; no duplicate XP."
-        : result.feedback ?? "Not quite.");
+          ? `Nice. ${lesson.mcqExplanation ?? "That matches the topic."} +${result.xp} XP saved.`
+          : `Nice. ${lesson.mcqExplanation ?? "That matches the topic."} Previously completed; no duplicate XP.`
+        : `${result.feedback ?? "Try another angle."} ${lesson.mcqExplanation ?? "Use the explanation to connect this choice back to the topic."}`);
       if (result.passed) {
         markLessonExerciseCompleted("course-mcq", getExerciseKey(lesson, "mcq"));
         void refreshProgression();
@@ -399,6 +442,7 @@ export function CourseCard({
   const cardClassName = [
     "shadow-card",
     active ? "is-active" : "",
+    isClosing ? "is-closing" : "",
     active && (view === "resume" || view === "exercises") ? "has-chat-canvas" : "",
     active && view === "resume" && hasLessonXp ? "is-exercise-step" : "",
     hidden ? "is-hidden" : "",
@@ -407,41 +451,90 @@ export function CourseCard({
     .filter(Boolean)
     .join(" ");
 
+  function rememberCardOpenOffset(element: HTMLElement) {
+    const cards = element.closest(".cards");
+    if (!cards) return;
+    const offset = element.getBoundingClientRect().top - cards.getBoundingClientRect().top;
+    element.style.setProperty("--card-open-offset", `${Math.max(offset, 0)}px`);
+    element.style.setProperty("--card-open-top", `${cards.scrollTop}px`);
+  }
+
+  function closeCard() {
+    if (isClosing) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      onBack();
+      return;
+    }
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      onBack();
+      closeTimerRef.current = null;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setIsClosing(false));
+      });
+    }, 1120);
+  }
+
   return (
     <StoneSurface
       as="article"
       variant="card"
+      aria-hidden={hidden || undefined}
       aria-expanded={active}
       className={cardClassName}
       data-course-id={course.id}
-      style={{ "--card-y": `${cardIndex * 166}px` } as React.CSSProperties}
-      onClick={() => {
-        if (!active) onOpen();
+      style={{ "--card-y": `${cardIndex * 124}px` } as React.CSSProperties}
+      onClick={(event) => {
+        if (!active) {
+          rememberCardOpenOffset(event.currentTarget);
+          onOpen();
+        }
       }}
-      onKeyDown={onKeyDown}
+      onKeyDown={(event) => {
+        if (!active && (event.key === "Enter" || event.key === " ")) rememberCardOpenOffset(event.currentTarget);
+        onKeyDown(event);
+      }}
       role={active ? "region" : "button"}
       tabIndex={hidden ? -1 : 0}
     >
       <div className="card-top">
-        <div><span className={`experience-type-badge is-${course.experienceType}`}>{learningExperienceLabel(course.experienceType)}</span><h2>{course.title}</h2></div>
-        <button
-          className="card-back"
-          onClick={(event) => {
-            event.stopPropagation();
-            onBack();
-          }}
-          type="button"
-        >
-          Back
-        </button>
+        <div><span className={`experience-type-badge is-${course.experienceType}`}>{learningExperienceLabel(course.experienceType)}</span><h2>{course.title}</h2><small className="card-created-at">{formatCourseCreatedAt(course)}</small></div>
+        <div className="card-actions">
+          {active && view && <button
+            className="card-back"
+            disabled={isClosing}
+            onClick={(event) => {
+              event.stopPropagation();
+              onViewChange(null);
+            }}
+            type="button"
+          >
+            Back
+          </button>}
+          <button
+            aria-label={active ? `Close ${course.title}` : `Delete ${course.title}`}
+            className={active ? "card-close" : "card-delete"}
+            disabled={hidden || isClosing}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (active) closeCard();
+              else onDelete();
+            }}
+            title={active ? "Close learning path" : "Delete learning path"}
+            type="button"
+          >
+            {active ? <X aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+          </button>
+        </div>
       </div>
       <div className="rule" />
       <div className="card-summary">
-        <p>{course.description}</p>
-        <div className="progress">
-          <i style={{ width: `${progress}%` }} />
+        <div className="card-progress-row">
+          <div className="progress">
+            <i style={{ width: `${progress}%` }} />
+          </div>
+          <span className="percent">{progress}%</span>
         </div>
-        <span className="percent">{progress}%</span>
       </div>
       <div className="card-detail">
         {active ? (
@@ -450,8 +543,7 @@ export function CourseCard({
             isProjectStarted={isProjectStarted}
             lessonIndex={lessonIndex}
             onStartOrResume={() => {
-              if (isProjectStarted) onViewChange("resume");
-              else onStartProject(course);
+              onStartProject(course);
             }}
           />
         ) : (
@@ -466,9 +558,6 @@ export function CourseCard({
       </div>
       {active && view && (
         <div className={`selection-panel${view === "resume" ? " is-chat-canvas" : ""}${panelContentReady ? " is-content-ready" : ""}${view === "resume" && hasLessonXp ? " is-exercise-step" : ""}`} onClick={(event) => event.stopPropagation()}>
-          <button className="selection-back" onClick={() => onViewChange(null)} type="button">
-            Back
-          </button>
           {panelContentReady && view === "resume" && (
             <div className="lesson-panel ai-chat-panel">
               <div className="chat-canvas-head">
@@ -485,9 +574,15 @@ export function CourseCard({
                 <div className="ai-message assistant-message ai-response">
                   {lessonIntroMarkup}
                   {(isLessonIntroTyping || lessonIntroMessage?.id === typingMessageId) && <span className="typing-caret" />}
+                  {tutorVisual && tutorVisualUrl && (
+                    <button className="tutor-visual-attachment" onClick={() => setIsVisualViewerOpen(true)} type="button">
+                      <img alt={tutorVisual.altText} src={tutorVisualUrl} />
+                      <span>{tutorVisual.caption}<small>Open larger</small></span>
+                    </button>
+                  )}
                 </div>
                 {lesson.kind === "multiple-choice" && lessonIntroReady && (
-                  <div className="lesson-options is-entering" aria-label="Answer choices">
+                  <div className="lesson-options is-entering" aria-label="Topic practice choices">
                     {lesson.options?.map((option, index) => (
                       <button
                         className={[
@@ -521,14 +616,37 @@ export function CourseCard({
                     ) : (
                       <p>{message.content}</p>
                     )}
+                    {message.role === "assistant" && message.toolPayload?.patches.map((patch) => (
+                      <section className={`tutor-patch-card is-${patch.status}`} key={patch.toolCallId}>
+                        <span>Proposed code patch</span>
+                        <strong>{patch.summary}</strong>
+                        <p>{patch.patches.map((change) => change.path).join(" · ")}</p>
+                        <div>
+                          {patch.status === "pending" && <button onClick={() => {
+                            setTutorPatchError(null);
+                            try { onRejectTutorPatch(message.id, patch.toolCallId); } catch (caughtError) { setTutorPatchError(caughtError instanceof Error ? caughtError.message : "Could not reject patch."); }
+                          }} type="button">Reject</button>}
+                          {patch.status === "pending" && <button className="is-primary" onClick={() => {
+                            setTutorPatchError(null);
+                            try { onApplyTutorPatch(message.id, patch.toolCallId); } catch (caughtError) { setTutorPatchError(caughtError instanceof Error ? caughtError.message : "Could not apply patch."); }
+                          }} type="button">Apply</button>}
+                          {patch.status === "applied" && <button onClick={() => {
+                            setTutorPatchError(null);
+                            try { onUndoTutorPatch(message.id, patch.toolCallId); } catch (caughtError) { setTutorPatchError(caughtError instanceof Error ? caughtError.message : "Could not undo patch."); }
+                          }} type="button">Undo</button>}
+                          {patch.status !== "pending" && <em>{patch.status}</em>}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 ))}
+                {tutorPatchError && <div className="ai-message assistant-message workshop-check-message"><strong>Patch not applied</strong><p>{tutorPatchError}</p></div>}
                 {lesson.codeExercise && (isGrading || editorExerciseFeedback || lesson.codeExercise.requiresPreview || lesson.codeExercise.requiresTerminal) && (
                   <div className={`ai-message assistant-message workshop-check-message${editorExerciseComplete ? " is-correct" : ""}`} aria-live="polite">
                     <strong>{lesson.codeExercise.filePath} · {isGrading ? "checking" : editorExerciseFeedback ? "check result" : "workspace note"}</strong>
                     {isGrading && <p>Checking the current editor code against this step.</p>}
                     {!isGrading && editorExerciseFeedback && <p>{editorExerciseFeedback}</p>}
-                    {lesson.codeExercise.requiresPreview && <p>Use Visual to inspect the synchronized project scene. This preview updates without running Terminal.</p>}
+                    {lesson.codeExercise.requiresPreview && <p>Use Output to inspect the real browser result for this step.</p>}
                     {lesson.codeExercise.requiresTerminal && <p>Use Terminal to run {lesson.codeExercise.filePath} and inspect its output.</p>}
                   </div>
                 )}
@@ -672,6 +790,9 @@ export function CourseCard({
           )}
         </div>
       )}
+      {isVisualViewerOpen && tutorVisual && tutorVisualUrl && (
+        <TutorVisualViewer attachment={tutorVisual} onClose={() => setIsVisualViewerOpen(false)} src={tutorVisualUrl} />
+      )}
     </StoneSurface>
   );
 
@@ -711,6 +832,81 @@ export function CourseCard({
   }
 }
 
+function TutorVisualViewer({ attachment, onClose, src }: { attachment: TutorVisualAttachmentV1; onClose: () => void; src: string }) {
+  const [zoom, setZoom] = useState(1);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+    const handleKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), [href], [tabindex]:not([tabindex='-1'])") ?? [])];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      returnFocusRef.current?.focus();
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="tutor-visual-viewer" onMouseDown={(event) => event.target === event.currentTarget && onClose()} role="presentation">
+      <section aria-describedby="tutor-visual-caption" aria-label="Enlarged tutor visual" aria-modal="true" ref={dialogRef} role="dialog">
+        <header>
+          <p id="tutor-visual-caption">{attachment.caption}</p>
+          <div>
+            <button aria-label="Zoom out" disabled={zoom <= 0.75} onClick={() => setZoom((value) => Math.max(0.75, value - 0.25))} type="button"><ZoomOut /></button>
+            <span>{Math.round(zoom * 100)}%</span>
+            <button aria-label="Zoom in" disabled={zoom >= 3} onClick={() => setZoom((value) => Math.min(3, value + 0.25))} type="button"><ZoomIn /></button>
+            <button aria-label="Close visual" onClick={onClose} ref={closeButtonRef} type="button"><X /></button>
+          </div>
+        </header>
+        <div
+          className="tutor-visual-stage"
+          onPointerDown={(event) => {
+            const stage = stageRef.current;
+            if (!stage) return;
+            dragRef.current = { x: event.clientX, y: event.clientY, left: stage.scrollLeft, top: stage.scrollTop };
+            stage.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const stage = stageRef.current;
+            const drag = dragRef.current;
+            if (!stage || !drag) return;
+            stage.scrollLeft = drag.left - (event.clientX - drag.x);
+            stage.scrollTop = drag.top - (event.clientY - drag.y);
+          }}
+          onPointerUp={() => { dragRef.current = null; }}
+          ref={stageRef}
+        >
+          <img alt={attachment.altText} src={src} style={{ transform: `scale(${zoom})` }} />
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function getNextButtonLabel({
   nextCrossesModule,
   nextLesson,
@@ -727,6 +923,13 @@ function getNextButtonLabel({
   if (nextStartsNewChapter) return "Next topic";
   if (nextStartsNewBlock) return "Next block";
   return "Next section";
+}
+
+function formatCourseCreatedAt(course: CourseCardProps["course"]) {
+  if (!course.createdAt) return `Created ${course.updatedAt}`;
+  const created = new Date(course.createdAt);
+  if (Number.isNaN(created.getTime())) return `Created ${course.updatedAt}`;
+  return `Created ${created.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
 function mergeExerciseWorkspaceFiles(exercise: LessonCodeExercise) {

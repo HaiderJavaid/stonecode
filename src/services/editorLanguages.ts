@@ -43,31 +43,35 @@ export type EditorLanguageInfo = {
   runNote?: string;
 };
 
+function judge0RunNote(language: string) {
+  return `${language} runs in the configured Judge0 sandbox when its reviewed runtime is available.`;
+}
+
 const languageCatalog: EditorLanguageInfo[] = [
   { id: "javascript", displayName: "JavaScript", defaultFilePath: "main.js", extensions: ["js", "jsx", "mjs", "cjs"], canRunInBrowser: true, canPreviewVisual: true },
   { id: "typescript", displayName: "TypeScript", defaultFilePath: "main.ts", extensions: ["ts", "tsx"], canRunInBrowser: false, canPreviewVisual: false, runNote: "TypeScript editing is supported. Browser execution needs transpilation, which is not in the MVP runner yet." },
-  { id: "python", displayName: "Python", defaultFilePath: "main.py", extensions: ["py", "pyw"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Python editing is supported. Running Python needs the future backend sandbox." },
+  { id: "python", displayName: "Python", defaultFilePath: "main.py", extensions: ["py", "pyw"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Python") },
   { id: "html", displayName: "HTML", defaultFilePath: "index.html", extensions: ["html", "htm"], canRunInBrowser: false, canPreviewVisual: true },
   { id: "css", displayName: "CSS", defaultFilePath: "styles.css", extensions: ["css"], canRunInBrowser: false, canPreviewVisual: true },
   { id: "json", displayName: "JSON", defaultFilePath: "data.json", extensions: ["json"], canRunInBrowser: false, canPreviewVisual: false },
   { id: "markdown", displayName: "Markdown", defaultFilePath: "notes.md", extensions: ["md", "mdx"], canRunInBrowser: false, canPreviewVisual: false },
   { id: "sql", displayName: "SQL", defaultFilePath: "query.sql", extensions: ["sql"], canRunInBrowser: false, canPreviewVisual: false },
-  { id: "java", displayName: "Java", defaultFilePath: "Main.java", extensions: ["java"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Java editing is supported. Running Java needs the future backend sandbox." },
-  { id: "cpp", displayName: "C++", defaultFilePath: "main.cpp", extensions: ["cpp", "cc", "cxx", "hpp"], canRunInBrowser: false, canPreviewVisual: false, runNote: "C++ editing is supported. Compiling C++ needs the future backend sandbox." },
-  { id: "c", displayName: "C", defaultFilePath: "main.c", extensions: ["c", "h"], canRunInBrowser: false, canPreviewVisual: false, runNote: "C editing is supported. Compiling C needs the future backend sandbox." },
-  { id: "csharp", displayName: "C#", defaultFilePath: "Program.cs", extensions: ["cs"], canRunInBrowser: false, canPreviewVisual: false, runNote: "C# editing is supported. Running C# needs the future backend sandbox." },
-  { id: "go", displayName: "Go", defaultFilePath: "main.go", extensions: ["go"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Go editing is supported. Running Go needs the future backend sandbox." },
-  { id: "rust", displayName: "Rust", defaultFilePath: "main.rs", extensions: ["rs"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Rust editing is supported. Running Rust needs the future backend sandbox." },
-  { id: "php", displayName: "PHP", defaultFilePath: "index.php", extensions: ["php"], canRunInBrowser: false, canPreviewVisual: false, runNote: "PHP editing is supported. Running PHP needs the future backend sandbox." },
-  { id: "ruby", displayName: "Ruby", defaultFilePath: "main.rb", extensions: ["rb"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Ruby editing is supported. Running Ruby needs the future backend sandbox." },
-  { id: "swift", displayName: "Swift", defaultFilePath: "main.swift", extensions: ["swift"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Swift editing is supported. Running Swift needs the future backend sandbox." },
-  { id: "kotlin", displayName: "Kotlin", defaultFilePath: "Main.kt", extensions: ["kt", "kts"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Kotlin editing is supported. Running Kotlin needs the future backend sandbox." },
-  { id: "dart", displayName: "Dart", defaultFilePath: "main.dart", extensions: ["dart"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Dart editing is supported. Running Dart needs the future backend sandbox." },
-  { id: "r", displayName: "R", defaultFilePath: "main.R", extensions: ["r"], canRunInBrowser: false, canPreviewVisual: false, runNote: "R editing is supported. Running R needs the future backend sandbox." },
-  { id: "julia", displayName: "Julia", defaultFilePath: "main.jl", extensions: ["jl"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Julia editing is supported. Running Julia needs the future backend sandbox." },
-  { id: "fortran", displayName: "Fortran", defaultFilePath: "main.f90", extensions: ["f", "f90", "f95"], canRunInBrowser: false, canPreviewVisual: false, runNote: "Fortran editing is supported. Running Fortran needs the future backend sandbox." },
-  { id: "cobol", displayName: "COBOL", defaultFilePath: "main.cob", extensions: ["cob", "cbl"], canRunInBrowser: false, canPreviewVisual: false, runNote: "COBOL editing is supported. Running COBOL needs the future backend sandbox." },
-  { id: "basic", displayName: "BASIC", defaultFilePath: "main.bas", extensions: ["bas", "vb"], canRunInBrowser: false, canPreviewVisual: false, runNote: "BASIC editing is supported. Running BASIC needs the future backend sandbox." },
+  { id: "java", displayName: "Java", defaultFilePath: "Main.java", extensions: ["java"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Java") },
+  { id: "cpp", displayName: "C++", defaultFilePath: "main.cpp", extensions: ["cpp", "cc", "cxx", "hpp"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("C++") },
+  { id: "c", displayName: "C", defaultFilePath: "main.c", extensions: ["c", "h"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("C") },
+  { id: "csharp", displayName: "C#", defaultFilePath: "Program.cs", extensions: ["cs"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("C#") },
+  { id: "go", displayName: "Go", defaultFilePath: "main.go", extensions: ["go"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Go") },
+  { id: "rust", displayName: "Rust", defaultFilePath: "main.rs", extensions: ["rs"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Rust") },
+  { id: "php", displayName: "PHP", defaultFilePath: "index.php", extensions: ["php"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("PHP") },
+  { id: "ruby", displayName: "Ruby", defaultFilePath: "main.rb", extensions: ["rb"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Ruby") },
+  { id: "swift", displayName: "Swift", defaultFilePath: "main.swift", extensions: ["swift"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Swift") },
+  { id: "kotlin", displayName: "Kotlin", defaultFilePath: "Main.kt", extensions: ["kt", "kts"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Kotlin") },
+  { id: "dart", displayName: "Dart", defaultFilePath: "main.dart", extensions: ["dart"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Dart") },
+  { id: "r", displayName: "R", defaultFilePath: "main.R", extensions: ["r"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("R") },
+  { id: "julia", displayName: "Julia", defaultFilePath: "main.jl", extensions: ["jl"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Julia") },
+  { id: "fortran", displayName: "Fortran", defaultFilePath: "main.f90", extensions: ["f", "f90", "f95"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("Fortran") },
+  { id: "cobol", displayName: "COBOL", defaultFilePath: "main.cob", extensions: ["cob", "cbl"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("COBOL") },
+  { id: "basic", displayName: "BASIC", defaultFilePath: "main.bas", extensions: ["bas", "vb"], canRunInBrowser: false, canPreviewVisual: false, runNote: judge0RunNote("BASIC") },
   { id: "shell", displayName: "Shell", defaultFilePath: "script.sh", extensions: ["sh", "bash", "zsh"], canRunInBrowser: false, canPreviewVisual: false },
   { id: "yaml", displayName: "YAML", defaultFilePath: "config.yaml", extensions: ["yml", "yaml"], canRunInBrowser: false, canPreviewVisual: false },
   { id: "xml", displayName: "XML", defaultFilePath: "document.xml", extensions: ["xml"], canRunInBrowser: false, canPreviewVisual: false },
@@ -146,7 +150,7 @@ export function defaultStarterCode(pathOrLanguage: string | null | undefined) {
     julia: "message = \"Value: stone\"\nprintln(message)\n",
     fortran: "program main\n  implicit none\n  print *, \"Value: stone\"\nend program main\n",
     cobol: "IDENTIFICATION DIVISION.\nPROGRAM-ID. MAIN.\nPROCEDURE DIVISION.\n    DISPLAY \"Value: stone\".\n    STOP RUN.\n",
-    basic: "LET message$ = \"Value: stone\"\nPRINT message$\n",
+    basic: "Dim message As String = \"Value: stone\"\nPrint message\n",
     html: "<!doctype html>\n<html>\n  <body>\n    <h1>Value: stone</h1>\n  </body>\n</html>\n",
     css: ".message {\n  color: #8ee8ad;\n}\n"
   };

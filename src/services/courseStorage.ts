@@ -1,5 +1,6 @@
 import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
 import { Course, experienceTypeFromContent } from "@/data/courses";
+import type { TutorToolPayload } from "@/ai/tutorTools";
 
 export type StoredChatMessage = {
   id: string;
@@ -8,6 +9,7 @@ export type StoredChatMessage = {
   lessonIndex?: number;
   messageKind?: "chat" | "lesson-intro" | "exercise-hint";
   generatedKey?: string | null;
+  toolPayload?: TutorToolPayload | null;
 };
 
 export type StoredCourseState = {
@@ -82,7 +84,7 @@ export function createStoredMessage(
   role: StoredChatMessage["role"],
   content: string,
   lessonIndex?: number,
-  options: Pick<StoredChatMessage, "messageKind" | "generatedKey"> = {}
+  options: Pick<StoredChatMessage, "messageKind" | "generatedKey" | "toolPayload"> = {}
 ): StoredChatMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -90,6 +92,7 @@ export function createStoredMessage(
     content,
     lessonIndex,
     messageKind: options.messageKind ?? "chat",
-    generatedKey: options.generatedKey ?? null
+    generatedKey: options.generatedKey ?? null,
+    toolPayload: options.toolPayload ?? null
   };
 }

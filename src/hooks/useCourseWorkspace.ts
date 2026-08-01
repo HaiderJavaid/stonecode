@@ -5,7 +5,6 @@ import { AiFileEdit, applyAiFileEdits } from "@/ai/fileEditCommands";
 import { Course, GeneratedExerciseWorkspaceFile, GeneratedLearningContent, buildSyllabusFromGeneratedContent } from "@/data/courses";
 import { requestGeneratedChapter, requestGeneratedProjectMilestone } from "@/services/courseGeneration";
 import {
-  clearCourseState,
   defaultStoredCourseState,
   loadCourseState,
   saveCourseState,
@@ -20,8 +19,8 @@ import {
 } from "@/services/workspaceFiles";
 import {
   createSupabaseCourse,
+  deleteSupabaseCourse,
   loadSupabaseCourseState,
-  resetSupabaseCourses,
   saveSupabaseWorkspaceState
 } from "@/services/supabaseCourseStorage";
 import { ActiveState } from "@/components/stonecode/types";
@@ -46,6 +45,12 @@ export function useCourseWorkspace() {
     selectedIndex: number;
   } | null>(null);
   const [isRemoteLoaded, setIsRemoteLoaded] = useState(false);
+  const [leftPanelViewByCourse, setLeftPanelViewByCourse] = useState<Record<string, "course" | "files">>({});
+  const [startedCourseIds, setStartedCourseIds] = useState<Record<string, true>>(() => Object.fromEntries(
+    Object.entries((initialStateRef.current ?? defaultStoredCourseState).lessonViewByCourse)
+      .filter(([, view]) => view === "resume" || view === "exercises")
+      .map(([id]) => [id, true])
+  ));
   const syncTimerRef = useRef<number | null>(null);
   const syncErrorRef = useRef<string | null>(null);
   const isSupabaseBacked = isConfigured && Boolean(user);
@@ -61,6 +66,9 @@ export function useCourseWorkspace() {
   const activeFolders = activeCourse ? storedState.workspaceFoldersByCourse[activeCourse.id] ?? [] : [];
   const selectedFile = activeFiles[active?.fileIndex ?? 0] ?? null;
   const activeCourseCount = userCourses.filter((course) => course.experienceType !== "exercise").length;
+  const activeLeftPanelView = activeCourse
+    ? leftPanelViewByCourse[activeCourse.id] ?? (startedCourseIds[activeCourse.id] ? "files" : "course")
+    : "files";
 
   function getCourseFiles(course: Course, state = storedState) {
     return state.workspaceFilesByCourse[course.id] ?? [];
@@ -122,6 +130,11 @@ export function useCourseWorkspace() {
       .then((remoteState) => {
         if (isCancelled) return;
         setStoredState(remoteState);
+        setStartedCourseIds(Object.fromEntries(
+          Object.entries(remoteState.lessonViewByCourse)
+            .filter(([, view]) => view === "resume" || view === "exercises")
+            .map(([id]) => [id, true])
+        ));
         setIsRemoteLoaded(true);
       })
       .catch((error) => {
@@ -207,6 +220,10 @@ export function useCourseWorkspace() {
     setStoredState((current) => ({
       ...current,
       activeCourseId: course.id,
+      lessonViewByCourse: {
+        ...current.lessonViewByCourse,
+        [course.id]: null
+      },
       selectedFilesByCourse: {
         ...current.selectedFilesByCourse,
         [course.id]: fileIndex
@@ -222,10 +239,14 @@ export function useCourseWorkspace() {
         ...current.coursesById,
         [nextCourse.id]: nextCourse
       },
-      courseOrder: [...current.courseOrder.filter((id) => id !== nextCourse.id), nextCourse.id],
+      courseOrder: [nextCourse.id, ...current.courseOrder.filter((id) => id !== nextCourse.id)],
       selectedFilesByCourse: {
         ...current.selectedFilesByCourse,
         [nextCourse.id]: 0
+      },
+      lessonViewByCourse: {
+        ...current.lessonViewByCourse,
+        [nextCourse.id]: null
       }
     }));
     navigate(`/courses/${nextCourse.id}`);
@@ -233,14 +254,39 @@ export function useCourseWorkspace() {
     setActive({ courseId: nextCourse.id, fileIndex: 0 });
   }
 
+  async function openGeneratedCourse(courseId: string) {
+    if (!isSupabaseBacked || !user) throw new Error("Generated courses require an authenticated workspace.");
+    const remoteState = await loadSupabaseCourseState(user);
+    const course = remoteState.coursesById[courseId];
+    if (!course) throw new Error("Generated learning path was not found after completion.");
+    remoteState.activeCourseId = courseId;
+    remoteState.selectedFilesByCourse[courseId] = remoteState.selectedFilesByCourse[courseId] ?? 0;
+    remoteState.lessonViewByCourse[courseId] = null;
+    setStoredState(remoteState);
+    setIsRemoteLoaded(true);
+    writeLastOpenCourseId(courseId);
+    setActive({ courseId, fileIndex: remoteState.selectedFilesByCourse[courseId] });
+    navigate(`/courses/${courseId}`);
+  }
+
   function startProject(course: Course) {
+    const existingFiles = getCourseFiles(course);
+    const isFirstStart = !startedCourseIds[course.id];
+    const selectedIndex = isFirstStart
+      ? 0
+      : Math.min(storedState.selectedFilesByCourse[course.id] ?? 0, Math.max(existingFiles.length - 1, 0));
+    setLeftPanelViewByCourse((current) => ({
+      ...current,
+      [course.id]: isFirstStart && course.courseContent ? "course" : "files"
+    }));
+    setStartedCourseIds((current) => ({ ...current, [course.id]: true }));
     setStoredState((current) => ({
       ...current,
       workspaceFilesByCourse: {
         ...current.workspaceFilesByCourse,
         [course.id]: current.workspaceFilesByCourse[course.id]?.length
           ? current.workspaceFilesByCourse[course.id]
-          : [{ path: defaultWhiteboardPath(course), content: "" }]
+          : [{ path: defaultWorkspacePath(course), content: "" }]
       },
       workspaceFoldersByCourse: {
         ...current.workspaceFoldersByCourse,
@@ -248,14 +294,14 @@ export function useCourseWorkspace() {
       },
       selectedFilesByCourse: {
         ...current.selectedFilesByCourse,
-        [course.id]: 0
+        [course.id]: selectedIndex
       },
       lessonViewByCourse: {
         ...current.lessonViewByCourse,
         [course.id]: "resume"
       }
     }));
-    setActive({ courseId: course.id, fileIndex: 0 });
+    setActive({ courseId: course.id, fileIndex: selectedIndex });
     writeLastOpenCourseId(course.id);
   }
 
@@ -547,16 +593,14 @@ export function useCourseWorkspace() {
     return true;
   }
 
-  async function resetDemoState() {
-    if (isSupabaseBacked && user) {
-      await resetSupabaseCourses(user);
+  async function deleteLearningCourse(course: Course) {
+    if (isSupabaseBacked && user) await deleteSupabaseCourse(user, course.id);
+    setStoredState((current) => removeCourseFromState(current, course.id));
+    if (active?.courseId === course.id) {
+      writeLastOpenCourseId(null);
+      setActive(null);
+      navigate("/dashboard");
     }
-
-    clearCourseState();
-    writeLastOpenCourseId(null);
-    setStoredState(defaultStoredCourseState);
-    navigate("/dashboard");
-    setActive(null);
   }
 
   function handleCardKey(event: KeyboardEvent<HTMLElement>, course: Course) {
@@ -578,6 +622,7 @@ export function useCourseWorkspace() {
   return {
     active,
     activeCourse,
+    activeLeftPanelView,
     userCourses,
     activeFiles,
     activeFolders,
@@ -589,6 +634,7 @@ export function useCourseWorkspace() {
     getCourseFiles,
     openCourse,
     addLearningCourse,
+    openGeneratedCourse,
     startProject,
     closeCourse,
     selectFile,
@@ -605,9 +651,29 @@ export function useCourseWorkspace() {
     applyAiEdits,
     undoLastAiEdit,
     canUndoAiEdit: Boolean(lastAiEditSnapshot),
-    resetDemoState,
+    deleteLearningCourse,
     handleCardKey
   };
+}
+
+function removeCourseFromState(state: StoredCourseState, courseId: string): StoredCourseState {
+  return {
+    ...state,
+    activeCourseId: state.activeCourseId === courseId ? null : state.activeCourseId,
+    coursesById: withoutKey(state.coursesById, courseId),
+    courseOrder: state.courseOrder.filter((id) => id !== courseId),
+    selectedFilesByCourse: withoutKey(state.selectedFilesByCourse, courseId),
+    chatByCourse: withoutKey(state.chatByCourse, courseId),
+    fileOverridesByCourse: withoutKey(state.fileOverridesByCourse, courseId),
+    workspaceFilesByCourse: withoutKey(state.workspaceFilesByCourse, courseId),
+    workspaceFoldersByCourse: withoutKey(state.workspaceFoldersByCourse, courseId),
+    lessonViewByCourse: withoutKey(state.lessonViewByCourse, courseId),
+    lessonStepByCourse: withoutKey(state.lessonStepByCourse, courseId)
+  };
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string) {
+  return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key)) as Record<string, T>;
 }
 
 function workspaceFolderPaths(filePath: string) {
@@ -652,8 +718,7 @@ function getBaseName(path: string) {
   return path.split("/").at(-1) ?? path;
 }
 
-function defaultWhiteboardPath(course: Course) {
+function defaultWorkspacePath(course: Course) {
   const language = course.languages[0] ?? course.subject;
-  const path = defaultFilePath(language);
-  return path.startsWith("main.") ? path.replace("main.", "whiteboard.") : path;
+  return defaultFilePath(language);
 }

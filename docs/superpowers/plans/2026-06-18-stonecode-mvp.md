@@ -1,5 +1,7 @@
 # Stonecode Production Paid Beta Plan
 
+> Historical foundation plan, superseded on 2026-07-29 by `docs/PROJECT.md`, `docs/TASKS.md`, and `docs/project-architecture.md`. Its completed persistence/auth/billing work remains historical context; current product and rollout rules live in those documents.
+
 This replaces the earlier local MVP plan. The historical Stage 3/4 local persistence work is complete.
 
 ## Goal

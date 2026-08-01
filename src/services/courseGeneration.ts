@@ -1,5 +1,21 @@
 import { GeneratedCourseContent, GeneratedGuidedProjectContentV1, GeneratedLearningContent, LearningBrief } from "@/data/courses";
-import { supabase } from "@/lib/supabaseClient";
+import { authenticatedJson } from "@/services/authenticatedApi";
+
+export const pendingGenerationJobStorageKey = "stonecode.pendingGenerationJob.v1";
+
+export function rememberPendingGenerationJob(jobId: string) {
+  if (typeof window !== "undefined") window.localStorage.setItem(pendingGenerationJobStorageKey, jobId);
+}
+
+export function readPendingGenerationJob() {
+  return typeof window === "undefined" ? null : window.localStorage.getItem(pendingGenerationJobStorageKey);
+}
+
+export function clearPendingGenerationJob(jobId?: string) {
+  if (typeof window === "undefined") return;
+  if (jobId && window.localStorage.getItem(pendingGenerationJobStorageKey) !== jobId) return;
+  window.localStorage.removeItem(pendingGenerationJobStorageKey);
+}
 
 export type CourseDiscoveryTurn = {
   status: "clarifying" | "ready" | "unsupported";
@@ -12,11 +28,92 @@ export type LearningDiscoveryTurn = {
   status: "clarifying" | "ready" | "unsupported";
   reply: string;
   suggestions: string[];
+  selectionMode?: "single" | "multi";
   brief: LearningBrief | null;
   draftBrief: Partial<LearningBrief> | null;
   missingFields: string[];
+  questionField: string | null;
+  responseTurn: number;
   nextAction: "clarify" | "confirm" | "assessment_offer" | "assessment_plan";
 };
+
+export type LearningProposalItem = {
+  id: string;
+  title: string;
+  summary: string;
+  stepCount: number;
+  fileCount: number;
+};
+
+export type LearningProposal = {
+  id: string;
+  schemaVersion: "learning-proposal/v1";
+  status: "draft" | "finalized" | "cancelled" | "expired";
+  type: "course" | "project" | "exercise";
+  domainId: LearningBrief["domainId"];
+  technologyId: string | null;
+  focusAreas: string[];
+  title: string;
+  summary: string;
+  technology: string;
+  outcomes: string[];
+  items: LearningProposalItem[];
+  totals: { modules: number; steps: number; files: number; exercises: number };
+  creditQuote: { version: "credit-quote/v1"; credits: number; currency: "stonecode_credit" };
+  quoteId: string;
+  brief: LearningBrief;
+};
+
+export type GenerationJob = {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  progress: number;
+  result_course_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+};
+
+export function generationJobFailureMessage(job: GenerationJob) {
+  const reference = job.id ? ` Reference: ${job.id.slice(0, 8)}.` : "";
+  if (job.error_code === "generation_validation_failed") {
+    return `Stonecode could not finish this course safely after automatic repair. Reserved Stones were returned.${reference}`;
+  }
+  if (job.error_code === "generation_scope_mismatch") {
+    return `Stonecode could not deliver every module promised in the approved outline. Nothing partial was saved and reserved Stones were returned.${reference}`;
+  }
+  if (job.error_code === "generation_job_stale") {
+    return `Course generation stopped responding. Reserved Stones were returned.${reference}`;
+  }
+  return job.error_message || `Learning-path generation failed. Reserved Stones were returned.${reference}`;
+}
+
+export async function requestProductFeatures(): Promise<{ features: Record<string, boolean> }> {
+  const response = await fetch("/api/features");
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.error ?? "Failed to load product features.");
+  return payload;
+}
+
+export async function requestLearningProposal(input: { brief: LearningBrief; idempotencyKey: string }): Promise<{ proposal: LearningProposal }> {
+  return requestLearningJson("/api/learning/proposals", input, "create a learning proposal");
+}
+
+export async function patchLearningProposal(input: { proposalId: string; proposal: Partial<LearningProposal>; idempotencyKey: string }): Promise<{ proposal: LearningProposal }> {
+  return requestLearningJson(`/api/learning/proposals/${encodeURIComponent(input.proposalId)}`, {
+    proposal: input.proposal,
+    idempotencyKey: input.idempotencyKey
+  }, "update the learning proposal", "PATCH");
+}
+
+export async function finalizeLearningProposal(input: { proposalId: string; idempotencyKey: string }): Promise<{ job: GenerationJob }> {
+  return requestLearningJson(`/api/learning/proposals/${encodeURIComponent(input.proposalId)}/finalize`, {
+    idempotencyKey: input.idempotencyKey
+  }, "finalize the learning proposal");
+}
+
+export async function requestGenerationJob(jobId: string): Promise<{ job: GenerationJob }> {
+  return authenticatedJson(`/api/generation-jobs/${encodeURIComponent(jobId)}`, {}, "check generation progress");
+}
 
 export async function requestLearningDiscoveryTurn(input: {
   messages: Array<{ role: "assistant" | "user"; content: string }>;
@@ -29,36 +126,26 @@ export async function requestCourseDiscoveryTurn(input: {
   messages: Array<{ role: "assistant" | "user"; content: string }>;
   turn: number;
 }): Promise<{ discovery: CourseDiscoveryTurn; source: "ai" }> {
-  const token = await readAccessToken("discover a course goal");
-  const response = await fetch("/api/course-generation/discovery-turn", {
+  return authenticatedJson("/api/course-generation/discovery-turn", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to continue course discovery.");
-  return payload;
+  }, "discover a course goal");
 }
 
 export async function requestCourseSetupReply(input: {
   messages: Array<{ role: "assistant" | "user"; content: string }>;
   answerCount: number;
 }): Promise<{ reply: string; source: "ai" }> {
-  const token = await readAccessToken("continue course setup");
-  const response = await fetch("/api/course-generation/setup-reply", {
+  return authenticatedJson("/api/course-generation/setup-reply", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to continue course setup.");
-  return payload;
+  }, "continue course setup");
 }
 
 export async function requestGeneratedCoursePreview(input: {
@@ -67,18 +154,13 @@ export async function requestGeneratedCoursePreview(input: {
   outcome: string;
   amendments: string[];
 }): Promise<{ content: GeneratedCourseContent; source: "ai" }> {
-  const token = await readAccessToken("generate a course");
-  const response = await fetch("/api/course-generation/preview", {
+  return authenticatedJson("/api/course-generation/preview", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to generate course preview.");
-  return payload;
+  }, "generate a course preview");
 }
 
 export type AssessmentAnswer = {
@@ -123,18 +205,13 @@ export type AssessmentPlan = {
 export async function requestAssessmentPlan(input: {
   subject: string;
 }): Promise<{ plan: AssessmentPlan; source: "ai" }> {
-  const token = await readAccessToken("plan an assessment");
-  const response = await fetch("/api/course-generation/assessment-plan", {
+  return authenticatedJson("/api/course-generation/assessment-plan", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to plan assessment.");
-  return payload;
+  }, "plan an assessment");
 }
 
 export async function requestLearningAssessmentPlan(input: { brief: LearningBrief }): Promise<{ plan: AssessmentPlan; source: "ai" }> {
@@ -146,18 +223,13 @@ export async function requestAssessmentQuestion(input: {
   step: number;
   answers: AssessmentAnswer[];
 }): Promise<{ question: AssessmentQuestion; source: "ai" }> {
-  const token = await readAccessToken("generate an assessment question");
-  const response = await fetch("/api/course-generation/assessment-question", {
+  return authenticatedJson("/api/course-generation/assessment-question", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to generate assessment question.");
-  return payload;
+  }, "generate an assessment question");
 }
 
 export async function requestLearningAssessmentQuestion(input: {
@@ -172,18 +244,13 @@ export async function requestAssessmentReview(input: {
   subject: string;
   answers: AssessmentAnswer[];
 }): Promise<{ review: AssessmentReview; source: "ai" }> {
-  const token = await readAccessToken("review assessment");
-  const response = await fetch("/api/course-generation/assessment-review", {
+  return authenticatedJson("/api/course-generation/assessment-review", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to review assessment.");
-  return payload;
+  }, "review an assessment");
 }
 
 export async function requestLearningAssessmentReview(input: {
@@ -214,18 +281,13 @@ export async function requestGeneratedCourseFromAssessment(input: {
   answers: AssessmentAnswer[];
   assessmentReview: AssessmentReview;
 }): Promise<{ content: GeneratedCourseContent; source: "ai"; warnings?: Array<{ code: string; message: string }> }> {
-  const token = await readAccessToken("generate a course from assessment");
-  const response = await fetch("/api/course-generation/from-assessment", {
+  return authenticatedJson("/api/course-generation/from-assessment", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to generate course.");
-  return payload;
+  }, "generate a course from assessment");
 }
 
 export async function requestGeneratedChapter(input: {
@@ -233,39 +295,21 @@ export async function requestGeneratedChapter(input: {
   content: GeneratedCourseContent;
   chapterIndex: number;
 }): Promise<{ content: GeneratedCourseContent; source: "ai" }> {
-  const token = await readAccessToken("generate a chapter");
-  const response = await fetch("/api/course-generation/chapter", {
+  return authenticatedJson("/api/course-generation/chapter", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Failed to generate chapter.");
-  return payload;
+  }, "generate a chapter");
 }
 
-async function readAccessToken(action: string): Promise<string> {
-  if (!supabase) throw new Error("Supabase is not configured.");
-  const { data, error } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (error || !token) throw new Error(error?.message ?? `Authentication is required to ${action}.`);
-  return token;
-}
-
-async function requestLearningJson<T>(path: string, input: unknown, action: string): Promise<T> {
-  const token = await readAccessToken(action);
-  const response = await fetch(path, {
-    method: "POST",
+async function requestLearningJson<T>(path: string, input: unknown, action: string, method = "POST"): Promise<T> {
+  return authenticatedJson<T>(path, {
+    method,
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? `Failed to ${action}.`);
-  return payload as T;
+  }, action);
 }

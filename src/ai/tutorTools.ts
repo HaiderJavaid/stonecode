@@ -1,81 +1,42 @@
-import { WorkspaceFile, normalizeWorkspacePath } from "@/services/workspaceFiles";
+import type { AiFileEdit } from "@/ai/fileEditCommands";
+import type { WorkspaceFile } from "@/services/workspaceFiles";
 
-export type WorkspaceToolName =
-  | "listFiles"
-  | "readFile"
-  | "createFile"
-  | "updateFile"
-  | "deleteFile";
-
-export type WorkspaceToolResult = {
-  files: WorkspaceFile[];
-  selectedPath?: string;
-  message: string;
+export type TutorPatchFile = {
+  path: string;
+  baseHash: string;
+  baseContent: string;
+  nextContent: string;
+  edits: Array<{ find: string; replace: string }>;
 };
 
-export const workspaceToolContracts = [
-  {
-    name: "listFiles",
-    description: "List all files in the current course workspace."
-  },
-  {
-    name: "readFile",
-    description: "Read a file by path from the current course workspace."
-  },
-  {
-    name: "createFile",
-    description: "Create a new file at a path with provided content."
-  },
-  {
-    name: "updateFile",
-    description: "Replace the full content of an existing file."
-  },
-  {
-    name: "deleteFile",
-    description: "Delete an existing file after user confirmation."
+export type TutorPatchProposal = {
+  version: "tutor-patch/v1";
+  toolCallId: string;
+  summary: string;
+  status: "pending" | "applied" | "rejected" | "undone";
+  patches: TutorPatchFile[];
+};
+
+export type TutorToolPayload = {
+  patches: TutorPatchProposal[];
+};
+
+export function validateClientTutorPatch(patch: TutorPatchProposal, files: WorkspaceFile[]): AiFileEdit[] {
+  if (!patch || patch.version !== "tutor-patch/v1" || patch.status !== "pending" || !Array.isArray(patch.patches)) {
+    throw new Error("Tutor patch is no longer available.");
   }
-] as const;
-
-export function listFiles(files: WorkspaceFile[]): string[] {
-  return files.map((file) => file.path);
+  return patch.patches.map((change) => {
+    const current = files.find((file) => file.path === change.path);
+    if (!current) throw new Error(`${change.path} no longer exists.`);
+    if (current.content !== change.baseContent) throw new Error(`${change.path} changed after this patch was proposed. Ask the tutor for a fresh patch.`);
+    if (change.nextContent.length > 100000) throw new Error(`${change.path} exceeds the file size limit.`);
+    return { path: change.path, content: change.nextContent };
+  });
 }
 
-export function readFile(files: WorkspaceFile[], path: string): WorkspaceFile | null {
-  const normalizedPath = normalizeWorkspacePath(path);
-  return files.find((file) => file.path === normalizedPath) ?? null;
-}
-
-export function createFile(files: WorkspaceFile[], path: string, content = ""): WorkspaceToolResult {
-  const normalizedPath = normalizeWorkspacePath(path);
-  if (!normalizedPath) return { files, message: "File path is required." };
-  if (files.some((file) => file.path === normalizedPath)) return { files, message: "File already exists." };
-
+export function updateTutorPatchStatus(payload: TutorToolPayload | undefined, toolCallId: string, status: TutorPatchProposal["status"]): TutorToolPayload | undefined {
+  if (!payload) return payload;
   return {
-    files: [...files, { path: normalizedPath, content }],
-    selectedPath: normalizedPath,
-    message: `Created ${normalizedPath}.`
+    patches: payload.patches.map((patch) => patch.toolCallId === toolCallId ? { ...patch, status } : patch)
   };
 }
-
-export function updateFile(files: WorkspaceFile[], path: string, content: string): WorkspaceToolResult {
-  const normalizedPath = normalizeWorkspacePath(path);
-  if (!files.some((file) => file.path === normalizedPath)) return { files, message: "File not found." };
-
-  return {
-    files: files.map((file) => (file.path === normalizedPath ? { ...file, content } : file)),
-    selectedPath: normalizedPath,
-    message: `Updated ${normalizedPath}.`
-  };
-}
-
-export function deleteFile(files: WorkspaceFile[], path: string): WorkspaceToolResult {
-  const normalizedPath = normalizeWorkspacePath(path);
-  if (files.length <= 1) return { files, message: "At least one file must remain." };
-  if (!files.some((file) => file.path === normalizedPath)) return { files, message: "File not found." };
-
-  return {
-    files: files.filter((file) => file.path !== normalizedPath),
-    message: `Deleted ${normalizedPath}.`
-  };
-}
-

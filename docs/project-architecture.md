@@ -1,131 +1,125 @@
 # Project Architecture
 
-## Current Stack
+## Stack
 
-- Vite
-- React
-- TypeScript
-- React Router
-- CodeMirror 6
-- Node HTTP app server
-- Supabase client/schema scaffold
-- Stripe server endpoint scaffold
-- OpenAI Responses API adapter for tutor streaming
-- Shared generated-course language capability registry with execution-mode metadata
+- Vite, React, TypeScript, React Router, CodeMirror 6
+- Node HTTP API with a Netlify catch-all adapter/background function
+- Supabase Auth, Postgres, RLS, RPCs, and private storage
+- Stripe subscriptions
+- OpenAI Responses/Image APIs
+- Judge0 headless execution plus sandboxed browser Output
 
-## Current Entry Points
+## Entry Points
 
-- `src/main.tsx` mounts `App`.
-- `src/App.tsx` owns routes.
-- `src/components/stonecode/StonecodePrototype.tsx` is the routed workspace shell.
-- `server/stonecode-server.mjs` serves the app and API routes.
-- `netlify/functions/api.mjs` adapts Netlify Function requests to the same server API dispatcher for production `/api/*` routes.
+- `src/main.tsx`: browser root/providers/router.
+- `src/App.tsx`: route shell and lazy route boundaries.
+- `src/components/stonecode/StonecodePrototype.tsx`: authenticated dashboard/workspace/settings shell.
+- `server/stonecode-server.mjs`: HTTP compatibility coordinator.
+- `netlify/functions/api.mjs`: production API adapter.
+- `netlify/functions/generate-learning-background.mjs`: asynchronous generation worker.
 
-## Active Product Routes
+## Routes
 
-- `/`
-- `/login`
-- `/signup`
-- `/forgot-password`
-- `/onboarding`
-- `/dashboard`
-- `/courses/:courseId`
-- `/settings/profile`
-- `/settings/account`
-- `/settings/billing`
-- `/settings/usage`
-- `/privacy`
-- `/terms`
-- `/support`
+- Public/auth: `/`, `/login`, `/signup`, `/forgot-password`, `/onboarding`, `/privacy`, `/terms`, `/support`.
+- Product: `/dashboard`, `/courses/:courseId`, `/marketplace`.
+- Settings: `/settings/overview`, `/settings/profile`, `/settings/billing`, `/settings/usage`, `/settings/security`, `/settings/support`.
 
-## Workspace Source Map
+## Server Domains
 
-- `CourseWorkspace`: file panel + IDE shell with switchable Code/Visual/Terminal tabs, lesson-driven initial view, dependency-aware HTML preview for linked CSS/JavaScript, and `stonecode-source` linkage from synchronized native scenes to their source file.
-- `DashboardPage`: course launcher/cards.
-- `CourseCard`: course details/progress/tutor panel.
-- `FilePanel` and `WorkspaceFileTree`: course tree navigation and file navigation.
-- `RunTerminal`: full-height Terminal tab; browser Worker output for JavaScript and configured remote-sandbox output for other runnable languages.
-- `editorLanguages`: shared editor language registry for syntax loading, generated file defaults, visual preview support, and run capability.
-- `editorDiagnostics`: pure workshop code-delta comparison used to place non-mutating CodeMirror error comments after failed checks.
-- `simpleVisualPreview`: deterministic visual-profile detection, external-engine exclusion, saved-step preview repair, and lightweight 2D scene synthesis from current source code.
-- `server/course-generation/language-capabilities`: server assessment intent, language families, safe filenames/starters, and future sandbox execution contracts.
-- `server/learning-orchestrator/contracts.mjs`: learning-brief normalization, missing-field validation, and deterministic routing policy.
-- `server/learning-orchestrator/generation.mjs`: type-specific prompts and schema normalization; new guided projects use one-module v2 while legacy v1 milestone continuation remains isolated for saved records.
-- Guided-project v2 transport is compact: one initial `workspaceFiles` manifest plus per-step find/replace edits. Normalization clears scratch source files, rejects no-op/run-only steps, enforces the Pygame import/init/dimensions foundation order, compacts intro/recap prose, creates native synchronized scene files, and expands full IDE snapshots before persistence.
-- `server/skill-taxonomy.mjs`: deterministic primary-skill/parent-language/domain resolution, XP values, and configurable achievement-title rules.
-- Progression persistence records primary skill, parent language, topics, domains, and exercise kind in attempts and the idempotent XP ledger.
-- `useCourseWorkspace`: active course, files, folders, multi-file generated exercise loading, and persistence.
-- `useTutorChat`: tutor requests grounded in the complete file/folder project context, chat messages, AI file-edit parsing, and AI run triggers.
-- `useTerminalRunner`: safe active-file browser Worker execution state.
-- `CourseHome`: finalized-course overview and primary navigation.
-- `IndependentExercisePanel`: direct-practice interaction.
-- `exerciseSession`: local daily allowance and per-exercise state until backend enforcement exists.
+- HTTP/authentication: `server/http/authentication.mjs`, `src/services/authenticatedApi.ts`, the HTTP composition shell, and Netlify adapters.
+- AI providers/telemetry/economics: `server/llm-providers.mjs`, `server/usage-events.mjs`, `server/billing/ai-costs.mjs`.
+- Discovery/proposals/generation: `server/learning-orchestrator/`.
+- Curriculum contracts/validation: `server/course-generation/`, with `server/course-generation.mjs` as a legacy export coordinator.
+- Credits/billing: `server/credits/`, `server/billing/stripe-service.mjs`, `server/stripe-subscriptions.mjs`, `server/subscription-state.mjs`, `server/plan-limits.mjs`.
+- Runtime/execution: `server/runtime/`, `server/execution/`.
+- Tutor/tools/visuals: `server/tutor/`, `src/ai/`.
+- RAG: `server/rag/`, `scripts/seed-rag-corpus.mjs`, `scripts/evaluate-rag-corpora.mjs`.
+- Marketplace: `server/marketplace/`.
+- Courses/progression: course storage APIs, `server/progression-store.mjs`, `server/progression.mjs`.
+- Shared contracts: `shared/stonecode-product.mjs` and its TypeScript declarations.
 
-Independent exercise session state currently uses the account-wide localStorage key `stonecode.exerciseSession.v1`. This is interaction scaffolding, not a security or billing boundary.
+The HTTP shell retains legacy-compatible route handlers, while trust-sensitive authentication and Stripe operations plus all new product rules live in focused domain modules. Further handler extraction is a maintainability follow-up after launch behavior is frozen, not a missing product trust boundary.
 
-## Current Data Flow
+## Learning Creation Flow
 
 ```txt
-Supabase Auth
--> useCourseWorkspace
--> Supabase-backed course/files/folders/chat/progress storage
--> local fallback only when Supabase is unavailable
--> CodeMirror editor
--> browser Worker terminal for standalone JavaScript / HTML-entrypoint Visual preview for explicitly linked CSS and browser JavaScript
--> source-linked deterministic Visual repair for supported lightweight native/2D code; no Terminal or AI call required
--> useTutorChat
--> /api/tutor
--> LLM provider adapter
--> OpenAI Responses API
--> optional AI file edit blocks applied to workspace state
--> optional active-file browser Worker run trigger
--> usage_events
+authenticated discovery turn
+-> server-normalized LearningBriefV2
+-> capability and plan checks
+-> editable LearningProposalV1 + deterministic quote
+-> credit reservation + generation_jobs row
+-> Netlify background worker
+-> validated generated content + persisted course
+-> credit settlement
+
+failure/expiry
+-> release reservation
+-> persisted failed job for safe retry
 ```
 
-## Target Data Flow
+The client polls `GET /api/generation-jobs/:id` and resumes pending jobs after refresh. Idempotency keys protect proposal and generation retries.
+
+## Credits
+
+Credit accounts contain grant buckets. Registration grants are permanent; Pro billing-cycle grants expire. Reservation allocation spends expiring grants first. Ledger entries are append-only and all reserve/settle/release operations are server-owned and idempotent.
+
+Creation quotes are deterministic in `shared/stonecode-product.mjs`; the model cannot set price.
+
+Generation usage records every provider attempt, including retries and repairs, with the actual model, input/cached/output/reasoning tokens, latency, and a versioned estimated text cost. Job aggregates compare spend with Stones charged and nominal subscription-funded Stone allocation. This is operating telemetry, not learner billing.
+
+Course generation first produces an outline constrained to the exact approved proposal, then generates each module in a separate bounded provider call. The worker validates exact module count, minimum per-module teaching scope, and the final quote band before inserting the Course and settling the reservation. Any incomplete or oversized result fails atomically and releases Stones.
+
+## Runtime Capability Flow
 
 ```txt
-Supabase Auth
--> authenticated routes
--> Supabase courses/files/chat/progress
--> server-side plan limit checks
--> authenticated /api/tutor
--> direct workspace file edits with undo
--> safe active-file terminal run
--> usage_events
--> Stripe subscriptions
+technologyCatalog
++ enabled matching technology_manifests row
++ editor/grading metadata
++ browser runtime or discovered Judge0 language
++ enabled RAG corpus with relevance/provenance/leakage pass
+-> available technology
+
+learningDomainCatalog
++ enabled matching learning_domain_manifests row (except derived programming)
++ enabled domain RAG corpus with relevance/provenance/leakage pass
++ required default runtime availability
+-> available learning domain
 ```
 
-## API Routes
+The expansion target exposes 21 runtime-backed technologies. Julia remains hidden and disabled while its approved corpus may remain ready for a future runtime. The current database keeps the previous 17 rejection states until the fresh review workflow completes.
 
-- `POST /api/tutor`
-- `GET|PUT|DELETE /api/ai-credentials/openai`
-- `POST /api/course-generation/preview`
-- `POST /api/course-generation/discovery-turn`
-- `POST /api/course-generation/chapter`
-- `POST /api/course-generation/commit`
-- `POST /api/learning/discovery-turn`
-- `POST /api/learning/assessment-plan`
-- `POST /api/learning/assessment-question`
-- `POST /api/learning/assessment-review`
-- `POST /api/learning/generate`
-- `POST /api/learning/project/milestone` (legacy guided-project v1 continuation only)
-- `GET /api/execution/capabilities`
-- `POST /api/execution/run`
-- `POST /api/courses`
-- `DELETE /api/courses`
-- `POST /api/billing/checkout`
-- `POST /api/billing/portal`
-- `POST /api/stripe/webhook`
+Browser Output uses an `allow-scripts` iframe, injected CSP, exact pinned asset URLs, blocked arbitrary remote styles/scripts/imports, and no connect access. React uses plain `React.createElement`; Vue and Svelte have reviewed raw-browser conventions. D3, Chart.js, and p5.js use exact pinned globals.
 
-Billing and tutor provider routes require env vars before live use. Tutor calls use `OPENAI_API_KEY` and optional `OPENAI_MODEL`.
+## Tutor Trust Boundary
 
-Free-plan tutor and generation calls instead use the current user's OpenAI key from `user_ai_credentials`. The secret is AES-256-GCM encrypted with `AI_CREDENTIAL_ENCRYPTION_KEY`, is only readable through the server service role, and is never returned by the credential API.
+The request client may provide conversational context, but the server reloads owned course/files/progress/entitlements. OpenAI tool calls must match strict schemas. Patch application validates ownership, normalized relative path, existing file scope, patch size/shape, and entitlement. Applied/rejected/undone states persist in chat tool payloads.
 
-On Netlify, `/api/*` must redirect to `/.netlify/functions/api/:splat` before the SPA fallback. Required production backend env includes `SUPABASE_SERVICE_ROLE_KEY`, `AI_CREDENTIAL_ENCRYPTION_KEY`, `OPENAI_API_KEY`, Stripe server keys, and the browser-safe Supabase `VITE_*` values.
+Tutor visuals are generated lazily from optional `TutorVisualCueV1`. Deterministic SVG is preferred. AI images consume plan image allowance. Assets are private and served only after course-ownership authorization; failures fall back without blocking the step.
 
-Signup confirmation uses Supabase `verifyOtp` with an eight-digit email code, then immediately starts the authenticated sign-in-style transition to `/dashboard`. The dashboard no longer opens plan or credential UI automatically. Free users encounter the encrypted OpenAI-key gate only when invoking Start learning or another AI-backed action; its Pro action opens `/onboarding`, which reads server subscription state, starts Stripe checkout, and polls webhook-backed subscription state before paid dashboard entry. The canonical hosted Supabase template is `supabase/templates/confirmation.html` and must expose `{{ .Token }}`.
+## Marketplace And Deletion
 
-Learning discovery calls return validated structured turns: status, conversational reply, contextual suggested answers, draft brief, and a resolved brief only when required goal and prior-knowledge fields are ready for optional assessment or confirmation.
+Marketplace publishing stores immutable content versions separately from editable listing metadata. Stars/reports are user-owned records. Clone reserves and settles one credit and creates an independent private course. Unpublish does not delete versions.
 
-Multi-language Run and generated-code grading use the provider-neutral `server/execution` boundary. Judge0 is the first adapter and requires `CODE_RUNNER_PROVIDER`, `JUDGE0_API_URL`, and provider authentication values. Browser JavaScript remains local; HTML/CSS remain Visual-preview content.
+Private course deletion authorizes ownership, removes course-owned rows and private visual objects, and relies on progression foreign keys that preserve lifetime XP. Published versions and clones survive source deletion.
+
+Authenticated account export returns user-owned application records. Permanent account deletion requires typed confirmation, cancels an active Stripe subscription first, removes private tutor assets, and then deletes the Auth user so foreign-key cascades remove owned data.
+
+## Data Migrations
+
+`supabase/migrations/2026-07-29-production-revamp-foundation.sql` contains the production revamp tables, constraints, RLS, credit RPCs, catalog seeds, storage, and compatibility changes. It was applied successfully to the configured Supabase project on 2026-07-29.
+
+`supabase/migrations/2026-07-30-atomic-usage-and-operator-limits.sql` adds atomic per-user plan counters and the global Judge0 circuit breaker. It was applied successfully to the configured Supabase project on 2026-07-29, and all four atomic RPCs pass readiness checks.
+
+`supabase/migrations/2026-07-31-ai-cost-and-job-hardening.sql` adds job heartbeats, extended token/cost columns, job economics aggregation, a 90-minute reservation window, and a retry-limited atomic claim RPC. It is applied to the configured Supabase project.
+
+`supabase/migrations/2026-08-01-learning-domains-and-expanded-catalog.sql` adds domain manifests, dual technology/domain corpus scoping, domain leakage fixtures, stricter corpus-gated RLS, and domain-aware vector retrieval. It is applied to the configured Supabase project.
+
+`supabase/migrations/2026-08-01-gpt-5-6-luna-cache-accounting.sql` adds cache-write token fields to usage and generation-job economics. It is prepared locally and has not been applied.
+
+## Feature Flags
+
+`FEATURE_CREDITS_V1`, `FEATURE_LEARNING_PROPOSALS_V1`, `FEATURE_RUNTIME_CATALOG_V1`, `FEATURE_STRUCTURED_TUTOR_TOOLS`, `FEATURE_CHAT_VISUALS_V1`, `FEATURE_DYNAMIC_SURFACES`, and `FEATURE_MARKETPLACE_V1` default off unless explicitly enabled.
+
+## Production Gate
+
+Static 75-path capability/generation contracts pass. Fresh approval of 22 language and four domain corpora, the 2026-08-01 migration, live runtime/generation certification, hosted support/alerts, live Stripe, external legal/security review, and explicit commit/push/direct-production approval remain.

@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { createSseEventParser } from "../server/response-stream.mjs";
 import {
-  extractTutorStreamDelta,
-  isTutorStreamDone,
   resolveTutorProviderConfig
 } from "../server/llm-providers.mjs";
 
@@ -28,7 +26,7 @@ const openAiConfig = resolveTutorProviderConfig({
   OPENAI_API_KEY: "test-openai-key"
 });
 assert.equal(openAiConfig.provider, "openai");
-assert.equal(openAiConfig.model, "gpt-5.4-mini");
+assert.equal(openAiConfig.model, "gpt-5.6-luna");
 assert.equal(openAiConfig.apiKey, "test-openai-key");
 
 const missingOpenAiConfig = resolveTutorProviderConfig({});

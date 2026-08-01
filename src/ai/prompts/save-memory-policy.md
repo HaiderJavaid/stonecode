@@ -8,7 +8,7 @@ Save or recommend saving when:
 - The learner says `save`.
 - The session pauses or ends.
 - The course direction changes.
-- A whiteboard detour starts or ends.
+- A chat visual explanation starts or ends.
 - The resume point would otherwise be unclear.
 - A topic is skipped or auto-completed.
 - Teaching style or code annotation rules change.

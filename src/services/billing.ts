@@ -1,25 +1,27 @@
+import { authenticatedJson } from "@/services/authenticatedApi";
+
 export async function createBillingSession({
-  accessToken,
-  cancelUrl,
-  plan,
-  returnUrl,
-  successUrl
+  plan
 }: {
-  accessToken: string;
-  cancelUrl: string;
-  plan: "basic" | "pro";
-  returnUrl: string;
-  successUrl: string;
+  plan: "pro";
 }) {
-  const response = await fetch("/api/billing/checkout", {
+  const payload = await authenticatedJson<{ url: string }>("/api/billing/checkout", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ plan, successUrl, cancelUrl, returnUrl })
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.url) throw new Error(payload?.error ?? "Failed to open Stripe checkout.");
+    body: JSON.stringify({ plan })
+  }, "open Stripe checkout");
+  if (!payload?.url) throw new Error("Failed to open Stripe checkout.");
   return payload.url as string;
+}
+
+export async function createBillingPortalSession() {
+  const payload = await authenticatedJson<{ url: string }>("/api/billing/portal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}"
+  }, "open the billing portal");
+  if (!payload?.url) throw new Error("Failed to open the billing portal.");
+  return payload.url;
 }

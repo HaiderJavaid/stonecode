@@ -1,4 +1,30 @@
-export function validateGeneratedCourseQuality(content) {
+const blockingQualityCodes = new Set([
+  "topic_missing_theory",
+  "topic_missing_theory_teaching",
+  "topic_starts_without_theory_teaching",
+  "topic_missing_interactive_block",
+  "loaded_module_missing_practical_block",
+  "theory_block_missing_teaching",
+  "workshop_too_short",
+  "workshop_prompt_missing_action",
+  "workshop_continuity_broken",
+  "workshop_expected_change_missing",
+  "workshop_no_code_delta",
+  "workshop_missing_recap",
+  "workshop_code_explanation_missing",
+  "workshop_suggested_questions_missing",
+  "exercise_workspace_missing_active_file",
+  "visual_exercise_missing_scene",
+  "lab_before_workshop",
+  "project_before_practice_readiness",
+  "exercise_topic_mismatch",
+  "mcq_topic_mismatch",
+  "mcq_duplicate_prompt",
+  "quiz_too_short",
+  "syntax_teaching_missing"
+]);
+
+export function validateGeneratedCourseQuality(content, { conceptual = false } = {}) {
   if (!content || content.schemaVersion !== "course-content/v2") return [];
 
   const warnings = [];
@@ -7,7 +33,7 @@ export function validateGeneratedCourseQuality(content) {
     const hasPracticalBlock = (module.topics ?? []).some((topic) =>
       (topic.blocks ?? []).some((block) => ["workshop", "lab", "project"].includes(block.kind))
     );
-    if (moduleIndex === 0 && !hasPracticalBlock) {
+    if (moduleIndex === 0 && !conceptual && !hasPracticalBlock) {
       warnings.push(createWarning("loaded_module_missing_practical_block", `modules[${moduleIndex}] has no workshop, lab, or project block.`));
     }
 
@@ -33,10 +59,11 @@ export function validateGeneratedCourseQuality(content) {
       }
 
       const priorTeaching = [];
+      const topicMcqPrompts = new Set();
       for (const [blockIndex, block] of (topic.blocks ?? []).entries()) {
         const blockPath = `${topicPath}.blocks[${blockIndex}]`;
         if (moduleIndex === 0) validatePracticeProgression(block, blockPath, warnings, practiceState);
-        validateBlock(block, blockPath, warnings, priorTeaching.join("\n"), `${topic.title ?? ""} ${topic.summary ?? ""}`);
+        validateBlock(block, blockPath, warnings, priorTeaching.join("\n"), `${topic.title ?? ""} ${topic.summary ?? ""}`, topicMcqPrompts);
         for (const step of Array.isArray(block?.steps) ? block.steps : []) {
           if (["theory", "analogy", "example", "summary"].includes(step?.type)) priorTeaching.push(cleanText(step.markdown));
         }
@@ -47,35 +74,15 @@ export function validateGeneratedCourseQuality(content) {
 }
 
 export function hasBlockingGeneratedCourseQualityWarnings(warnings) {
-  const blockingCodes = new Set([
-    "topic_missing_theory",
-    "topic_missing_theory_teaching",
-    "topic_starts_without_theory_teaching",
-    "topic_missing_interactive_block",
-    "loaded_module_missing_practical_block",
-    "theory_block_missing_teaching",
-    "workshop_too_short",
-    "workshop_prompt_missing_action",
-    "workshop_continuity_broken",
-    "workshop_expected_change_missing",
-    "workshop_no_code_delta",
-    "workshop_missing_recap",
-    "workshop_code_explanation_missing",
-    "workshop_suggested_questions_missing",
-    "exercise_workspace_missing_active_file",
-    "visual_exercise_missing_scene",
-    "lab_before_workshop",
-    "project_before_practice_readiness",
-    "exercise_topic_mismatch",
-    "quiz_too_short",
-    "syntax_teaching_missing"
-  ]);
-  return warnings.some((warning) => blockingCodes.has(warning.code));
+  return getBlockingGeneratedCourseQualityWarnings(warnings).length > 0;
+}
+
+export function getBlockingGeneratedCourseQualityWarnings(warnings) {
+  return (warnings ?? []).filter((warning) => blockingQualityCodes.has(warning?.code));
 }
 
 export function hasRepairableGeneratedCourseQualityWarnings(warnings) {
-  return hasBlockingGeneratedCourseQualityWarnings(warnings)
-    || warnings.some((warning) => warning.code === "workshop_context_missing_purpose");
+  return hasBlockingGeneratedCourseQualityWarnings(warnings);
 }
 
 function validatePracticeProgression(block, blockPath, warnings, state) {
@@ -118,7 +125,7 @@ export function groupGeneratedCourseWarningsByTopic(warnings, moduleIndex = 0) {
   return grouped;
 }
 
-function validateBlock(block, blockPath, warnings, priorTeaching = "", topicContext = "") {
+function validateBlock(block, blockPath, warnings, priorTeaching = "", topicContext = "", topicMcqPrompts = new Set()) {
   const steps = Array.isArray(block?.steps) ? block.steps : [];
   if (!steps.length) {
     warnings.push(createWarning("block_empty", `${blockPath} has no steps.`));
@@ -148,14 +155,19 @@ function validateBlock(block, blockPath, warnings, priorTeaching = "", topicCont
     warnings.push(createWarning("quiz_too_short", `${blockPath} quiz has fewer than 4 MCQs.`));
   }
 
+  const blockContext = `${topicContext} ${cleanText(block?.title)} ${cleanText(block?.summary)}`;
+  let availableTeaching = priorTeaching;
   for (const [stepIndex, step] of steps.entries()) {
     const stepPath = `${blockPath}.steps[${stepIndex}]`;
     if (["theory", "analogy", "example", "summary"].includes(step?.type)) {
       validateTeachingStep(step, stepPath, warnings);
     }
-    if (step?.type === "mcq") validateMcqStep(step, stepPath, warnings);
-    if (["workshop", "lab", "project"].includes(step?.type)) validateExerciseStep(step, stepPath, warnings, priorTeaching, topicContext);
+    if (step?.type === "mcq") validateMcqStep(step, stepPath, warnings, availableTeaching, blockContext, topicMcqPrompts);
+    if (["workshop", "lab", "project"].includes(step?.type)) validateExerciseStep(step, stepPath, warnings, availableTeaching, blockContext);
     if (step?.type === "reflection") validateReflectionStep(step, stepPath, warnings);
+    if (["theory", "analogy", "example", "summary"].includes(step?.type)) {
+      availableTeaching = `${availableTeaching}\n${cleanText(step.markdown)}`;
+    }
   }
 }
 
@@ -169,14 +181,32 @@ function validateTeachingStep(step, stepPath, warnings) {
   }
 }
 
-function validateMcqStep(step, stepPath, warnings) {
+function validateMcqStep(step, stepPath, warnings, priorTeaching = "", topicContext = "", topicMcqPrompts = new Set()) {
   const options = Array.isArray(step.options) ? step.options.filter((option) => typeof option === "string" && option.trim()) : [];
-  if (!cleanText(step.prompt)) warnings.push(createWarning("mcq_missing_prompt", `${stepPath} has no prompt.`));
+  const prompt = cleanText(step.prompt);
+  const explanation = cleanText(step.explanation);
+  if (!prompt) warnings.push(createWarning("mcq_missing_prompt", `${stepPath} has no prompt.`));
   if (options.length !== 4) warnings.push(createWarning("mcq_wrong_option_count", `${stepPath} does not have 4 options.`));
   if (!Number.isInteger(step.correctOptionIndex) || step.correctOptionIndex < 0 || step.correctOptionIndex >= options.length) {
     warnings.push(createWarning("mcq_bad_correct_index", `${stepPath} has invalid correctOptionIndex.`));
   }
-  if (!cleanText(step.explanation)) warnings.push(createWarning("mcq_missing_explanation", `${stepPath} has no explanation.`));
+  if (!explanation) warnings.push(createWarning("mcq_missing_explanation", `${stepPath} has no explanation.`));
+  const promptKey = prompt.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (promptKey && topicMcqPrompts.has(promptKey)) {
+    warnings.push(createWarning("mcq_duplicate_prompt", `${stepPath} repeats an earlier question in this topic.`));
+  }
+  if (promptKey) topicMcqPrompts.add(promptKey);
+  if (prompt) {
+    const grounding = classifyTopicGrounding(
+      `${topicContext} ${priorTeaching}`,
+      `${prompt} ${explanation} ${options.join(" ")} ${uniqueText(step?.conceptIds)}`
+    );
+    if (grounding === "mismatch") {
+      warnings.push(createWarning("mcq_topic_mismatch", `${stepPath} does not reinforce the current topic teaching.`));
+    } else if (grounding === "uncertain") {
+      warnings.push(createWarning("mcq_topic_grounding_uncertain", `${stepPath} is programming-related but has weak lexical grounding to the current topic.`));
+    }
+  }
 }
 
 function validateExerciseStep(step, stepPath, warnings, priorTeaching = "", topicContext = "") {
@@ -193,11 +223,17 @@ function validateExerciseStep(step, stepPath, warnings, priorTeaching = "", topi
     warnings.push(createWarning("exercise_workspace_missing_active_file", `${stepPath} workspaceFiles does not include its active filePath.`));
   }
   if (step.requiresPreview && !workspaceFiles.some((file) => /\.(html?|css|js|jsx|mjs)$/i.test(cleanText(file?.path)))) {
-    warnings.push(createWarning("visual_exercise_missing_scene", `${stepPath} requires Visual view but has no browser-renderable scene file.`));
+    warnings.push(createWarning("visual_exercise_missing_scene", `${stepPath} requires Output but has no browser-renderable source file.`));
   }
   if (containsInternalPromptLeak(`${context}\n${prompt}`)) warnings.push(createWarning("prompt_leak", `${stepPath} contains internal prompt language.`));
-  if (!hasMeaningfulTokenOverlap(topicContext, `${context} ${prompt} ${criteria.join(" ")}`)) {
-    warnings.push(createWarning("exercise_topic_mismatch", `${stepPath} does not reference the current topic goal.`));
+  const grounding = classifyTopicGrounding(
+    `${topicContext} ${priorTeaching}`,
+    `${context} ${prompt} ${criteria.join(" ")} ${cleanText(step.codeExplanation)} ${uniqueText(step.conceptIds)} ${cleanText(step.starterCode)} ${cleanText(step.resultCode)}`
+  );
+  if (grounding === "mismatch") {
+    warnings.push(createWarning("exercise_topic_mismatch", `${stepPath} does not reference the current topic goal or teaching.`));
+  } else if (grounding === "uncertain") {
+    warnings.push(createWarning("exercise_topic_grounding_uncertain", `${stepPath} is programming-related but has weak lexical grounding to the current topic.`));
   }
   if (cleanText(step.starterCode) && !hasSyntaxTeaching(`${priorTeaching}\n${context}\n${prompt}\n${cleanText(step.codeExplanation)}`)) {
     warnings.push(createWarning("syntax_teaching_missing", `${stepPath} uses code but does not explain syntax before the learner edits.`));
@@ -228,7 +264,7 @@ function validateWorkshopContinuity(steps, blockPath, warnings) {
 function validateWorkshopStep(step, stepPath, warnings) {
   const context = cleanText(step.context);
   const prompt = cleanText(step.prompt);
-  if (!/\b(learn|practice|build|useful|because|why|connects?|continues?|previous|next|now)\b/i.test(context)) {
+  if (!/\b(learn|practice|build|useful|because|why|connects?|continues?|previous|next|now|helps?|allows?|lets?|matters?|purpose|prepares?|foundation|so that)\b/i.test(context)) {
     warnings.push(createWarning("workshop_context_missing_purpose", `${stepPath} workshop context does not explain why this step matters.`));
   }
   if (!/\b(add|change|replace|write|create|call|print|show|return|move|wrap|put|type|edit|set|define)\b/i.test(prompt)) {
@@ -264,11 +300,32 @@ function wordCount(value) {
 }
 
 function hasMeaningfulTokenOverlap(left, right) {
-  const ignored = new Set(["about", "after", "before", "beginner", "build", "code", "course", "current", "exercise", "first", "learn", "learning", "module", "practice", "program", "step", "topic", "using", "with"]);
-  const tokens = cleanText(left).toLowerCase().split(/[^a-z0-9+#]+/).filter((token) => token.length >= 3 && !ignored.has(token));
+  const ignored = new Set(["about", "after", "and", "before", "beginner", "build", "code", "course", "current", "does", "exercise", "first", "for", "from", "how", "into", "learn", "learning", "module", "practice", "program", "step", "that", "the", "this", "topic", "under", "using", "what", "when", "where", "which", "with", "why"]);
+  const tokens = semanticTokens(left, ignored);
   if (!tokens.length) return true;
-  const haystack = cleanText(right).toLowerCase();
-  return tokens.some((token) => haystack.includes(token));
+  const haystack = new Set(semanticTokens(right, ignored));
+  return tokens.some((token) => haystack.has(token));
+}
+
+function classifyTopicGrounding(reference, candidate) {
+  if (hasMeaningfulTokenOverlap(reference, candidate)) return "grounded";
+  return hasProgrammingEvidence(candidate) ? "uncertain" : "mismatch";
+}
+
+function hasProgrammingEvidence(value) {
+  return /```|\b(?:algorithm|argument|array|assign|attribute|boolean|branch|class|code|condition|constant|debug|dictionary|element|error|expression|file|function|html|indent|input|iteration|keyword|list|loop|method|object|operator|output|parameter|print|program|property|return|selector|string|syntax|tuple|type|value|variable)\b|[(){};]|\b(?:const|let|var|def|elif|else|for|if|while)\b/i.test(cleanText(value));
+}
+
+function uniqueText(value) {
+  return Array.isArray(value) ? value.map((item) => cleanText(item)).filter(Boolean).join(" ") : "";
+}
+
+function semanticTokens(value, ignored) {
+  return cleanText(value)
+    .toLowerCase()
+    .split(/[^a-z0-9+#]+/)
+    .filter((token) => token.length >= 3 && !ignored.has(token))
+    .map((token) => token.length > 4 && token.endsWith("s") ? token.slice(0, -1) : token);
 }
 
 function containsInternalPromptLeak(value) {

@@ -817,19 +817,22 @@
   to { transform: scaleX(1); }
 }
 
-/* Keep the dashboard launcher and account entry fixed while the course list grows. */
-.cards:not(.has-open) {
+/* Keep dashboard controls fixed while only the compact learning list scrolls. */
+.cards:not(.has-open),
+.cards.has-open {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 95vh;
   max-height: none;
   overflow: hidden;
   padding-bottom: 0;
 }
-.dashboard-course-list { display: flex; min-height: 0; height: 100%; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; scrollbar-color: rgba(220, 220, 210, 0.16) transparent; }
-.dashboard-course-list > .shadow-card:last-child { margin-bottom: 0; }
-.cards.has-open .dashboard-course-list { overflow: visible; }
-.dashboard-settings-button { margin-top: 12px; }
+.dashboard-credit-widget { grid-row: 1; }
+.course-launcher { grid-row: 2; }
+.dashboard-course-list { display: flex; grid-row: 3; min-height: 0; height: 100%; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-width: thin; scrollbar-color: rgba(220, 220, 210, 0.16) transparent; }
+.dashboard-course-list > .dashboard-course-slot:last-child { margin-bottom: 0; }
+.cards.has-open .dashboard-course-list { overflow: hidden; }
+.dashboard-settings-button { grid-row: 4; margin-top: 12px; }
 
 @media (max-width: 1080px) {
   .scene.is-settings-scene { height: auto; min-height: 100svh; overflow-y: auto; }
@@ -880,3 +883,61 @@
   .settings-v2-program-progress b,
   .settings-v2-status-bars b { transform: scaleX(1); }
 }
+
+.settings-v2-danger-zone {
+  grid-column: 1 / -1;
+}
+
+.settings-v2-danger-zone > p {
+  max-width: 720px;
+  color: rgba(232, 232, 224, 0.56);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.settings-v2-danger-zone > button,
+.settings-v2-dialog-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-v2-danger-zone > button svg { width: 14px; height: 14px; }
+
+.settings-v2-danger-zone .is-danger,
+.settings-v2-dialog .is-danger {
+  border-color: rgba(224, 112, 112, 0.25);
+  color: rgba(244, 174, 164, 0.9);
+}
+
+.settings-v2-dialog-backdrop {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.76);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.settings-v2-dialog {
+  width: min(460px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), transparent), #0a0b0a;
+  color: rgba(242, 242, 234, 0.9);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.68);
+}
+
+.settings-v2-dialog > button:first-child {
+  float: right;
+  width: auto;
+  padding: 7px 10px;
+}
+
+.settings-v2-dialog h2 { margin: 6px 80px 10px 0; font-size: 20px; }
+.settings-v2-dialog > p { margin: 0 0 18px; color: rgba(232, 232, 224, 0.58); font-size: 12px; line-height: 1.6; }
+.settings-v2-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }

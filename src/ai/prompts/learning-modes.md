@@ -36,9 +36,9 @@ Each project ticket includes:
 - Verification command or safe Stonecode verification path
 - Security note when relevant
 
-## Whiteboard Detours
+## Chat Visual Detours
 
-Use whiteboard-style explanations for deep dives that should not disturb the main `course`.
+Use optional chat-embedded visual explanations for deep dives that should not disturb the main `course`.
 
 When starting a detour:
 

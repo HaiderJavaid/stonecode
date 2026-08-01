@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Course } from "@/data/courses";
 import { PlanTier } from "@/lib/database.types";
 import { getIndependentExercises, IndependentExercise } from "@/features/exercises/challengeData";
 import { useProgression } from "@/hooks/useProgression";
 import { mutateExerciseProgression } from "@/services/progression";
 import { renderMarkdown } from "@/components/stonecode/markdown";
+import { defaultFilePath } from "@/services/editorLanguages";
 
 export function IndependentExercisePanel({
   course,
@@ -36,10 +37,12 @@ export function IndependentExercisePanel({
   const dailyLimit = plan === "pro" ? 30 : plan === "basic" ? 10 : 2;
   const remaining = Math.max(dailyLimit - progression.dailyState.completedCount, 0);
   const exerciseFilePath = resolveExerciseFilePath(exercise);
+  const loadExerciseFileRef = useRef(onLoadExerciseFile);
+  loadExerciseFileRef.current = onLoadExerciseFile;
 
   useEffect(() => {
-    onLoadExerciseFile(exerciseFilePath, exercise.starterCode);
-  }, [exercise.id]);
+    loadExerciseFileRef.current(exerciseFilePath, exercise.starterCode);
+  }, [exercise.id, exercise.starterCode, exerciseFilePath]);
 
   async function runExercise() {
     setIsPending(true);
@@ -229,6 +232,5 @@ export function buildExerciseTemplatePlaceholder(exercise: IndependentExercise) 
 }
 
 function resolveExerciseFilePath(exercise: IndependentExercise) {
-  const extension = exercise.language.toLowerCase().includes("python") ? "py" : exercise.language.toLowerCase().includes("css") ? "css" : "js";
-  return `practice/${exercise.id}.${extension}`;
+  return `practice/${defaultFilePath(exercise.language)}`;
 }

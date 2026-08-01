@@ -22,7 +22,7 @@ assert.equal(resolveExecutionConfig({}).configured, false);
 const normalized = normalizeExecutionInput({ filePath: "main.py", code: "print('hello')", stdin: "" }, config);
 assert.equal(normalized.languageId, "python");
 assert.equal(normalized.language, "Python");
-assert.throws(() => normalizeExecutionInput({ filePath: "index.html", code: "<h1>x</h1>" }, config), /Visual preview/);
+assert.throws(() => normalizeExecutionInput({ filePath: "index.html", code: "<h1>x</h1>" }, config), /browser Output/);
 assert.throws(() => normalizeExecutionInput({ filePath: "main.py", code: "" }, config), /Code is required/);
 assert.throws(() => normalizeExecutionInput({ language: "Bash", filePath: "script.unknown", code: "echo unsafe" }, config), /not registered/);
 

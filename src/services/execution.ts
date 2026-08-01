@@ -1,5 +1,5 @@
-import { supabase } from "@/lib/supabaseClient";
 import { RunResult } from "@/services/codeRunner";
+import { authenticatedJson } from "@/services/authenticatedApi";
 
 type SandboxExecutionResult = {
   ok: boolean;
@@ -15,20 +15,13 @@ export async function runSandboxedWorkspaceFile(input: {
   code: string;
   stdin?: string;
 }): Promise<RunResult> {
-  if (!supabase) throw new Error("Supabase is not configured.");
-  const { data, error } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (error || !token) throw new Error(error?.message ?? "Authentication is required to run code remotely.");
-  const response = await fetch("/api/execution/run", {
+  const payload = await authenticatedJson<{ result: SandboxExecutionResult }>("/api/execution/run", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(input)
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error ?? "Remote execution failed.");
+  }, "run code remotely");
   return toRunResult(payload.result as SandboxExecutionResult);
 }
 

@@ -1,14 +1,19 @@
 import { User } from "@supabase/supabase-js";
 import { PlanTier } from "@/lib/database.types";
 import { planLimits } from "@/lib/planLimits";
-import { supabase } from "@/lib/supabaseClient";
+import { authenticatedJson } from "@/services/authenticatedApi";
 
 export type SubscriptionState = {
   plan: PlanTier;
   status: "free" | "trialing" | "active" | "past_due" | "canceled";
-  planName: "Free" | "Basic" | "Pro";
+  planName: "Free" | "Pro";
   activeCourseLimit: number;
   aiMessagesPerMonth: number;
+  aiImagesPerMonth: number;
+  judge0ActionsPerDay: number;
+  registrationCredits: number;
+  monthlyCredits: number;
+  proposalsPerDay: number;
   monthlyExperienceGenerationLimit: number | null;
   firstModuleOnly: boolean;
   requiresOwnOpenAiKey: boolean;
@@ -23,6 +28,11 @@ export const defaultSubscriptionState: SubscriptionState = {
   planName: "Free",
   activeCourseLimit: planLimits.free.activeCourseLimit,
   aiMessagesPerMonth: planLimits.free.aiMessagesPerMonth,
+  aiImagesPerMonth: planLimits.free.aiImagesPerMonth,
+  judge0ActionsPerDay: planLimits.free.judge0ActionsPerDay,
+  registrationCredits: planLimits.free.registrationCredits,
+  monthlyCredits: planLimits.free.monthlyCredits,
+  proposalsPerDay: planLimits.free.proposalsPerDay,
   monthlyExperienceGenerationLimit: planLimits.free.monthlyExperienceGenerationLimit,
   firstModuleOnly: planLimits.free.firstModuleOnly,
   requiresOwnOpenAiKey: planLimits.free.requiresOwnOpenAiKey,
@@ -32,28 +42,6 @@ export const defaultSubscriptionState: SubscriptionState = {
 };
 
 export async function loadSubscriptionState(_user: User): Promise<SubscriptionState> {
-  const token = await readAccessToken();
-  const response = await fetch("/api/subscription", {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error ?? "Failed to load subscription.");
-  }
-
+  const payload = await authenticatedJson<{ subscription: SubscriptionState }>("/api/subscription", {}, "load subscription");
   return payload.subscription as SubscriptionState;
-}
-
-async function readAccessToken(): Promise<string> {
-  if (!supabase) throw new Error("Supabase is not configured.");
-  const { data, error } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (error || !token) {
-    throw new Error(error?.message ?? "Authentication is required to load subscription.");
-  }
-
-  return token;
 }

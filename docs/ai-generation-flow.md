@@ -1,78 +1,51 @@
 # AI Generation Flow
 
-This diagram shows the current assessment-to-course-generation path and the main files involved.
+## Current Flow
 
-```mermaid
-flowchart TD
-  A["CourseSetupCard.tsx\nUser enters subject"] --> B["src/services/courseGeneration.ts\nrequestAssessmentQuestion"]
-  B --> C["server/stonecode-server.mjs\n/api/course-generation/assessment-question"]
-  C --> D["server/course-generation.mjs\nbuildAssessmentQuestionPrompt"]
-  D --> E["server/llm-providers.mjs\nrequestCourseGenerationJson"]
-  E --> F["OpenAI Responses API"]
-  F --> G["normalizeAssessmentQuestion\nstabilizeAssessmentQuestion"]
-  G --> H["CourseSetupCard.tsx\nstores transient answers"]
+1. `POST /api/learning/discovery-turn`
+   - Conversationally resolves goal, relevant experience, depth, and preferences.
+   - Returns contextual answer suggestions while free typing remains available.
+   - Never asks onboarding knowledge tests.
 
-  H --> I["requestAssessmentReview"]
-  I --> J["/api/course-generation/assessment-review"]
-  J --> K["buildAssessmentReviewPrompt"]
-  K --> E
-  E --> L["AssessmentReview\nstrengths, gaps, suggestedModules"]
+2. `POST /api/learning/proposals`
+   - Validates the normalized brief, plan allowance, technology scope, runtime capability, and proposal daily limit.
+   - Generates and persists an editable `LearningProposalV1`.
+   - Calculates a deterministic server-owned credit quote.
 
-  L --> M["requestGeneratedCourseFromAssessment"]
-  M --> N["/api/course-generation/from-assessment"]
-  N --> O["buildLearnerGenerationContext\nreadiness, weak signals, preferences"]
-  O --> P["retrieveStaticCourseGenerationContext\nstatic mini-RAG chunks"]
-  P --> Q["buildAssessmentCourseOutlinePrompt\noutline phase"]
-  Q --> E
-  E --> R["Course outline JSON"]
+3. `PATCH /api/learning/proposals/:id`
+   - Applies validated learner edits.
+   - Recomputes the deterministic quote from normalized scope.
 
-  R --> S["buildAssessmentCourseContentPrompt\nloaded content phase"]
-  S --> T["buildBlockGenerationPrompt\nblock contracts"]
-  T --> E
-  E --> U["normalizeGeneratedCourseContent\nshape normalization"]
-  U --> V["course-generation-quality.mjs\nvalidateGeneratedCourseQuality"]
+4. `POST /api/learning/proposals/:id/finalize`
+   - Revalidates ownership, active-path entitlement, quote, and available balance.
+   - Reserves credits atomically.
+   - Creates an idempotent queued generation job.
 
-  V -->|blocking warnings| W["buildGeneratedCourseRepairPrompt\nrepair only bad blocks"]
-  W --> E
-  E --> X["normalize + validate repaired content"]
-  V -->|no blocking warnings| Y["GeneratedCourseContentV2"]
-  X --> Y
-  X -->|still blocking| Z["createFallbackGeneratedCourseFromAssessment"]
+5. Netlify background worker
+   - Claims the job.
+   - Generates the approved Course, Guided Project, or Exercise Pack.
+   - For a Course, constrains an outline to the exact proposal and generates every module through a separate bounded call.
+   - Validates technology, structure, counts, progression, files, surfaces, and optional visual cues.
+   - Persists the course and settles the reservation on success.
+   - Persists failure and releases the reservation on failure.
 
-  Y --> AA["src/data/courses.ts\ncreateLearningCourse + syllabus"]
-  Z --> AA
-  AA --> AB["src/services/supabaseCourseStorage.ts\ncreateSupabaseCourse"]
-  AB --> AC["Supabase courses.course_content"]
-  AC --> AD["FilePanel.tsx\nModules tree"]
-  AC --> AE["lessonData.ts\nflatten steps for CourseCard"]
-  AE --> AF["CourseCard.tsx\nlesson render + grading gates"]
-```
+6. `GET /api/generation-jobs/:id`
+   - Lets the client poll, refresh, and resume without duplicating work or charges.
 
-## Runtime Tutor Context
+## Runtime And RAG Gate
 
-```mermaid
-flowchart TD
-  A["CourseCard.tsx\nopens lesson"] --> B["useTutorChat.ts\nrequestLessonIntro / chat"]
-  B --> C["buildTutorContext.ts\ncourse + files + focused currentCourseStep"]
-  C --> D["/api/tutor"]
-  D --> E["src/ai/prompts/*.md\nconversation prompt pack"]
-  E --> F["OpenAI Responses API stream"]
-  F --> G["useTutorChat.ts\nstream into chat"]
-  G --> H["supabaseCourseStorage.ts\npersist generated message key"]
-```
+A proposal is creatable only when its resolved technology has editor support, an enabled matching manifest, grading support, an approved browser/Judge0 runtime, and an enabled isolated RAG corpus. Normal retrieval excludes draft corpora.
 
-## QA Script
+## Legacy Compatibility
 
-`npm run qa:generated-course-flow -- --subject "JavaScript fundamentals" --profile struggling`
+Old assessment and direct-generation endpoints remain callable for saved clients but are no longer used by current setup UI. Observe calls for two releases before removal. Legacy `short_course` remains readable; current creation normalizes it to Course.
 
-The QA script runs:
+## Failure Guarantees
 
-1. AI assessment questions.
-2. Simulated learner answers.
-3. AI assessment review.
-4. AI course outline.
-5. AI loaded course content.
-6. Server normalization.
-7. Quality validation.
-8. Repair pass when blocking warnings exist.
-9. Artifact/report save under `output/qa/generated-course-flow/`.
+- Proposal generation does not spend creation credits.
+- Finalization is idempotent.
+- Generation retry cannot double-reserve or double-settle.
+- Failed/expired jobs release reservations.
+- Deleting a completed path does not refund credits.
+- Invalid or generic fallback content is not persisted as success.
+- A Course with missing modules, fewer than six meaningful steps in a module, or a delivered scope above its approved quote band is not persisted or settled.

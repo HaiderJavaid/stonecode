@@ -13,6 +13,7 @@ export type Course = {
   light: number;
   files: TopicFile[];
   lastMessage: string;
+  createdAt?: string;
   updatedAt: string;
   languages: string[];
   tags: string[];
@@ -21,10 +22,14 @@ export type Course = {
 };
 
 export type LearningExperienceType = "course" | "short_course" | "exercise" | "guided_project";
+export type LearningDomainId = "programming" | "computer_fundamentals" | "internet_web" | "algorithms_data_structures" | "math_for_programmers";
 
 export type LearningBrief = {
   type: LearningExperienceType;
   goal: string;
+  domainId?: LearningDomainId;
+  technologyId?: string;
+  focusAreas?: string[];
   subject?: string;
   language?: string;
   framework?: string;
@@ -141,6 +146,7 @@ export type GeneratedCourseContentV2 = {
   description: string;
   languages: string[];
   tags: string[];
+  learningBrief?: LearningBrief;
   generationDepth: "full_structure_first_module" | "full_course";
   assessmentReview: GeneratedAssessmentReview;
   courseBlueprint?: GeneratedCourseBlueprint;
@@ -209,7 +215,19 @@ export type GeneratedCourseLearningBlock = {
   steps: GeneratedCourseStep[];
 };
 
-export type GeneratedCourseStep =
+export type TutorVisualCueV1 = {
+  version: "tutor-visual-cue/v1";
+  id: string;
+  kind: "diagram" | "illustration";
+  title: string;
+  description: string;
+  caption: string;
+  altText: string;
+  labels?: string[];
+  preferredRenderer?: "auto" | "svg" | "image";
+};
+
+export type GeneratedCourseStep = (
   | { type: "theory" | "analogy" | "example" | "summary"; markdown: string }
   | { type: "mcq"; prompt: string; options: string[]; correctOptionIndex: number; explanation: string }
   | { type: "reflection"; prompt: string; rubric: string }
@@ -232,7 +250,7 @@ export type GeneratedCourseStep =
       requiresTerminal?: boolean;
       workspaceView?: "code" | "preview" | "terminal";
       workspaceFiles?: GeneratedExerciseWorkspaceFile[];
-    };
+    }) & { visualCue?: TutorVisualCueV1 };
 
 export type GeneratedExerciseWorkspaceFile = {
   path: string;
@@ -302,6 +320,8 @@ export function createLearningCourse({
 
   const metadata = createDefaultCourseMetadata(subject);
 
+  const createdAt = new Date().toISOString();
+
   return {
     id: `${slug || "course"}-${Date.now().toString(36)}`,
     experienceType,
@@ -315,6 +335,7 @@ export function createLearningCourse({
     light: 1,
     files,
     lastMessage: "Start with your generated learning plan.",
+    createdAt,
     updatedAt: "Today",
     languages: courseContent?.languages ?? languages ?? metadata.languages,
     tags: courseContent?.tags ?? tags ?? metadata.tags,
@@ -453,8 +474,8 @@ function syllabusStepsForBlock(block: GeneratedCourseLearningBlock): GeneratedCo
 }
 
 function stepTitle(blockTitleText: string, type: GeneratedCourseStep["type"]) {
-  if (type === "mcq") return `${blockTitleText} check`;
-  if (type === "reflection") return `${blockTitleText} written check`;
+  if (type === "mcq") return `${blockTitleText} practice`;
+  if (type === "reflection") return `${blockTitleText} written practice`;
   if (type === "workshop" || type === "lab" || type === "project") return `${blockTitleText} editor exercise`;
   return blockTitleText;
 }
@@ -462,13 +483,13 @@ function stepTitle(blockTitleText: string, type: GeneratedCourseStep["type"]) {
 function stepSummary(blockSummaryText: string, type: GeneratedCourseStep["type"]) {
   if (type === "mcq") return "Answer a quick multiple-choice check before continuing.";
   if (type === "reflection") return "Explain the idea in your own words for tutor review.";
-  if (type === "workshop" || type === "lab" || type === "project") return "Use the active IDE file as a whiteboard and submit runnable code.";
+  if (type === "workshop" || type === "lab" || type === "project") return "Use the active IDE file as a focused scratch file and submit runnable code.";
   return blockSummaryText;
 }
 
 function blockTitle(sectionTitle: string, type: GeneratedCourseBlock["type"]) {
-  if (type === "mcq") return `${sectionTitle} check`;
-  if (type === "chat_exercise") return `${sectionTitle} written check`;
+  if (type === "mcq") return `${sectionTitle} practice`;
+  if (type === "chat_exercise") return `${sectionTitle} written practice`;
   if (type === "code_exercise") return `${sectionTitle} editor exercise`;
   return sectionTitle;
 }
@@ -476,7 +497,7 @@ function blockTitle(sectionTitle: string, type: GeneratedCourseBlock["type"]) {
 function blockSummary(sectionSummary: string, type: GeneratedCourseBlock["type"]) {
   if (type === "mcq") return "Answer a quick multiple-choice check before continuing.";
   if (type === "chat_exercise") return "Explain the idea in your own words for tutor review.";
-  if (type === "code_exercise") return "Use the active IDE file as a whiteboard and submit runnable code.";
+  if (type === "code_exercise") return "Use the active IDE file as a focused scratch file and submit runnable code.";
   return sectionSummary;
 }
 
@@ -549,6 +570,7 @@ export const courses: Course[] = [
     light: topics[0].light,
     files: topics[0].files,
     lastMessage: "Resume from render loops and texture cost.",
+    createdAt: "2026-07-30T00:00:00.000Z",
     updatedAt: "Today",
     ...createDefaultCourseMetadata("JavaScript")
   },
@@ -564,6 +586,7 @@ export const courses: Course[] = [
     light: topics[1].light,
     files: topics[1].files,
     lastMessage: "Continue queues, graphs, and cache tradeoffs.",
+    createdAt: "2026-07-29T00:00:00.000Z",
     updatedAt: "Yesterday",
     ...createDefaultCourseMetadata("Computer Science")
   }

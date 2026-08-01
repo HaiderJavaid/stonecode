@@ -1,4 +1,3 @@
-import { defaultCourseCodeHtml } from "@/data/courses";
 import { FilePanel } from "@/components/stonecode/FilePanel";
 import { RunTerminal } from "@/components/stonecode/RunTerminal";
 import { StoneEditor } from "@/components/stonecode/StoneEditor";
@@ -8,11 +7,16 @@ import { Course } from "@/data/courses";
 import { RunLog } from "@/services/codeRunner";
 import { resolveEditorLanguage } from "@/services/editorLanguages";
 import { EditorLanguageId } from "@/services/editorLanguages";
-import { buildSimpleVisualPreviewHtml, isAutoSimpleVisualPreview } from "@/services/simpleVisualPreview.mjs";
 import { normalizeWorkspacePath, WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
+import { approvedBrowserAssetUrls, browserFrameworkCatalog, isApprovedBrowserAssetUrl } from "../../../shared/stonecode-product.mjs";
 import { useEffect, useMemo, useState } from "react";
 
-type WorkspaceView = "code" | "preview" | "terminal";
+type WorkspaceView = "code" | "output" | "terminal";
+const idleEditorSource = `const workspace = createStonecode({
+  mode: "learn-by-building",
+  surfaces: ["Code", "Output", "Terminal"],
+  tutor: "ready"
+});`;
 
 export function CourseWorkspace({
   active,
@@ -20,6 +24,9 @@ export function CourseWorkspace({
   activeFiles,
   activeFolders,
   activeLessonIndex,
+  initialLeftPanelView,
+  dynamicSurfacesEnabled,
+  showNavigationPanel,
   editorDiagnostics,
   planName,
   selectedFile,
@@ -43,6 +50,9 @@ export function CourseWorkspace({
   activeFiles: WorkspaceFile[];
   activeFolders: WorkspaceFolder[];
   activeLessonIndex: number;
+  initialLeftPanelView: "course" | "files";
+  dynamicSurfacesEnabled: boolean;
+  showNavigationPanel: boolean;
   editorDiagnostics: EditorDiagnostic[];
   planName: string;
   selectedFile: WorkspaceFile | null;
@@ -64,14 +74,25 @@ export function CourseWorkspace({
   const codeText = selectedFile?.content ?? "";
   const [editorMode, setEditorMode] = useState<WorkspaceView>("code");
   const editorLanguage = selectedFile ? resolveEditorLanguage(selectedFile.path) : null;
+  const activeLesson = useMemo(
+    () => activeCourse && showNavigationPanel ? resolveCourseLessonSteps(activeCourse)[activeLessonIndex] : null,
+    [activeCourse, activeLessonIndex, showNavigationPanel]
+  );
+  const availableViews = useMemo<WorkspaceView[]>(() => {
+    if (!dynamicSurfacesEnabled) return ["code", "output", "terminal"];
+    const views: WorkspaceView[] = ["code"];
+    if (activeLesson?.codeExercise?.requiresPreview || activeLesson?.codeExercise?.workspaceView === "preview") views.push("output");
+    if (activeLesson?.codeExercise?.requiresTerminal || activeLesson?.codeExercise?.workspaceView === "terminal") views.push("terminal");
+    return views;
+  }, [activeLesson, dynamicSurfacesEnabled]);
   const recommendedView = useMemo<WorkspaceView>(() => {
-    if (!activeCourse) return "code";
-    const lesson = resolveCourseLessonSteps(activeCourse)[activeLessonIndex];
-    if (lesson?.codeExercise?.workspaceView) return lesson.codeExercise.workspaceView;
-    if (lesson?.codeExercise?.requiresPreview) return "preview";
-    if (lesson?.codeExercise?.requiresTerminal) return "terminal";
+    if (!dynamicSurfacesEnabled) return "code";
+    if (activeLesson?.codeExercise?.workspaceView === "preview") return "output";
+    if (activeLesson?.codeExercise?.workspaceView === "terminal") return "terminal";
+    if (activeLesson?.codeExercise?.requiresPreview) return "output";
+    if (activeLesson?.codeExercise?.requiresTerminal) return "terminal";
     return "code";
-  }, [activeCourse, activeLessonIndex]);
+  }, [activeLesson, dynamicSurfacesEnabled]);
   const preview = useMemo(
     () => buildEditorPreview(activeFiles, selectedFile),
     [activeFiles, selectedFile]
@@ -84,11 +105,12 @@ export function CourseWorkspace({
   return (
     <>
       <FilePanel
-        active={Boolean(active)}
+        active={Boolean(active && showNavigationPanel)}
         activeCourse={activeCourse}
         activeFiles={activeFiles}
         activeFolders={activeFolders}
         activeLessonIndex={activeLessonIndex}
+        preferredView={initialLeftPanelView}
         planName={planName}
         onCreateFile={onCreateFile}
         onCreateFolder={onCreateFolder}
@@ -98,35 +120,37 @@ export function CourseWorkspace({
         onRenameFile={onRenameFile}
         onSelectFile={onSelectFile}
         onSelectLesson={onLessonNavigate}
-        selectedFile={selectedFile}
         selectedFileIndex={active?.fileIndex ?? -1}
         userEmail={userEmail}
       />
 
-      <section className={`terminal${active && selectedFile ? " has-ide-workspace" : ""}`} aria-label="Stone IDE simulator">
-        {active && selectedFile ? (
-          <div className="ide-workspace">
-            <div className="editor-workspace-tabs" role="tablist" aria-label="Workspace view">
-              <WorkspaceTab active={editorMode === "code"} label="Code" onSelect={() => setEditorMode("code")} />
-              <WorkspaceTab active={editorMode === "preview"} label="Visual" onSelect={() => setEditorMode("preview")} />
-              <WorkspaceTab active={editorMode === "terminal"} label="Terminal" onSelect={() => setEditorMode("terminal")} />
-            </div>
+      <section className={`terminal${active ? " has-ide-workspace" : ""}`} aria-label="Stone IDE simulator">
+        {active ? (
+          <div className={`ide-workspace${availableViews.length === 1 ? " is-code-only" : ""}`}>
+            {availableViews.length > 1 && (
+              <div className="editor-workspace-tabs" role="tablist" aria-label="Workspace view" style={{ gridTemplateColumns: `repeat(${availableViews.length}, minmax(0, 1fr))` }}>
+                {availableViews.includes("code") && <WorkspaceTab active={editorMode === "code"} label="Code" onSelect={() => setEditorMode("code")} />}
+                {availableViews.includes("output") && <WorkspaceTab active={editorMode === "output"} label="Output" onSelect={() => setEditorMode("output")} />}
+                {availableViews.includes("terminal") && <WorkspaceTab active={editorMode === "terminal"} label="Terminal" onSelect={() => setEditorMode("terminal")} />}
+              </div>
+            )}
             <div className={`editor-shell is-${editorMode}`}>
               {editorMode === "code" ? (
                 <StoneEditor
-                  filePath={selectedFile.path}
+                  filePath={selectedFile?.path ?? "workspace.txt"}
                   diagnostics={editorDiagnostics.filter((diagnostic) =>
-                    !diagnostic.filePath || normalizeWorkspacePath(diagnostic.filePath) === normalizeWorkspacePath(selectedFile.path)
+                    !diagnostic.filePath || normalizeWorkspacePath(diagnostic.filePath) === normalizeWorkspacePath(selectedFile?.path ?? "")
                   )}
                   onChange={onFileChange}
+                  readOnly={!selectedFile}
                   value={codeText}
                 />
-              ) : editorMode === "preview" ? (
+              ) : editorMode === "output" ? (
                 <EditorPreview preview={preview} />
               ) : (
                 <RunTerminal
                   canRun={canRunInTerminal(editorLanguage?.id)}
-                  filePath={selectedFile.path}
+                  filePath={selectedFile?.path ?? "workspace"}
                   isRunning={isRunningCode}
                   logs={terminalLogs}
                   onClear={onClearTerminal}
@@ -137,9 +161,11 @@ export function CourseWorkspace({
             </div>
           </div>
         ) : (
-          <pre>
-            <code id="code-output" dangerouslySetInnerHTML={{ __html: defaultCourseCodeHtml }} />
-          </pre>
+          <div className="ide-workspace is-code-only is-idle">
+            <div className="editor-shell is-code">
+              <StoneEditor filePath="stonecode.js" onChange={() => undefined} readOnly value={idleEditorSource} />
+            </div>
+          </div>
         )}
       </section>
     </>
@@ -166,7 +192,7 @@ function WorkspaceTab({ active, label, onSelect }: { active: boolean; label: str
 }
 
 type EditorPreviewState =
-  | { available: true; title: string; srcDoc: string; entryPath: string; connectedPaths: string[]; missingPaths: string[] }
+  | { available: true; title: string; srcDoc: string; entryPath: string; connectedPaths: string[]; missingPaths: string[]; blockedPaths: string[] }
   | { available: false; title: string; message: string };
 
 function EditorPreview({ preview }: { preview: EditorPreviewState }) {
@@ -181,10 +207,12 @@ function EditorPreview({ preview }: { preview: EditorPreviewState }) {
 
   return (
     <div className="editor-preview-shell">
-      <div className={`editor-preview-source${preview.missingPaths.length ? " has-warning" : ""}`}>
+      <div className={`editor-preview-source${preview.missingPaths.length || preview.blockedPaths.length ? " has-warning" : ""}`}>
         <strong>{preview.entryPath}</strong>
         <span>
-          {preview.missingPaths.length
+          {preview.blockedPaths.length
+            ? `Blocked unapproved remote asset: ${preview.blockedPaths.join(", ")}`
+            : preview.missingPaths.length
             ? `Missing: ${preview.missingPaths.join(", ")}`
             : preview.connectedPaths.length
               ? `Connected: ${preview.connectedPaths.join(", ")}`
@@ -220,6 +248,7 @@ export function buildEditorPreview(files: WorkspaceFile[], selectedFile: Workspa
       entryPath: htmlFile.path,
       connectedPaths: composed.connectedPaths,
       missingPaths: composed.missingPaths,
+      blockedPaths: composed.blockedPaths,
       srcDoc: composed.srcDoc
     };
   }
@@ -228,7 +257,7 @@ export function buildEditorPreview(files: WorkspaceFile[], selectedFile: Workspa
     return {
       available: false,
       title: `${selectedFile.path} is not connected`,
-      message: `Link this stylesheet from an HTML file, for example <link rel="stylesheet" href="${fileName(selectedFile.path)}">. Visual will then render that HTML entrypoint.`
+      message: `Link this stylesheet from an HTML file, for example <link rel="stylesheet" href="${fileName(selectedFile.path)}">. Output will then render that HTML entrypoint.`
     };
   }
 
@@ -243,7 +272,7 @@ export function buildEditorPreview(files: WorkspaceFile[], selectedFile: Workspa
   return {
     available: false,
     title: `${activeLanguage.displayName} preview`,
-    message: "This source file does not render directly in a browser. A visual course step should include an HTML scene reference; use Terminal for runnable output."
+    message: "This source file does not render directly in a browser. Use Terminal for supported console output."
   };
 }
 
@@ -284,25 +313,8 @@ function composeHtmlPreview(htmlFile: WorkspaceFile, files: WorkspaceFile[]) {
   const fileByPath = new Map(files.map((file) => [normalizePreviewPath(file.path), file]));
   const connectedPaths = new Set<string>();
   const missingPaths = new Set<string>();
+  const blockedPaths = new Set<string>();
   let html = htmlFile.content;
-
-  if (isAutoSimpleVisualPreview(html)) {
-    const sourceTag = (html.match(/<meta\b[^>]*>/gi) ?? []).find((tag) =>
-      (readHtmlAttribute(tag, "name") ?? "").toLowerCase() === "stonecode-source"
-    );
-    const resolvedSource = resolveWorkspaceReference(htmlFile.path, sourceTag ? readHtmlAttribute(sourceTag, "content") : null);
-    const sourceFile = resolvedSource ? fileByPath.get(resolvedSource) : null;
-    if (resolvedSource && sourceFile) {
-      connectedPaths.add(sourceFile.path);
-      html = buildSimpleVisualPreviewHtml({
-        path: sourceFile.path,
-        content: sourceFile.content,
-        requiresPreview: true
-      }, { previewPath: htmlFile.path });
-      return { srcDoc: html, connectedPaths: [...connectedPaths], missingPaths: [] };
-    }
-    if (resolvedSource) missingPaths.add(resolvedSource);
-  }
 
   for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
     if ((readHtmlAttribute(tag, "name") ?? "").toLowerCase() !== "stonecode-source") continue;
@@ -315,7 +327,12 @@ function composeHtmlPreview(htmlFile: WorkspaceFile, files: WorkspaceFile[]) {
 
   html = html.replace(/<link\b[^>]*>/gi, (tag) => {
     if (!/\bstylesheet\b/i.test(readHtmlAttribute(tag, "rel") ?? "")) return tag;
-    const resolved = resolveWorkspaceReference(htmlFile.path, readHtmlAttribute(tag, "href"));
+    const href = readHtmlAttribute(tag, "href");
+    if (isRemoteReference(href)) {
+      blockedPaths.add(href!);
+      return `<!-- Blocked unapproved remote stylesheet: ${escapeHtml(href!)} -->`;
+    }
+    const resolved = resolveWorkspaceReference(htmlFile.path, href);
     if (!resolved) return tag;
     const file = fileByPath.get(resolved);
     if (!file) {
@@ -327,7 +344,13 @@ function composeHtmlPreview(htmlFile: WorkspaceFile, files: WorkspaceFile[]) {
   });
 
   html = html.replace(/<script\b[^>]*\bsrc\s*=\s*["'][^"']+["'][^>]*>[\s\S]*?<\/script>/gi, (tag) => {
-    const resolved = resolveWorkspaceReference(htmlFile.path, readHtmlAttribute(tag, "src"));
+    const src = readHtmlAttribute(tag, "src");
+    if (isRemoteReference(src)) {
+      if (isApprovedBrowserAssetUrl(src)) return tag;
+      blockedPaths.add(src!);
+      return `<!-- Blocked unapproved remote script: ${escapeHtml(src!)} -->`;
+    }
+    const resolved = resolveWorkspaceReference(htmlFile.path, src);
     if (!resolved) return tag;
     const file = fileByPath.get(resolved);
     if (!file) {
@@ -336,15 +359,115 @@ function composeHtmlPreview(htmlFile: WorkspaceFile, files: WorkspaceFile[]) {
     }
     connectedPaths.add(file.path);
     const type = readHtmlAttribute(tag, "type");
+    if (type?.toLowerCase() === "text/vue") return buildVueBrowserScript(file.content, readHtmlAttribute(tag, "data-target"));
+    if (type?.toLowerCase() === "text/svelte") return buildSvelteBrowserScript(file.content, readHtmlAttribute(tag, "data-target"));
     return `<script${type ? ` type="${escapeHtml(type)}"` : ""} data-path="${escapeHtml(file.path)}">\n${file.content}\n<\/script>`;
   });
+
+  html = html.replace(/<script\b(?![^>]*\bsrc\s*=)[^>]*>[\s\S]*?<\/script>/gi, (tag) => {
+    const remoteImports = collectRemoteModuleImports(tag);
+    const unapproved = remoteImports.filter((url) => !isApprovedBrowserAssetUrl(url));
+    if (!unapproved.length) return tag;
+    unapproved.forEach((url) => blockedPaths.add(url));
+    return `<!-- Blocked script with unapproved remote import: ${unapproved.map(escapeHtml).join(", ")} -->`;
+  });
+
+  html = injectPreviewSecurityPolicy(html);
 
   if (missingPaths.size) {
     const notice = `<aside style="position:fixed;z-index:2147483647;left:12px;right:12px;bottom:12px;padding:10px 12px;border:1px solid #e39a8f;border-radius:8px;background:#2a1110;color:#ffd9d2;font:13px/1.4 system-ui">Missing linked workspace file: ${[...missingPaths].map(escapeHtml).join(", ")}</aside>`;
     html = /<body\b[^>]*>/i.test(html) ? html.replace(/<body\b[^>]*>/i, (body) => `${body}${notice}`) : `${notice}${html}`;
   }
 
-  return { srcDoc: html, connectedPaths: [...connectedPaths], missingPaths: [...missingPaths] };
+  return {
+    srcDoc: html,
+    connectedPaths: [...connectedPaths],
+    missingPaths: [...missingPaths],
+    blockedPaths: [...blockedPaths]
+  };
+}
+
+function injectPreviewSecurityPolicy(html: string) {
+  const approvedScripts = approvedBrowserAssetUrls.join(" ");
+  const policy = [
+    "default-src 'none'",
+    `script-src 'unsafe-inline' blob: ${approvedScripts}`,
+    "style-src 'unsafe-inline'",
+    "img-src data: blob:",
+    "font-src 'none'",
+    "connect-src 'none'",
+    "media-src data: blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-src 'none'"
+  ].join("; ");
+  const security = `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(policy)}"><meta name="referrer" content="no-referrer">`;
+  return /<head\b[^>]*>/i.test(html)
+    ? html.replace(/<head\b[^>]*>/i, (head) => `${head}${security}`)
+    : `${security}${html}`;
+}
+
+function buildVueBrowserScript(source: string, requestedTarget: string | null) {
+  const framework = browserFrameworkCatalog.find((item) => item.id === "vue")!;
+  const runtimeUrl = framework.assets[0].url;
+  const style = source.match(/<style\b[^>]*>([\s\S]*?)<\/style>/i)?.[1]?.trim() ?? "";
+  const componentSource = source.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i)?.[1]?.trim() ?? "export default {}";
+  const target = normalizeMountTarget(requestedTarget);
+  const moduleSource = componentSource.includes("export default") ? componentSource : `${componentSource}\nexport default {};`;
+  return `<script src="${runtimeUrl}"></script>${style ? `<style>${style}</style>` : ""}<script type="module">
+const moduleUrl = URL.createObjectURL(new Blob([${serializeForInlineScript(moduleSource)}], { type: "text/javascript" }));
+try {
+  const componentModule = await import(moduleUrl);
+  const target = document.querySelector(${serializeForInlineScript(target)}) || document.body;
+  Vue.createApp(componentModule.default).mount(target);
+} finally {
+  URL.revokeObjectURL(moduleUrl);
+}
+<\/script>`;
+}
+
+function buildSvelteBrowserScript(source: string, requestedTarget: string | null) {
+  const framework = browserFrameworkCatalog.find((item) => item.id === "svelte")!;
+  const compilerUrl = framework.assets.find((item) => item.url.includes("compiler.js"))!.url;
+  const runtimeUrl = framework.assets.find((item) => item.url.includes("internal/index.mjs"))!.url;
+  const target = normalizeMountTarget(requestedTarget);
+  return `<script type="importmap">{"imports":{"svelte/internal":"${runtimeUrl}"}}</script><script src="${compilerUrl}"></script><script type="module">
+const compiled = window.svelte.compile(${serializeForInlineScript(source)}, { css: true, dev: false, format: "esm" });
+if (compiled.css?.code) {
+  const style = document.createElement("style");
+  style.textContent = compiled.css.code;
+  document.head.append(style);
+}
+const moduleUrl = URL.createObjectURL(new Blob([compiled.js.code], { type: "text/javascript" }));
+try {
+  const componentModule = await import(moduleUrl);
+  const target = document.querySelector(${serializeForInlineScript(target)}) || document.body;
+  new componentModule.default({ target });
+} finally {
+  URL.revokeObjectURL(moduleUrl);
+}
+<\/script>`;
+}
+
+function normalizeMountTarget(value: string | null) {
+  const target = String(value ?? "#app").trim();
+  return /^[#.][a-zA-Z][\w-]*$/.test(target) ? target : "#app";
+}
+
+function serializeForInlineScript(value: string) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+function collectRemoteModuleImports(scriptTag: string) {
+  const urls = new Set<string>();
+  const importPattern = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)["'](https:\/\/[^"']+)["']/gi;
+  for (const match of scriptTag.matchAll(importPattern)) urls.add(match[1]);
+  return [...urls];
+}
+
+function isRemoteReference(value: string | null): value is string {
+  return Boolean(value && /^(?:https?:)?\/\//i.test(value.trim()));
 }
 
 function readHtmlAttribute(tag: string, name: string) {

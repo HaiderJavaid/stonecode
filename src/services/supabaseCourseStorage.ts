@@ -16,9 +16,10 @@ import {
   WorkspaceFolderRecord
 } from "@/lib/database.types";
 import { supabase } from "@/lib/supabaseClient";
+import { authenticatedJson } from "@/services/authenticatedApi";
 import { StoredCourseState } from "@/services/courseStorage";
 import { WorkspaceFile, WorkspaceFolder } from "@/services/workspaceFiles";
-import { resetProgression } from "@/services/progression";
+import type { TutorToolPayload } from "@/ai/tutorTools";
 
 type SupabaseCourseDraft = Pick<Course, "id" | "title" | "subject" | "mode" | "checkpoint" | "description" | "progress" | "syllabus" | "languages" | "tags" | "experienceType" | "learningBrief"> & {
   courseContent?: GeneratedLearningContent | null;
@@ -34,7 +35,7 @@ export async function loadSupabaseCourseState(user: User): Promise<StoredCourseS
     .from("courses")
     .select("*")
     .eq("status", "active")
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false });
 
   if (coursesError) throw coursesError;
 
@@ -85,7 +86,8 @@ export async function loadSupabaseCourseState(user: User): Promise<StoredCourseS
         content: message.content,
         lessonIndex: message.lesson_index ?? undefined,
         messageKind: message.message_kind ?? "chat",
-        generatedKey: message.generated_key ?? null
+        generatedKey: message.generated_key ?? null,
+        toolPayload: isTutorToolPayload(message.tool_payload) ? message.tool_payload : null
       }
     ];
   });
@@ -102,21 +104,13 @@ export async function loadSupabaseCourseState(user: User): Promise<StoredCourseS
 }
 
 export async function createSupabaseCourse(_user: User, draft: SupabaseCourseDraft): Promise<Course> {
-  const token = await readAccessToken("create a course");
-
-  const response = await fetch("/api/courses", {
+  const payload = await authenticatedJson<{ course: CourseRecord }>("/api/courses", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ course: draft })
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error ?? "Failed to create course.");
-  }
+  }, "create a course");
 
   const createdCourse = courseRecordToCourse(payload.course as CourseRecord);
   if (draft.courseContent && !createdCourse.courseContent) {
@@ -131,23 +125,8 @@ export async function createSupabaseCourse(_user: User, draft: SupabaseCourseDra
   return createdCourse;
 }
 
-export async function resetSupabaseCourses(_user: User): Promise<void> {
-  const token = await readAccessToken("reset courses");
-
-  const [response] = await Promise.all([
-    fetch("/api/courses", {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    }),
-    resetProgression()
-  ]);
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error ?? "Failed to reset courses.");
-  }
+export async function deleteSupabaseCourse(_user: User, courseId: string): Promise<void> {
+  await authenticatedJson(`/api/courses/${encodeURIComponent(courseId)}`, { method: "DELETE" }, "delete a learning path");
 }
 
 export async function saveSupabaseWorkspaceState(state: StoredCourseState): Promise<void> {
@@ -177,7 +156,9 @@ export async function createSupabaseChatMessage({
   content,
   lessonIndex,
   messageKind = "chat",
-  generatedKey = null
+  generatedKey = null,
+  clientMessageId = null,
+  toolPayload = null
 }: {
   courseId: string;
   role: ChatMessageRecord["role"];
@@ -185,6 +166,8 @@ export async function createSupabaseChatMessage({
   lessonIndex?: number;
   messageKind?: ChatMessageRecord["message_kind"];
   generatedKey?: string | null;
+  clientMessageId?: string | null;
+  toolPayload?: TutorToolPayload | null;
 }): Promise<ChatMessageRecord> {
   const client = requireSupabase();
   const payload = {
@@ -193,7 +176,9 @@ export async function createSupabaseChatMessage({
     content,
     lesson_index: lessonIndex ?? null,
     message_kind: messageKind,
-    generated_key: generatedKey
+    generated_key: generatedKey,
+    client_message_id: clientMessageId,
+    tool_payload: toolPayload
   };
   if (chatMessageMetadataSupported === false) {
     return insertBaseChatMessage({ courseId, role, content, lessonIndex, messageKind, generatedKey });
@@ -218,7 +203,7 @@ export async function createSupabaseChatMessage({
     };
   }
 
-  if (error && /message_kind|generated_key|schema cache|PGRST204/i.test(`${error.message} ${error.code ?? ""}`)) {
+  if (error && /message_kind|generated_key|client_message_id|tool_payload|schema cache|PGRST204/i.test(`${error.message} ${error.code ?? ""}`)) {
     chatMessageMetadataSupported = false;
     return insertBaseChatMessage({ courseId, role, content, lessonIndex, messageKind, generatedKey });
   }
@@ -226,6 +211,16 @@ export async function createSupabaseChatMessage({
   if (error) throw error;
   chatMessageMetadataSupported = true;
   return data as ChatMessageRecord;
+}
+
+export async function updateSupabaseChatToolPayload(courseId: string, clientMessageId: string, toolPayload: TutorToolPayload | null) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from("chat_messages")
+    .update({ tool_payload: toolPayload })
+    .eq("course_id", courseId)
+    .eq("client_message_id", clientMessageId);
+  if (error && !/tool_payload|client_message_id|schema cache|PGRST204/i.test(`${error.message} ${error.code ?? ""}`)) throw error;
 }
 
 async function insertBaseChatMessage({
@@ -400,6 +395,7 @@ function courseRecordToCourse(record: CourseRecord): Course {
     light: 1,
     files: starterCourseFiles,
     lastMessage: "Resume your learning workspace.",
+    createdAt: record.created_at,
     updatedAt: formatUpdatedAt(record.updated_at),
     languages: courseContent?.languages ?? record.languages ?? metadata.languages,
     tags: courseContent?.tags ?? record.tags ?? metadata.tags,
@@ -420,6 +416,10 @@ function isGeneratedLearningContent(value: unknown): value is GeneratedLearningC
   return false;
 }
 
+function isTutorToolPayload(value: unknown): value is TutorToolPayload {
+  return Boolean(value && typeof value === "object" && Array.isArray((value as TutorToolPayload).patches));
+}
+
 function normalizeExperienceType(value: CourseRecord["experience_type"]): LearningExperienceType | null {
   return value === "course" || value === "short_course" || value === "exercise" || value === "guided_project" ? value : null;
 }
@@ -433,15 +433,4 @@ function formatUpdatedAt(value: string): string {
 function requireSupabase() {
   if (!supabase) throw new Error("Supabase is not configured.");
   return supabase;
-}
-
-async function readAccessToken(action: string): Promise<string> {
-  const client = requireSupabase();
-  const { data: sessionData, error: sessionError } = await client.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (sessionError || !token) {
-    throw new Error(sessionError?.message ?? `Authentication is required to ${action}.`);
-  }
-
-  return token;
 }

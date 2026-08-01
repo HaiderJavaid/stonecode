@@ -11,3 +11,17 @@ export function StonecodeLogoMark({ className = "", ...props }: HTMLAttributes<H
     </span>
   );
 }
+
+export function StoneStackMark({ className = "", ...props }: HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span
+      {...props}
+      aria-hidden="true"
+      className={`stone-stack-mark${className ? ` ${className}` : ""}`}
+    >
+      <StonecodeLogoMark />
+      <StonecodeLogoMark />
+      <StonecodeLogoMark />
+    </span>
+  );
+}

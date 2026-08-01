@@ -33,6 +33,7 @@ import {
 import {
   groupGeneratedCourseWarningsByModule,
   groupGeneratedCourseWarningsByTopic,
+  getBlockingGeneratedCourseQualityWarnings,
   hasBlockingGeneratedCourseQualityWarnings,
   hasRepairableGeneratedCourseQualityWarnings,
   validateGeneratedCourseQuality
@@ -46,15 +47,17 @@ import { requestCourseGenerationJson, resolveProviderConfig } from "../server/ll
 
 const editableRules = readEditableCourseGenerationRules();
 assert.ok(editableRules.includes("# AI Course Generation Rules"), "editable course-generation rulebook should exist");
-assert.ok(editableRules.includes("Initial Generation Rule"), "rulebook should explain module 1 upfront generation");
+assert.ok(editableRules.includes("Complete Course Delivery Rule"), "rulebook should require complete proposal-bound Course delivery");
 assert.ok(editableRules.includes("Workshop Blocks"), "rulebook should expose workshop behavior");
 assert.ok(editableRules.includes("Hidden Course Blueprint"), "rulebook should expose project-spine behavior");
 assert.ok(editableRules.includes("Practice Progression Rule"), "rulebook should expose workshop-first practice progression");
 assert.ok(editableRules.includes("RAG Rules"), "rulebook should expose retrieval behavior");
 
 const initialDiscoveryPrompt = buildCourseDiscoveryPrompt({ messages: [], turn: 0 });
-assert.ok(initialDiscoveryPrompt.includes("5 to 6 varied recommended programming starting points"), "initial discovery should request AI-generated starting suggestions");
+assert.ok(initialDiscoveryPrompt.includes("project idea, language, feature, end goal, or lesson type"), "initial discovery should accept multiple starting points");
+assert.ok(initialDiscoveryPrompt.includes("5 varied recommended programming starting points"), "initial discovery should request AI-generated starting suggestions");
 assert.ok(initialDiscoveryPrompt.includes("Ask only one main clarification question"), "discovery should ask one question at a time");
+assert.ok(initialDiscoveryPrompt.includes("6 to 7 useful clarification questions"), "discovery should stay short");
 assert.ok(initialDiscoveryPrompt.includes("does not need to know a language/framework") || initialDiscoveryPrompt.includes("does not know a language/framework"), "discovery should support outcome-first beginners");
 assert.ok(initialDiscoveryPrompt.includes("Do not fabricate live popularity"), "discovery must not fake user-trend data");
 const vagueDiscoveryPrompt = buildCourseDiscoveryPrompt({
@@ -293,7 +296,7 @@ assert.ok(assessmentCourse.modules[0].topics.length >= 3);
 assert.equal(assessmentCourse.modules[0].topics[0].blocks[0].kind, "theory");
 assert.ok(assessmentCourse.modules[0].topics[0].blocks[0].steps.slice(0, 3).every((step) => ["theory", "analogy", "example"].includes(step.type)));
 assert.ok(assessmentCourse.modules[0].topics[0].blocks[0].steps.some((step) => step.type === "mcq"), "quick MCQ checks should live inside theory blocks");
-assert.ok(assessmentCourse.modules[0].topics[0].blocks.some((block) => block.kind === "quiz"), "loaded topics should have a real quiz checkpoint");
+assert.ok(!assessmentCourse.modules[0].topics[0].blocks.some((block) => block.kind === "quiz"), "fallback normalization must not invent a generic topic-practice block");
 assert.ok(assessmentCourse.modules[0].topics[2].blocks.some((block) => block.kind === "workshop"));
 const fallbackWorkshop = assessmentCourse.modules[0].topics[2].blocks.find((block) => block.kind === "workshop");
 assert.ok(fallbackWorkshop.steps.length >= 5, "fallback workshop should be several tiny guided steps");
@@ -307,7 +310,7 @@ for (let index = 1; index < fallbackWorkshopCodeSteps.length; index += 1) {
   assert.equal(fallbackWorkshopCodeSteps[index].starterCode, fallbackWorkshopCodeSteps[index - 1].resultCode, "workshop code should carry forward exactly");
 }
 const fallbackQuizBlocks = assessmentCourse.modules.flatMap((module) => module.topics).flatMap((topic) => topic.blocks).filter((block) => block.kind === "quiz");
-assert.ok(fallbackQuizBlocks.every((block) => block.steps.length >= 4), "quiz blocks should be multi-question exam checkpoints");
+assert.equal(fallbackQuizBlocks.length, 0, "fallback generation must not repeat generic practice questions across topics");
 assert.ok(assessmentCourse.modules[0].topics[2].blocks.some((block) => block.kind === "lab" && block.steps.length === 1));
 assert.ok(assessmentCourse.modules.some((module) => !module.unlocked));
 
@@ -356,7 +359,7 @@ const staticContext = retrieveStaticCourseGenerationContext({ subject: "Machine 
 assert.ok(staticContext.some((chunk) => chunk.kind === "block-pattern" && chunk.blockKind === "workshop"), "static retrieval should include workshop block patterns");
 assert.ok(staticContext.some((chunk) => chunk.kind === "quality-rubric"), "static retrieval should include quality rubrics");
 assert.ok(staticContext.some((chunk) => chunk.kind === "project-spine"), "static retrieval should include project-spine curriculum guidance");
-assert.ok(staticContext.some((chunk) => chunk.sourceType === "official-docs"), "static retrieval should include selected official-doc source records");
+assert.ok(staticContext.every((chunk) => chunk.sourceType === "stonecode-curriculum"), "unmatched subjects must not receive cross-language static references");
 
 const blueprintPrompt = buildCourseBlueprintPrompt({ subject: "Machine Learning", answers: [], assessmentReview: review, learnerContext, retrievedContext: staticContext });
 assert.ok(blueprintPrompt.includes("courseBlueprint"), "blueprint prompt must produce courseBlueprint");
@@ -545,8 +548,9 @@ const contextOnlyWarnings = [{
   code: "workshop_context_missing_purpose",
   message: "modules[0].topics[0].blocks[1].steps[0] workshop context does not explain why this step matters."
 }];
-assert.equal(hasRepairableGeneratedCourseQualityWarnings(contextOnlyWarnings), true, "weak workshop context should still trigger repair");
+assert.equal(hasRepairableGeneratedCourseQualityWarnings(contextOnlyWarnings), false, "wording-only context warnings should not spend an AI repair call");
 assert.equal(hasBlockingGeneratedCourseQualityWarnings(contextOnlyWarnings), false, "one wording-only context warning should not reject an otherwise valid course");
+assert.deepEqual(getBlockingGeneratedCourseQualityWarnings(contextOnlyWarnings), [], "operator-only wording warnings must stay out of learner-facing failures");
 
 const originalFetch = globalThis.fetch;
 const generationRequests = [];
@@ -580,18 +584,18 @@ try {
 assert.ok(coursePrompt.includes("Learner generation context"));
 assert.ok(coursePrompt.includes("Retrieved course-generation context"));
 assert.ok(coursePrompt.includes("Editable course-generation rules"));
-assert.ok(coursePrompt.includes("Initial Generation Rule"));
+assert.ok(coursePrompt.includes("Complete Course Delivery Rule"));
 assert.ok(coursePrompt.includes('Every block must include a "kind" field'));
-assert.ok(coursePrompt.includes("Fully load module 1"));
-assert.ok(coursePrompt.includes("Keep modules 2 and later as locked outline shells"));
+assert.ok(coursePrompt.includes("Fully load every generated module"));
+assert.ok(coursePrompt.includes("Never return locked outline-only shells"));
 assert.ok(coursePrompt.includes("friendly course introduction"), "course prompt should require an introductory first step");
 assert.ok(coursePrompt.includes("Do not make it only a tutor greeting"), "course introduction must contain course-specific orientation");
 assert.ok(coursePrompt.includes("problem this topic solves"), "each topic opening must explain its purpose and course connection");
 assert.ok(coursePrompt.includes("map it back to code"), "theory must connect analogies back to programming behavior");
 assert.ok(coursePrompt.includes('A "theory" block may contain only theory, analogy, example, summary, and optional mcq steps.'));
-assert.ok(coursePrompt.includes('A "quiz" block must contain only mcq steps and should have 4 to 10 MCQ steps'));
+assert.ok(coursePrompt.includes('A "quiz" block must contain only mcq steps and should have 4 to 10 distinct questions grounded in the exact topic just taught'));
 assert.ok(coursePrompt.includes("Single MCQ checks belong inside theory blocks"));
-assert.ok(coursePrompt.includes("Quiz blocks are exam-style checkpoints"));
+assert.ok(coursePrompt.includes("Quiz blocks are low-stakes reinforcement exercises"));
 assert.ok(coursePrompt.includes('A "workshop" block must be guided practical continuity'));
 assert.ok(coursePrompt.includes("Do not use fixed counts like exactly 4 theory steps or exactly 2 workshop steps"));
 assert.ok(coursePrompt.includes("Assume the learner has no programming, coding, or syntax knowledge"));
@@ -660,9 +664,11 @@ const normalizedVisualStep = normalizedVisualWorkspace.modules
   .flatMap((topic) => topic.blocks)
   .flatMap((block) => block.steps)
   .find((step) => step.type === "workshop" && step.filePath === "game/main.py");
-assert.equal(normalizedVisualStep.workspaceView, "preview");
-assert.equal(normalizedVisualStep.workspaceFiles.length, 2);
-assert.ok(normalizedVisualStep.workspaceFiles.some((file) => file.path === "preview/index.html"), "visual scene reference should survive normalization");
+assert.equal(normalizedVisualStep.workspaceView, "code");
+assert.equal(normalizedVisualStep.requiresPreview, false);
+assert.equal(normalizedVisualStep.requiresTerminal, true);
+assert.equal(normalizedVisualStep.workspaceFiles.length, 1);
+assert.ok(!normalizedVisualStep.workspaceFiles.some((file) => file.path === "preview/index.html"), "native code must not receive a fake browser preview");
 
 const qualityWarnings = validateGeneratedCourseQuality({
   schemaVersion: "course-content/v2",
@@ -805,6 +811,68 @@ const missingInteractiveWarnings = validateGeneratedCourseQuality({
 });
 assert.ok(missingInteractiveWarnings.some((warning) => warning.code === "topic_missing_interactive_block"), "quality validation should flag missing interactive blocks in loaded modules");
 assert.ok(hasBlockingGeneratedCourseQualityWarnings(missingInteractiveWarnings), "missing interactive block warnings should block save without repair");
+
+const repeatedOrUnrelatedMcqWarnings = validateGeneratedCourseQuality({
+  schemaVersion: "course-content/v2",
+  modules: [{
+    title: "JavaScript foundations",
+    topics: [{
+      title: "Variables and const bindings",
+      summary: "Store values under reusable variable names.",
+      blocks: [
+        { kind: "theory", steps: [{ type: "theory", markdown: "A JavaScript variable gives a reusable name to a value. The const keyword creates a binding that cannot be reassigned." }] },
+        { kind: "quiz", steps: [
+          { type: "mcq", prompt: "What does const create in JavaScript?", options: ["A binding", "A loop", "A style", "A file"], correctOptionIndex: 0, explanation: "const creates a named binding for a value." },
+          { type: "mcq", prompt: "What does const create in JavaScript?", options: ["A binding", "A loop", "A style", "A file"], correctOptionIndex: 0, explanation: "const creates a named binding for a value." },
+          { type: "mcq", prompt: "Which ocean is largest?", options: ["Pacific", "Atlantic", "Indian", "Arctic"], correctOptionIndex: 0, explanation: "The Pacific Ocean is largest." },
+          { type: "mcq", prompt: "Which keyword declares a binding that cannot be reassigned?", options: ["const", "while", "class", "return"], correctOptionIndex: 0, explanation: "const declares the variable binding." }
+        ] }
+      ]
+    }]
+  }]
+});
+assert.ok(repeatedOrUnrelatedMcqWarnings.some((warning) => warning.code === "mcq_duplicate_prompt"), "repeated questions in one topic must block generation");
+assert.ok(repeatedOrUnrelatedMcqWarnings.some((warning) => warning.code === "mcq_topic_mismatch"), "unrelated questions must block generation");
+
+const sameBlockGroundingWarnings = validateGeneratedCourseQuality({
+  schemaVersion: "course-content/v2",
+  modules: [{
+    title: "Python foundations",
+    topics: [{
+      title: "Readable conditional blocks",
+      summary: "Use indentation to group statements beneath a condition.",
+      blocks: [
+        {
+          kind: "theory",
+          title: "Indentation and branches",
+          summary: "Whitespace groups a conditional body.",
+          steps: [
+            { type: "theory", markdown: "Python indentation groups the statements that belong beneath an if condition. The indented lines run only when that condition is true." },
+            { type: "mcq", prompt: "Which whitespace shows that print belongs beneath the if statement?", options: ["Indent the print line", "Delete the condition", "Rename the file", "Add a comment"], correctOptionIndex: 0, explanation: "Indented whitespace groups print inside the conditional body." }
+          ]
+        },
+        {
+          kind: "workshop",
+          title: "Build a tiny conditional",
+          summary: "Practice the branch structure from this topic.",
+          steps: [{
+            type: "workshop",
+            language: "Python",
+            filePath: "main.py",
+            context: "This edit helps you practice the branch structure from the explanation above.",
+            prompt: "Write an if statement and indent one print call beneath it.",
+            starterCode: "ready = True\n",
+            resultCode: "ready = True\nif ready:\n    print(\"Ready\")\n",
+            acceptanceCriteria: ["Has one if statement", "Indents the print call"],
+            workspaceFiles: [{ path: "main.py", content: "ready = True\n" }]
+          }]
+        }
+      ]
+    }]
+  }]
+});
+assert.ok(!sameBlockGroundingWarnings.some((warning) => warning.code === "mcq_topic_mismatch"), "an inline MCQ must see teaching earlier in its own block");
+assert.ok(!sameBlockGroundingWarnings.some((warning) => warning.code === "exercise_topic_mismatch"), "an exercise must see the topic's preceding teaching and block context");
 
 const missingSyntaxTeachingWarnings = validateGeneratedCourseQuality({
   schemaVersion: "course-content/v2",
@@ -1160,7 +1228,7 @@ const loadedTopicFallbackQuizV2 = normalizeGeneratedCourseContent({
   schemaVersion: "course-content/v2",
   title: "Loaded Topic Fallback Quiz",
   subject: "JavaScript",
-  description: "Validate loaded topics always keep interactive practice.",
+  description: "Validate missing practice is reported instead of filled with generic questions.",
   languages: ["JavaScript"],
   tags: ["test"],
   generationDepth: "full_course",
@@ -1191,8 +1259,11 @@ const loadedTopicFallbackQuizV2 = normalizeGeneratedCourseContent({
     }
   ]
 });
-assert.ok(loadedTopicFallbackQuizV2.modules[0].topics[0].blocks.some((block) => block.kind === "quiz"));
-assert.equal(loadedTopicFallbackQuizV2.modules[0].topics[0].blocks.find((block) => block.kind === "quiz").steps.length, 4);
+assert.ok(!loadedTopicFallbackQuizV2.modules[0].topics[0].blocks.some((block) => block.kind === "quiz"), "normalization must not invent generic repeated topic questions");
+assert.ok(
+  hasBlockingGeneratedCourseQualityWarnings(validateGeneratedCourseQuality(loadedTopicFallbackQuizV2)),
+  "fallback topic practice must be repaired and quality-checked before save"
+);
 
 const loadedModuleFallbackWorkshopV2 = normalizeGeneratedCourseContent({
   schemaVersion: "course-content/v2",
@@ -1273,7 +1344,7 @@ const enrichedWeakStepV2 = normalizeGeneratedCourseContent({
               kind: "workshop",
               title: "Workshop",
               summary: "Workshop",
-              steps: [0, 1, 2, 3].map((index) => ({
+              steps: [0, 1, 2, 3].map(() => ({
                 type: "workshop",
                 language: "JavaScript",
                 filePath: "main.js",
@@ -1357,7 +1428,7 @@ const normalizedLanguageCourse = normalizeGeneratedCourseContent({
   description: "Validate language-aware exercises.",
   languages: ["C++"],
   tags: ["test"],
-  generationDepth: "full_course",
+  generationDepth: "full_structure_first_module",
   assessmentReview: review,
   modules: [
     {

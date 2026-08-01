@@ -6,9 +6,7 @@ Use headings when they make a substantial answer easier to scan. Do not wrap a s
 
 Use code fences for code.
 
-Use fenced `diagram` blocks for visual concept maps.
-
-Use fenced `css` blocks only when a styled example helps explain the concept.
+Visual concept maps arrive as structured chat attachments from the current curriculum step. Give them a useful caption/context, but do not simulate a separate visual tab in Markdown.
 
 For substantial lessons, plans, or reviews, use only the parts of this shape that help:
 

@@ -17,9 +17,11 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useSubscriptionState } from "@/hooks/useSubscriptionState";
 import { useUsageSummary } from "@/hooks/useUsageSummary";
 import { useProgression } from "@/hooks/useProgression";
-import { useOpenAiCredential } from "@/hooks/useOpenAiCredential";
+import { useCredits } from "@/hooks/useCredits";
 import { Course } from "@/data/courses";
 import { equipProgressionTitle } from "@/services/progression";
+import { createBillingPortalSession, createBillingSession } from "@/services/billing";
+import { downloadAccountExport, permanentlyDeleteAccount } from "@/services/account";
 import {
   loadProfilePreferences,
   saveProfilePreferences
@@ -85,9 +87,9 @@ export function SettingsScene({
   const [profileMessage, setProfileMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const [billingError, setBillingError] = useState<string | null>(null);
   const [isBillingActionPending, setIsBillingActionPending] = useState(false);
-  const [openAiKeyInput, setOpenAiKeyInput] = useState("");
   const [securityMessage, setSecurityMessage] = useState<string | null>(null);
   const [securityError, setSecurityError] = useState<string | null>(null);
+  const [isSecurityActionPending, setIsSecurityActionPending] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const exitTimerRef = useRef<number | null>(null);
   const userEmail = auth.user?.email ?? "stonecode.dev";
@@ -97,10 +99,7 @@ export function SettingsScene({
   const isVerified = Boolean(auth.user?.email_confirmed_at);
   const resolvedDisplayName = displayName || readDisplayName(userEmail);
   const timezoneOptions = useMemo(() => resolveTimezoneOptions(profileTimezone), [profileTimezone]);
-  const openAiCredentialState = useOpenAiCredential({
-    accessToken: auth.session?.access_token ?? null,
-    enabled: section === "billing" && subscription.requiresOwnOpenAiKey
-  });
+  const creditState = useCredits(section === "billing");
 
   useEffect(() => {
     if (!auth.user?.id) return;
@@ -184,50 +183,52 @@ export function SettingsScene({
     }
   }
 
-  async function openCheckout(plan: "basic" | "pro") {
-    await openBillingUrl("/api/billing/checkout", { plan });
+  async function handleAccountExport() {
+    setSecurityError(null);
+    setSecurityMessage(null);
+    setIsSecurityActionPending(true);
+    try {
+      await downloadAccountExport();
+      setSecurityMessage("Account export downloaded.");
+    } catch (error) {
+      setSecurityError(error instanceof Error ? error.message : "Failed to export account data.");
+    } finally {
+      setIsSecurityActionPending(false);
+    }
+  }
+
+  async function handleAccountDeletion() {
+    setSecurityError(null);
+    setSecurityMessage(null);
+    setIsSecurityActionPending(true);
+    try {
+      await permanentlyDeleteAccount();
+      await auth.signOut().catch(() => undefined);
+      navigate("/", { replace: true });
+    } catch (error) {
+      setSecurityError(error instanceof Error ? error.message : "Failed to delete account.");
+      setIsSecurityActionPending(false);
+      throw error;
+    }
+  }
+
+  async function openCheckout(plan: "pro") {
+    await openBillingAction(() => createBillingSession({ plan }));
   }
 
   async function openBillingPortal() {
-    await openBillingUrl("/api/billing/portal", {});
+    await openBillingAction(createBillingPortalSession);
   }
 
-  async function openBillingUrl(path: string, body: Record<string, string>) {
+  async function openBillingAction(action: () => Promise<string>) {
     setBillingError(null);
     setIsBillingActionPending(true);
     try {
-      const token = auth.session?.access_token;
-      if (!token) throw new Error("Authentication required.");
-      const response = await fetch(path, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...body,
-          successUrl: `${window.location.origin}/settings/billing`,
-          cancelUrl: `${window.location.origin}/settings/billing`,
-          returnUrl: `${window.location.origin}/settings/billing`
-        })
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.url) throw new Error(payload?.error ?? "Failed to open Stripe.");
-      window.location.href = payload.url;
+      window.location.href = await action();
     } catch (error) {
       setBillingError(error instanceof Error ? error.message : "Failed to open Stripe.");
       setIsBillingActionPending(false);
     }
-  }
-
-  async function saveOpenAiKey(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!openAiKeyInput.trim()) return;
-    try {
-      await openAiCredentialState.save(openAiKeyInput);
-      setOpenAiKeyInput("");
-    } catch { /* Shared credential state renders the server error. */ }
-  }
-
-  async function deleteOpenAiKey() {
-    try { await openAiCredentialState.remove(); } catch { /* Shared state renders the error. */ }
   }
 
   async function handleEquipTitle(badgeId: string | null) {
@@ -292,18 +293,12 @@ export function SettingsScene({
           )}
           {section === "billing" && (
             <BillingSettings
-              billingError={billingError ?? subscriptionError}
-              credential={openAiCredentialState.credential}
-              credentialError={openAiCredentialState.error}
+              billingError={billingError ?? subscriptionError ?? creditState.error}
+              credits={creditState.credits}
               isBillingPending={isBillingActionPending}
-              isCredentialPending={openAiCredentialState.isLoading || openAiCredentialState.isPending}
-              isLoading={isSubscriptionLoading}
-              keyInput={openAiKeyInput}
+              isLoading={isSubscriptionLoading || creditState.isLoading}
               onCheckout={(plan) => void openCheckout(plan)}
-              onKeyInputChange={setOpenAiKeyInput}
               onManageBilling={() => void openBillingPortal()}
-              onRemoveKey={() => void deleteOpenAiKey()}
-              onSaveKey={saveOpenAiKey}
               subscription={subscription}
             />
           )}
@@ -312,8 +307,11 @@ export function SettingsScene({
             <SecuritySettings
               email={userEmail}
               error={securityError}
+              isPending={isSecurityActionPending}
               lastSignInAt={auth.user?.last_sign_in_at ?? null}
               message={securityMessage}
+              onDeleteAccount={handleAccountDeletion}
+              onExportAccount={handleAccountExport}
               onPasswordReset={handlePasswordReset}
               onSignOut={() => void handleSignOut()}
               verified={isVerified}

@@ -1,16 +1,17 @@
-import { MouseEvent as ReactMouseEvent, ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MouseEvent as ReactMouseEvent, ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { HeroWorkspacePreview } from "@/components/app/HeroWorkspacePreview";
 import SideRays from "@/components/effects/SideRays";
 import { StonecodeLogoMark } from "@/components/stonecode/StonecodeBrand";
 
 type PublicPageMode = "landing" | "support" | "privacy" | "terms";
+const supportEmail = import.meta.env.VITE_SUPPORT_EMAIL || "support@stonecode.app";
 
 const landingLinks = [
   { href: "#courses", label: "Features" },
+  { href: "#why-stonecode", label: "Why Stonecode" },
+  { href: "#stories", label: "Stories" },
   { href: "#pricing", label: "Pricing" },
-  { href: "#about", label: "About" },
-  { href: "#docs", label: "Docs" }
 ];
 
 const supportCards = [
@@ -63,10 +64,11 @@ export function LandingPage() {
     <PublicPageShell isLeaving={isLeaving} mode="landing" onClickCapture={handleLandingClickCapture}>
       <section className="public-hero landing-grid landing-hero-board" aria-label="Stonecode landing hero">
         <div className="hero-copy panel-fade">
-          <p className="hero-eyebrow">Your AI programming tutor</p>
+          <p className="hero-eyebrow">A computing school that adapts to you</p>
           <RotatingLearningHeadline />
           <p className="hero-body">
-            Learn with an AI tutor that builds your path, guides your practice, and helps you understand what you build.
+            Choose a goal. Stonecode turns it into a structured path, gives you the right learning workspace, and stays
+            beside you until the ideas click.
           </p>
           <div className="public-actions" aria-label="Landing actions">
             <Link className="public-button is-primary" to="/signup">Start learning free</Link>
@@ -78,10 +80,9 @@ export function LandingPage() {
           <HeroWorkspacePreview />
         </div>
         <div className="hero-proof panel-fade">
-          <p className="trust-label">One tutor. Four ways to learn.</p>
+          <p className="trust-label">One workspace. Three ways to learn.</p>
           <div className="trust-row" aria-label="Stonecode learning experience types">
             <span>Courses</span>
-            <span>Short courses</span>
             <span>Exercises</span>
             <span>Guided projects</span>
           </div>
@@ -90,37 +91,88 @@ export function LandingPage() {
 
       <section className="landing-section showcase-section" id="courses">
         <FeatureShowcase
-          eyebrow="Personalized curriculum"
-          title="AI-generated courses."
-          copy="Tell your AI tutor what you want to learn. It assesses what you already know, then generates a course with the right modules, theory, workshops, and checkpoints."
-          imageLabel="AI-generated personalized course preview"
-          points={["Generated around your goal", "Prerequisites added only when needed", "Your course adapts as you progress"]}
+          eyebrow="21 runnable technologies"
+          title="Learn programming—and the ideas underneath it."
+          copy="Choose from 21 runtime-backed technologies or study computer fundamentals, the internet and web, algorithms and data structures, or math for programmers."
+          imageLabel="Personalized computing course preview"
+          points={["21 reviewed runnable technologies", "Four computing foundations domains", "A path shaped around your goal"]}
           scene="modules"
+          warmMedia
         />
         <FeatureShowcase
-          eyebrow="Guided AI workshops"
-          title="Build projects side-by-side with AI."
-          copy="Build inside the editor while your AI tutor explains each change, reads the current files, and guides the next step beside you."
-          imageLabel="Side-by-side guided workshop preview"
-          points={["One continuous project", "Small guided edits with visible results", "AI feedback grounded in your files"]}
+          eyebrow="Three learning modes"
+          title="Learn your way, not one fixed way."
+          copy="Follow a complete course, build one guided project, or sharpen a specific skill with an exercise pack. Practical paths use the persistent IDE; conceptual paths use lessons, quizzes, reviews, and tutor diagrams."
+          imageLabel="Course, guided project, and exercise learning modes preview"
+          points={["Full courses for structured depth", "Guided projects for learning by building", "Exercise packs for focused practice"]}
           scene="workshop"
           reverse
         />
         <FeatureShowcase
-          eyebrow="Adaptive AI practice"
-          title="AI-generated exercises."
-          copy="Ask for practice by topic and difficulty. Your AI tutor generates coding problems and MCQs, checks your work, gives targeted hints, and turns verified progress into XP."
-          imageLabel="AI-generated coding exercise preview"
-          points={["Choose topics, difficulty, and exercise count", "Coding and MCQ practice generated for you", "Verified results become language XP"]}
-          scene="exercises"
+          eyebrow="Progress you can see"
+          title="Turn every session into visible progress."
+          copy="Verified exercises build language XP, activity streaks, and earnable badges. Your tracker shows what is improving and brings you back to the exact place you stopped."
+          imageLabel="Language progress, streak, and badge tracker preview"
+          points={["Language XP from verified work", "Streaks, achievements, and equipable badges", "Course progress preserved between sessions"]}
+          scene="progress"
         />
+      </section>
+
+      <section className="landing-section comparison-board" data-reveal-group id="why-stonecode">
+        <div className="section-copy panel-fade">
+          <p className="panel-label">Why Stonecode</p>
+          <h2>Stop rebuilding your learning system every day.</h2>
+          <p>
+            Tutorials, courses, and chatbots can all help. The hard part is turning scattered help into the right next
+            lesson, useful practice, and progress that continues tomorrow.
+          </p>
+        </div>
+        <div className="comparison-grid">
+          {learningComparison.map((item) => (
+            <article className={`comparison-card panel-fade${item.featured ? " is-stonecode" : ""}`} key={item.label}>
+              <p className="panel-label">{item.label}</p>
+              <h3>{item.title}</h3>
+              <p>{item.copy}</p>
+              {item.points && (
+                <ul>
+                  {item.points.map((point) => <li key={point}>{point}</li>)}
+                </ul>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="landing-section learner-proof-board" data-reveal-group id="stories">
+        <div className="section-copy panel-fade">
+          <p className="panel-label">Learner proof</p>
+          <h2>Stories from real learners.</h2>
+          <p>
+            Stonecode is entering paid beta. Verified learner stories and an aggregate rating will appear here after
+            enough real people have used the product—never as placeholder praise.
+          </p>
+          <Link className="public-button is-primary" to="/signup">Join the founding learners</Link>
+        </div>
+        <div className="learner-proof-grid">
+          <article className="learner-proof-card panel-fade">
+            <span className="rating-stars" aria-hidden="true">☆ ☆ ☆ ☆ ☆</span>
+            <p className="panel-label">Verified ratings</p>
+            <h3>Published when they are real.</h3>
+            <p>Only feedback from Stonecode learners will contribute to the public rating.</p>
+          </article>
+          <article className="learner-proof-card panel-fade">
+            <p className="panel-label">Founding cohort</p>
+            <h3>Your progress can become the proof.</h3>
+            <p>Start free, learn in the full workspace, and help shape the experience before the public launch.</p>
+          </article>
+        </div>
       </section>
 
       <section className="landing-section pricing-board" data-reveal-group id="pricing">
         <div className="section-copy panel-fade">
           <p className="panel-label">Pricing</p>
-          <h2>Choose who powers your tutor.</h2>
-          <p>Use your own OpenAI key for free, or let Stonecode handle the AI for $9 per person each month.</p>
+          <h2>Start free. Upgrade when momentum demands more.</h2>
+          <p>Every account includes 10 creation Stones. Pro adds more paths, more tutor access, and 100 Stones each billing cycle.</p>
         </div>
         <div className="pricing-grid">
           {pricingPlans.map((plan) => (
@@ -155,11 +207,12 @@ export function LandingPage() {
             <h2>Programming understanding matters more in the AI era.</h2>
           </div>
           <p className="panel-body">
-            Generating software is becoming easier. Knowing why it works—and how to fix it when it does not—is becoming more valuable.
+            AI can produce code in seconds. The advantage belongs to people who can read it, test it, change it, and
+            know when it is wrong.
           </p>
           <p className="panel-body">
-            Stonecode gives beginners a personal AI tutor, a progressive curriculum, hands-on practice, and one
-            workspace that remembers the course, project files, conversations, and progress.
+            Stonecode builds that judgment through structured learning, hands-on practice, contextual guidance, and
+            one workspace that remembers your lessons, files, conversations, and progress.
           </p>
           <div className="stats-row">
             {aboutStats.map((stat) => (
@@ -182,8 +235,8 @@ export function LandingPage() {
 
       <section className="landing-section footer-cta panel-fade" id="docs">
         <div>
-          <h2>Learn the code AI helps you create.</h2>
-          <p>Start with a personal course, a focused exercise set, or one guided project.</p>
+          <h2>Stop collecting tutorials. Start building understanding.</h2>
+          <p>Begin with a complete course, one guided project, or focused practice. Your first 10 Stones are included.</p>
         </div>
         <div className="cta-links">
           <Link className="public-button" to="/support">Support</Link>
@@ -197,6 +250,16 @@ export function LandingPage() {
 
 export function SupportPage() {
   usePublicPageMotion();
+  const [copied, setCopied] = useState(false);
+  const diagnosticId = useMemo(() => globalThis.crypto?.randomUUID?.() ?? `SC-${Date.now().toString(36).toUpperCase()}`, []);
+  const topic = new URLSearchParams(window.location.search).get("topic") ?? "Stonecode support request";
+  const supportHref = `mailto:${supportEmail}?subject=${encodeURIComponent(topic)}&body=${encodeURIComponent(`Diagnostic ID: ${diagnosticId}\nRoute: ${window.location.pathname}\n\nWhat I did:\n\nExpected:\n\nActual:\n`)}`;
+
+  async function copyDiagnosticId() {
+    await navigator.clipboard.writeText(diagnosticId);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
 
   return (
     <PublicPageShell mode="support">
@@ -229,6 +292,18 @@ export function SupportPage() {
           </article>
         ))}
       </section>
+      <section className="public-panel support-contact panel-fade" aria-labelledby="support-contact-title">
+        <div>
+          <p className="panel-label">Contact support</p>
+          <h2 id="support-contact-title">Send one report we can trace.</h2>
+          <p>Email <a href={`mailto:${supportEmail}`}>{supportEmail}</a> and include the reference shown in any error.</p>
+        </div>
+        <div className="support-contact-actions">
+          <code>{diagnosticId}</code>
+          <button className="public-button" onClick={() => void copyDiagnosticId()} type="button">{copied ? "Copied" : "Copy diagnostic ID"}</button>
+          <a className="public-button is-primary" href={supportHref}>Email support</a>
+        </div>
+      </section>
     </PublicPageShell>
   );
 }
@@ -250,8 +325,8 @@ export function LegalPage({ type }: { type: "privacy" | "terms" }) {
           <p className="hero-body">{description}</p>
         </div>
         <aside className="support-sidecard">
-          <span>Beta draft</span>
-          <p>Last updated June 23, 2026. Final legal review still required before broader public launch.</p>
+          <span>Effective for paid beta</span>
+          <p>Effective July 31, 2026. Questions: <a href={`mailto:${supportEmail}`}>{supportEmail}</a>.</p>
         </aside>
       </section>
 
@@ -320,7 +395,7 @@ function PublicPageShell({
             <StonecodeLogoMark className="public-brand-mark footer-brand-mark" />
             <strong>stonecode</strong>
           </div>
-          <span>Personalized AI programming tutor for learning, practice, projects, and progress.</span>
+          <span>Personalized AI computing tutor for learning, practice, projects, and progress.</span>
         </div>
         <div className="footer-columns">
           <div>
@@ -380,49 +455,6 @@ function StoneTexture() {
   );
 }
 
-function WorkspacePreview() {
-  return (
-    <div className="workspace-preview-frame">
-      <div className="preview-chrome">
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className="preview-tabs">
-        <b>main.py</b>
-        <span>Modules</span>
-      </div>
-      <div className="preview-editor">
-        <div className="preview-gutter" aria-hidden="true">
-          <span>01</span>
-          <span>02</span>
-          <span>03</span>
-          <span>04</span>
-          <span>05</span>
-          <span>06</span>
-          <span>07</span>
-          <span>08</span>
-        </div>
-        <pre>
-          <code>{`import pygame\n\npygame.init()\n\nWIDTH = 960\nHEIGHT = 540\nscreen = pygame.display.set_mode((WIDTH, HEIGHT))\n\n# Next: create the player`}</code>
-        </pre>
-      </div>
-      <div className="preview-rail">
-        <div className="preview-terminal">
-          <span>stonecode ~/pygame-platformer</span>
-          <p>$ python main.py</p>
-          <p>Window opened: 960 × 540</p>
-          <p>Step 3 of 12 ready</p>
-        </div>
-        <div className="preview-tutor">
-          <strong>Why these dimensions?</strong>
-          <p>WIDTH and HEIGHT describe the game window. Next, we will use them to position the player.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function FeatureShowcase({
   copy,
   eyebrow,
@@ -430,7 +462,8 @@ function FeatureShowcase({
   points,
   reverse = false,
   scene,
-  title
+  title,
+  warmMedia = false
 }: {
   copy: string;
   eyebrow: string;
@@ -439,6 +472,7 @@ function FeatureShowcase({
   reverse?: boolean;
   scene: ProductMediaScene;
   title: string;
+  warmMedia?: boolean;
 }) {
   return (
     <article className={`showcase-row${reverse ? " is-reverse" : ""}`} data-reveal-group>
@@ -452,56 +486,20 @@ function FeatureShowcase({
           ))}
         </ul>
       </div>
-      <LandingLoop fill label={imageLabel} reveal scene={scene} />
+      <LandingLoop fill label={imageLabel} reveal scene={scene} warmMedia={warmMedia} />
     </article>
   );
 }
 
 type ProductMediaScene = "discovery" | "assessment" | "modules" | "tutor" | "workshop" | "exercises" | "progress";
 
-function RealAppStill({ compact = false, label }: { compact?: boolean; label: string }) {
-  return (
-    <div className={`feature-shot landing-real-still${compact ? " is-compact" : ""}`} aria-label={label}>
-      <img alt={label} loading="lazy" src="/marketing/app-dashboard-poster.jpg" />
-    </div>
-  );
-}
-
-function ProductMedia({ compact = false, label, scene }: { compact?: boolean; label: string; scene: ProductMediaScene }) {
-  const sceneContent = productMediaScenes[scene];
-  return (
-    <div className={`feature-shot product-media product-media-${scene}${compact ? " is-compact" : ""}`} aria-label={label}>
-      <LandingLoop fill label={label} scene={scene} />
-      <div className="shot-window">
-        <span />
-        <span />
-        <span />
-        <b>{sceneContent.windowTitle}</b>
-      </div>
-      <div className="product-media-body">
-        <aside aria-hidden="true">
-          {sceneContent.rail.map((item, index) => <span className={index === 0 ? "is-active" : ""} key={item}>{item}</span>)}
-        </aside>
-        <div className="product-media-main">
-          <small>{sceneContent.eyebrow}</small>
-          <strong>{sceneContent.title}</strong>
-          <p>{sceneContent.copy}</p>
-          <div className="product-media-actions">
-            {sceneContent.actions.map((action) => <span key={action}>{action}</span>)}
-          </div>
-        </div>
-      </div>
-      {!compact && <p className="product-media-caption">{label}</p>}
-    </div>
-  );
-}
-
-function LandingLoop({ compact = false, fill = false, label, reveal = false, scene }: {
+function LandingLoop({ compact = false, fill = false, label, reveal = false, scene, warmMedia = false }: {
   compact?: boolean;
   fill?: boolean;
   label: string;
   reveal?: boolean;
   scene: ProductMediaScene;
+  warmMedia?: boolean;
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -529,6 +527,12 @@ function LandingLoop({ compact = false, fill = false, label, reveal = false, sce
     observer.observe(shell);
     return () => observer.disconnect();
   }, [reduceMotion]);
+
+  useEffect(() => {
+    if (!warmMedia || reduceMotion) return;
+    const timer = window.setTimeout(() => setShouldLoad(true), 2200);
+    return () => window.clearTimeout(timer);
+  }, [reduceMotion, warmMedia]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -567,9 +571,11 @@ function LandingLoop({ compact = false, fill = false, label, reveal = false, sce
 
 function RotatingLearningHeadline() {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [displayedPrefix, setDisplayedPrefix] = useState("");
   const [displayedTarget, setDisplayedTarget] = useState("");
-  const [phase, setPhase] = useState<"typing" | "holding" | "deleting">("typing");
+  const [phase, setPhase] = useState<"waiting" | "prefixTyping" | "prefixPause" | "typing" | "holding" | "deleting">("waiting");
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [isTypingReady, setIsTypingReady] = useState(false);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -581,16 +587,43 @@ function RotatingLearningHeadline() {
 
   useEffect(() => {
     if (reduceMotion) {
+      setIsTypingReady(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setIsTypingReady(true), 1720);
+    return () => window.clearTimeout(timer);
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    if (!isTypingReady) return;
+    if (reduceMotion) {
+      setDisplayedPrefix("Learn");
       setDisplayedTarget("programming");
+      setPhase("holding");
       return;
     }
 
     const target = learningTargets[activeIndex];
     let delay = 78;
+    if (phase === "waiting") delay = 0;
+    if (phase === "prefixPause") delay = 280;
     if (phase === "typing" && displayedTarget === target) delay = 1150;
     if (phase === "holding") delay = 42;
 
     const timer = window.setTimeout(() => {
+      if (phase === "waiting") {
+        setPhase("prefixTyping");
+        return;
+      }
+      if (phase === "prefixTyping") {
+        if (displayedPrefix === "Learn") setPhase("prefixPause");
+        else setDisplayedPrefix("Learn".slice(0, displayedPrefix.length + 1));
+        return;
+      }
+      if (phase === "prefixPause") {
+        setPhase("typing");
+        return;
+      }
       if (phase === "typing") {
         if (displayedTarget === target) setPhase("holding");
         else setDisplayedTarget(target.slice(0, displayedTarget.length + 1));
@@ -608,12 +641,20 @@ function RotatingLearningHeadline() {
       }
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [activeIndex, displayedTarget, phase, reduceMotion]);
+  }, [activeIndex, displayedPrefix, displayedTarget, isTypingReady, phase, reduceMotion]);
 
   return (
-    <h1 aria-label="Learn programming with your personalized AI tutor.">
+    <h1 aria-label="Learn computing in a workspace built around you.">
       <span className={`learning-headline-line${learningTargets[activeIndex].length > 14 ? " is-long-target" : ""}`} aria-hidden="true">
-        Learn <b>{displayedTarget}<i className="learning-type-cursor" /></b>{(phase === "holding" || reduceMotion) && "."}
+        {displayedPrefix}
+        {(phase === "prefixTyping" || phase === "prefixPause") && <i className="learning-type-cursor is-active" />}
+        {(phase !== "waiting" && phase !== "prefixTyping" && phase !== "prefixPause") && (
+          <>
+            {" "}
+            <b>{displayedTarget}<i className="learning-type-cursor is-active" /></b>
+          </>
+        )}
+        {(phase === "holding" || reduceMotion) && "."}
       </span>
     </h1>
   );
@@ -717,7 +758,7 @@ function usePublicPageMotion() {
         revealInSequence([...initialPanels, ...landingRays]);
         centerTargets.forEach((target) => observer.observe(target));
         edgePanels.forEach((target) => edgeObserver.observe(target));
-        [...centerTargets, ...edgePanels].forEach((target) => resetObserver.observe(target));
+        [...centerTargets.filter((target) => !landingHeroes.includes(target)), ...edgePanels].forEach((target) => resetObserver.observe(target));
       });
     });
 
@@ -732,143 +773,60 @@ function usePublicPageMotion() {
   }, []);
 }
 
-const featureCards = [
-  {
-    icon: "01",
-    scene: "discovery" as const,
-    title: "Conversational discovery",
-    copy: "Describe what you want to learn or build. Stonecode asks only the questions that change your path."
-  },
-  {
-    icon: "AI",
-    scene: "assessment" as const,
-    title: "Personalized curriculum",
-    copy: "Your goal, prior knowledge, and optional prerequisite check shape the modules Stonecode generates."
-  },
-  {
-    icon: "Aa",
-    scene: "tutor" as const,
-    title: "Theory for beginners",
-    copy: "New concepts, words, symbols, and code are explained before you are expected to use them."
-  },
-  {
-    icon: "{}",
-    scene: "workshop" as const,
-    title: "Guided workshops",
-    copy: "Build real features through small connected edits, with the tutor and editor sharing the same context."
-  },
-  {
-    icon: "[]",
-    scene: "exercises" as const,
-    title: "Targeted practice",
-    copy: "Generate coding and MCQ exercises for the exact language, framework, or topic you want to strengthen."
-  },
-  {
-    icon: "XP",
-    scene: "progress" as const,
-    title: "Skills and achievements",
-    copy: "Track language XP, solved exercises, program completion, and titles earned through verified progress."
-  }
-];
-
 const pricingPlans = [
   {
     name: "Free",
-    tagline: "Bring your own OpenAI key",
+    tagline: "Start learning without a subscription",
     price: "$0",
     unit: "/ person / month",
     cta: "Start free",
     href: "/signup",
     featured: false,
     badge: null,
-    points: ["Generate courses, short courses, exercises, and guided projects", "Personalized discovery with an optional skill assessment", "AI tutor, persistent workspace, XP, and achievements", "Pay OpenAI directly for model usage"]
+    points: ["10 creation Stones on registration", "All launch technologies and domains", "1 active learning path", "50 tutor replies and 5 AI images monthly"]
   },
   {
     name: "Pro",
-    tagline: "Stonecode handles the AI",
+    tagline: "Keep more learning paths moving",
     price: "$9",
     unit: "/ person / month",
     cta: "Choose Pro",
     href: "/signup",
     featured: true,
-    badge: "AI included",
-    points: ["Everything in Free", "Monthly AI credits managed by Stonecode", "Start without configuring an OpenAI key", "One subscription for Stonecode and AI usage"]
+    badge: "100 Stones / month",
+    points: ["100 expiring creation Stones each billing cycle", "All launch technologies and domains", "10 active learning paths", "500 tutor replies and 50 AI images monthly"]
+  }
+];
+
+const learningComparison = [
+  {
+    label: "Learning alone",
+    title: "You have to design the path.",
+    copy: "Useful content is everywhere. Sequencing it, choosing the right practice, and knowing when to move on is still left to you.",
+    featured: false
+  },
+  {
+    label: "General AI chat",
+    title: "Helpful answers without a learning system.",
+    copy: "A chat can explain a bug. It does not automatically connect a curriculum, your project files, verified practice, and long-term progress.",
+    featured: false
+  },
+  {
+    label: "Stonecode",
+    title: "One path that stays with you.",
+    copy: "Your plan, lessons, editor, tutor context, exercises, and progress live together—so every session starts where the last one ended.",
+    points: ["Structured around your goal", "Practice inside a live IDE", "Progress verified and remembered"],
+    featured: true
   }
 ];
 
 const aboutStats = [
-  { value: "4", label: "Learning experience types" },
-  { value: "1", label: "Persistent coding workspace" },
+  { value: "3", label: "Learning experience types" },
+  { value: "5", label: "Learning domains" },
   { value: "∞", label: "Personal paths Stonecode can shape" }
 ];
 
-const learningTargets = ["JavaScript", "Python", "C++", "C#", "Web Development", "Game Development"];
-
-const productMediaScenes: Record<ProductMediaScene, {
-  actions: string[];
-  copy: string;
-  eyebrow: string;
-  rail: string[];
-  title: string;
-  windowTitle: string;
-}> = {
-  discovery: {
-    windowTitle: "Add learning",
-    eyebrow: "AI discovery",
-    title: "What would you like to learn or build?",
-    copy: "I want to build a 2D game with Python, but I have never used Pygame.",
-    actions: ["Python fundamentals", "2D game with Pygame", "Help me choose"],
-    rail: ["Goal", "Background", "Optional check", "Review"]
-  },
-  assessment: {
-    windowTitle: "Optional prerequisite check",
-    eyebrow: "Question 2 of 3",
-    title: "What does this Python loop repeat?",
-    copy: "Your answer helps Stonecode decide whether to add a short Python bridge before Pygame.",
-    actions: ["Choose an answer", "I don't know", "Skip assessment"],
-    rail: ["Goal", "Background", "Assessment", "Review"]
-  },
-  modules: {
-    windowTitle: "Personal course",
-    eyebrow: "Module 1 ready",
-    title: "Pygame foundations for your first platformer",
-    copy: "Theory → guided workshop → quiz, with later modules planned around the game you want to build.",
-    actions: ["Start Module 1", "View modules"],
-    rail: ["Modules", "Files", "Progress"]
-  },
-  tutor: {
-    windowTitle: "Personal AI tutor",
-    eyebrow: "Theory · variables",
-    title: "A variable is a label attached to a value.",
-    copy: "WIDTH keeps the number 960 under a useful name, so the rest of the program can reuse it clearly.",
-    actions: ["Show an analogy", "Explain this line", "Give me an example"],
-    rail: ["Modules", "Theory", "main.py", "Tutor"]
-  },
-  workshop: {
-    windowTitle: "Guided workshop",
-    eyebrow: "Step 3 of 12",
-    title: "Create the game window",
-    copy: "Add WIDTH and HEIGHT, then pass both values into pygame.display.set_mode().",
-    actions: ["Why these values?", "Show the code change", "Check"],
-    rail: ["Modules", "main.py", "Visual", "Terminal"]
-  },
-  exercises: {
-    windowTitle: "Focused exercise",
-    eyebrow: "Python · easy",
-    title: "Create a display surface with the requested size.",
-    copy: "Run your code as often as you need. Stonecode checks the result and explains what is still missing.",
-    actions: ["Run", "Ask one hint", "Check answer"],
-    rail: ["Exercise 3", "main.py", "Terminal", "Checklist"]
-  },
-  progress: {
-    windowTitle: "Skill progression",
-    eyebrow: "Verified progress",
-    title: "+20 Python XP",
-    copy: "Exercise passed: initialize Pygame and create a correctly sized display surface.",
-    actions: ["Python · 140 XP", "Game Development · 65 XP", "First Steps earned"],
-    rail: ["Overview", "Languages", "Exercises", "Titles"]
-  }
-};
+const learningTargets = ["JavaScript", "Python", "Algorithms", "Internet fundamentals", "Math for programmers"];
 
 const privacySections = [
   {
@@ -881,11 +839,31 @@ const privacySections = [
   },
   {
     title: "AI tutor data",
-    copy: "Tutor prompts, course context, and generated responses may be sent to the configured AI provider so the tutor can respond and apply requested workspace changes."
+    copy: "Tutor prompts, relevant course context, and generated responses are sent to Stonecode's configured AI provider to provide tutoring, grading, course creation, and optional visual explanations. Do not enter secrets or highly sensitive personal information."
   },
   {
     title: "Billing data",
     copy: "Payments, invoices, and subscription portal flows are handled by Stripe. Stonecode stores subscription status and plan identifiers needed to enforce product access."
+  },
+  {
+    title: "Execution and service providers",
+    copy: "Code selected for managed execution may be sent to Judge0 through RapidAPI. Supabase hosts authentication and application data, OpenAI provides AI features, Stripe processes billing, and Netlify hosts the application. Each provider handles data under its own terms."
+  },
+  {
+    title: "Retention and deletion",
+    copy: "Workspace data is retained while your account is active. You can download your account data or permanently delete your account in Security settings. Deletion removes Stonecode account data and cancels an active subscription; payment providers may retain legally required transaction records."
+  },
+  {
+    title: "Security and your choices",
+    copy: "Stonecode uses authenticated access controls, private visual storage, scoped course ownership checks, and server-held provider credentials. You may request access, correction, export, or deletion through in-app settings or support. No internet service can guarantee absolute security."
+  },
+  {
+    title: "Cookies and international processing",
+    copy: "Stonecode uses essential browser storage and authentication data to keep you signed in and preserve workspace state. Providers may process data in countries outside yours. Continued use authorizes that processing where permitted by law."
+  },
+  {
+    title: "Contact and changes",
+    copy: `Privacy questions can be sent to ${supportEmail}. Material policy changes will be reflected here with a new effective date.`
   }
 ];
 
@@ -896,7 +874,7 @@ const termsSections = [
   },
   {
     title: "Acceptable use",
-    copy: "Use Stonecode for lawful learning and coding practice. Do not attempt to bypass plan limits, abuse AI endpoints, or run untrusted code outside the provided safe browser runner."
+    copy: "Use Stonecode for lawful learning and coding practice. Do not attempt to bypass plan limits, abuse AI endpoints, or run untrusted code outside the provided execution sandbox."
   },
   {
     title: "AI limitations",
@@ -904,6 +882,26 @@ const termsSections = [
   },
   {
     title: "Subscriptions",
-    copy: "Billing is managed through Stripe checkout and portal flows. Plan access, course limits, and usage limits are enforced by the application."
+    copy: "Pro renews monthly until canceled. Billing is managed through Stripe checkout and its customer portal. Cancellation stops future renewal and remains subject to the period shown by Stripe. Except where law requires otherwise, used periods and spent Stones are not refundable."
+  },
+  {
+    title: "Stones and included usage",
+    copy: "Stones are internal creation credits, not money or transferable property. Registration Stones do not expire; monthly Pro Stones expire at the end of their billing cycle. Failed generation releases reserved Stones, while deleting a completed path does not refund them. Tutor, image, and execution allowances are separate plan limits."
+  },
+  {
+    title: "Your content and license",
+    copy: "You retain rights you hold in prompts and project content you submit. You grant Stonecode the limited rights needed to host, process, secure, and provide the service. You are responsible for having permission to submit content and for reviewing generated output before use."
+  },
+  {
+    title: "Service availability",
+    copy: "Stonecode may change, suspend, or discontinue beta features, enforce safety or usage limits, and restrict accounts that threaten the service or other users. We aim to preserve stored learning data but do not promise uninterrupted or error-free availability."
+  },
+  {
+    title: "Disclaimers and liability",
+    copy: "Stonecode provides educational software, not professional, security, legal, medical, or financial advice. To the maximum extent permitted by law, the service is provided as available and liability is limited to amounts you paid Stonecode during the previous three months. Consumer rights that cannot legally be limited remain unaffected."
+  },
+  {
+    title: "Termination and contact",
+    copy: `You may delete your account in Security settings. Stonecode may suspend access for material breach, abuse, fraud, or security risk. Questions and notices can be sent to ${supportEmail}. These terms use the laws and mandatory consumer protections applicable to Stonecode's operating entity and your location.`
   }
 ];

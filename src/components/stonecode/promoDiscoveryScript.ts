@@ -1,17 +1,16 @@
 import type { LearningBrief } from "@/data/courses";
 import type { CourseSetupServices } from "@/components/stonecode/CourseSetupCard";
 
-const pygameBrief: LearningBrief = {
+const browserBrief: LearningBrief = {
   type: "guided_project",
-  goal: "Build a small 2D platformer with Python and Pygame",
-  subject: "Pygame",
-  language: "Python",
-  framework: "Pygame",
-  platform: "Desktop",
-  desiredOutcome: "A playable 2D platformer",
-  motivation: "Learn game development by building something visual",
-  priorKnowledge: "Comfortable with Python variables, loops, and functions",
-  topics: ["Pygame fundamentals", "Game loop", "Movement and collision"]
+  goal: "Build an interactive browser dashboard with JavaScript",
+  subject: "JavaScript",
+  language: "JavaScript",
+  platform: "Web",
+  desiredOutcome: "An interactive browser dashboard",
+  motivation: "Learn browser programming by building something visual",
+  priorKnowledge: "Comfortable with JavaScript variables and loops",
+  topics: ["DOM fundamentals", "Events", "State and rendering"]
 };
 
 async function pause(ms = 260) {
@@ -27,10 +26,12 @@ export const promoDiscoveryServices: Partial<CourseSetupServices> = {
         discovery: {
           status: "clarifying",
           reply: "What would you like to learn or build?",
-          suggestions: ["Build a 2D game", "Learn web development", "Practice Python"],
+          suggestions: ["Build a browser project", "Learn JavaScript", "Practice Python"],
           brief: null,
           draftBrief: null,
           missingFields: ["goal"],
+          questionField: "goal",
+          responseTurn: turn,
           nextAction: "clarify"
         }
       };
@@ -40,11 +41,13 @@ export const promoDiscoveryServices: Partial<CourseSetupServices> = {
         source: "ai",
         discovery: {
           status: "clarifying",
-          reply: "Great. Which language or game tool would you like to use?",
-          suggestions: ["Python with Pygame", "JavaScript with Canvas", "Help me choose"],
+          reply: "Great. Which supported browser technology would you like to use?",
+          suggestions: ["Plain JavaScript", "React", "Help me choose"],
           brief: null,
-          draftBrief: { type: "guided_project", goal: pygameBrief.goal },
+          draftBrief: { type: "guided_project", goal: browserBrief.goal },
           missingFields: ["language", "framework", "priorKnowledge"],
+          questionField: "language",
+          responseTurn: turn,
           nextAction: "clarify"
         }
       };
@@ -54,11 +57,13 @@ export const promoDiscoveryServices: Partial<CourseSetupServices> = {
         source: "ai",
         discovery: {
           status: "clarifying",
-          reply: "What experience do you already have with Python or game programming?",
-          suggestions: ["I know Python basics", "I’m completely new", "I’ve built small scripts"],
+          reply: "What experience do you already have with JavaScript or browser programming?",
+          suggestions: ["I know JavaScript basics", "I’m completely new", "I’ve built a small page"],
           brief: null,
-          draftBrief: { ...pygameBrief, priorKnowledge: undefined },
+          draftBrief: { ...browserBrief, priorKnowledge: undefined },
           missingFields: ["priorKnowledge"],
+          questionField: "priorKnowledge",
+          responseTurn: turn,
           nextAction: "clarify"
         }
       };
@@ -67,46 +72,14 @@ export const promoDiscoveryServices: Partial<CourseSetupServices> = {
       source: "ai",
       discovery: {
         status: "ready",
-        reply: "Perfect. I’ll shape the project around your Python basics and check only the Pygame prerequisites that matter.",
+        reply: "Perfect. I’ll shape the project around your JavaScript basics and prepare a concrete outline.",
         suggestions: [],
-        brief: pygameBrief,
-        draftBrief: pygameBrief,
+        brief: browserBrief,
+        draftBrief: browserBrief,
         missingFields: [],
-        nextAction: "assessment_offer"
-      }
-    };
-  },
-  async requestAssessmentPlan() {
-    await pause(220);
-    return {
-      source: "ai",
-      plan: {
-        supported: true,
-        reason: "A short check helps target the Pygame refreshers.",
-        targetSubject: "Pygame",
-        courseCategory: "game-dev",
-        requiresAssessment: true,
-        prerequisiteAreas: [
-          { id: "python-control-flow", title: "Python control flow", reason: "Used inside the game loop.", startingDifficulty: "entry" },
-          { id: "coordinates", title: "2D coordinates", reason: "Used for movement and collision.", startingDifficulty: "entry" },
-          { id: "state", title: "Program state", reason: "Used to track the player and scene.", startingDifficulty: "basic" }
-        ]
-      }
-    };
-  },
-  async requestAssessmentQuestion() {
-    await pause(240);
-    return {
-      source: "ai",
-      question: {
-        id: "promo-python-loop",
-        type: "mcq",
-        questionKind: "prerequisite",
-        assessmentArea: "python-control-flow",
-        difficulty: "entry",
-        prompt: "Which loop is best when a game should keep running until the player quits?",
-        options: ["A while loop", "A single if statement", "A class definition", "An import statement"],
-        correctOptionIndex: 0
+        questionField: null,
+        responseTurn: turn,
+        nextAction: "confirm"
       }
     };
   }

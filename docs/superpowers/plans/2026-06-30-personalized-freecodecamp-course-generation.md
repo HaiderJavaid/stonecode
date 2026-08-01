@@ -1,5 +1,7 @@
 # Personalized FreeCodeCamp-Style Course Generation Implementation Plan
 
+> Historical plan, superseded on 2026-07-29 by `docs/PROJECT.md`, `docs/DECISIONS.md`, and `docs/AI_COURSE_GENERATION_RULES.md`. Keep only for implementation history; do not restore onboarding knowledge tests, Whiteboard/Visual tabs, or legacy generation routes from this document.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Upgrade Stonecode course onboarding and generation so courses are personalized from prerequisite assessment results and organized like freeCodeCamp: Course -> Modules -> Topics -> Block Types -> Steps.

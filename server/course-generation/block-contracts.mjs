@@ -59,10 +59,14 @@ Theory block contract:
   if (kind === "quiz") {
     return `${shared}
 
-Quiz block contract:
+Topic-practice block contract (stored as kind "quiz" for compatibility):
 - Use only mcq steps.
 - Generate 4 to 10 MCQs.
-- Each MCQ tests recently taught material.
+- This is guided reinforcement, not a learner assessment or prerequisite test.
+- Every MCQ must directly reuse one exact concept, code example, runtime behavior, or decision taught in this topic.
+- Give each question a different purpose. Never paraphrase or repeat another question in the block.
+- Prefer concrete code tracing, debugging, prediction, and scenario choices over abstract trivia.
+- Explanations must reconnect the answer to the topic's teaching and improve understanding even after a wrong choice.
 - Distractors must be plausible, similar length, and not joke answers.
 - correctOptionIndex should vary across questions.`;
   }
@@ -90,8 +94,8 @@ Workshop block contract:
 - workspaceFiles is the complete small project snapshot needed by this step, with path, content, purpose, and editable. Include the active file plus related files in their real folders.
 - For visual web, canvas, animation, or game work, keep a renderable scene available, use requiresPreview:true, and open workspaceView:"preview" on the first relevant step. Scratch builds grow that scene from the learner's edits; repair/add-feature tasks may preload it. Later steps may open Code while still requiring a Visual check.
 - For web scenes, HTML is the preview entrypoint. Every local CSS or browser JavaScript file must be explicitly connected from that HTML with a correct relative <link href> or <script src> path. Never rely on the preview injecting unrelated workspace files.
-- For native visual code such as Pygame, include an HTML synchronized scene reference linked to the source with <meta name="stonecode-source" content="...">. Visual is a learning representation of the native scene; Terminal remains the real runtime.
-- Do not promise or synthesize Visual for full game engines/external scene editors such as Unity, Unreal, Godot, Roblox Studio, CryEngine, GameMaker, or Blender. Those steps are Code-only in Stonecode and are validated in their external editor later.
+- Output is available only for the learner's real browser-rendered HTML/CSS/JavaScript. Never generate a synchronized or substitute browser scene for console/native code.
+- Do not generate content for external engines, native GUI frameworks, server-dependent frameworks, arbitrary package installation, or external scene editors.
 - For terminal-output work, use requiresTerminal:true and workspaceView:"terminal" when running or reading output is the learner's immediate action.
 - Bug-fix and add-feature exercises must preload the broken or incomplete scene before asking the learner to edit it.
 - End the workshop with only 1 or 2 non-coding summary steps. They explain what the completed code does, how its main parts connect, where the pattern is useful, and invite follow-up questions. They are not exercises.`;

@@ -1,6 +1,7 @@
 import { Dispatch, SetStateAction, useCallback, useState } from "react";
-import { extractAiFileEdits, extractAiRunCommand, AiFileEdit } from "@/ai/fileEditCommands";
+import { AiFileEdit } from "@/ai/fileEditCommands";
 import { requestTutorReplyStream } from "@/ai/tutorClient";
+import { updateTutorPatchStatus, validateClientTutorPatch } from "@/ai/tutorTools";
 import { useAuth } from "@/auth/AuthProvider";
 import { Course } from "@/data/courses";
 import { LessonStep } from "@/components/stonecode/lessonData";
@@ -10,7 +11,7 @@ import {
   StoredChatMessage,
   StoredCourseState
 } from "@/services/courseStorage";
-import { createSupabaseChatMessage } from "@/services/supabaseCourseStorage";
+import { createSupabaseChatMessage, updateSupabaseChatToolPayload } from "@/services/supabaseCourseStorage";
 import { ActiveState, CardView } from "@/components/stonecode/types";
 
 export function useTutorChat({
@@ -18,13 +19,13 @@ export function useTutorChat({
   storedState,
   setStoredState,
   onApplyFileEdits,
-  onRunActiveFile
+  onUndoFileEdits
 }: {
   active: ActiveState | null;
   storedState: StoredCourseState;
   setStoredState: Dispatch<SetStateAction<StoredCourseState>>;
   onApplyFileEdits: (course: Course, edits: AiFileEdit[]) => { appliedCount: number };
-  onRunActiveFile: () => void;
+  onUndoFileEdits: () => boolean;
 }) {
   const { isConfigured, user } = useAuth();
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
@@ -97,7 +98,7 @@ export function useTutorChat({
   async function requestExerciseTemplate(course: Course, exercise: IndependentExercise, code: string) {
     const currentFiles = storedState.workspaceFilesByCourse[course.id] ?? [];
     const currentFolders = storedState.workspaceFoldersByCourse[course.id] ?? [];
-    return requestTutorReplyStream(
+    const result = await requestTutorReplyStream(
       {
         course,
         files: currentFiles,
@@ -124,6 +125,7 @@ export function useTutorChat({
         }
       }
     );
+    return result.reply;
   }
 
   async function streamTutorMessage({
@@ -168,12 +170,13 @@ export function useTutorChat({
         ]
       }
     }));
-    if (userMessage) persistChatMessage(course.id, "user", message, lessonIndex, "chat", null);
+    if (userMessage) persistChatMessage(course.id, userMessage.id, "user", message, lessonIndex, "chat", null, null);
     setTypingMessageId(assistantMessage.id);
 
     let reply: string;
+    let toolPayload: StoredChatMessage["toolPayload"] = null;
     try {
-      reply = await requestTutorReplyStream(
+      const result = await requestTutorReplyStream(
         {
           course,
           files: currentFiles,
@@ -204,6 +207,11 @@ export function useTutorChat({
           }
         }
       );
+      reply = result.reply;
+      toolPayload = result.tools.length ? { patches: result.tools } : null;
+      if (result.toolErrors.length) {
+        reply = `${reply}\n\n_Patch proposal was withheld: ${result.toolErrors.join(" ")}_`.trim();
+      }
     } catch (error) {
       reply = `## Tutor unavailable
 
@@ -226,13 +234,7 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
       }));
     }
 
-    const fileExtraction = extractAiFileEdits(reply);
-    const runExtraction = extractAiRunCommand(fileExtraction.displayReply);
-    const applied = onApplyFileEdits(course, fileExtraction.edits);
-    if (runExtraction.shouldRunActiveFile) onRunActiveFile();
-    const finalReply = formatFinalReply(runExtraction.displayReply, applied.appliedCount, runExtraction.shouldRunActiveFile);
-
-    if (finalReply !== reply) {
+    if (toolPayload) {
       setStoredState((current) => ({
         ...current,
         chatByCourse: {
@@ -241,7 +243,8 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
             entry.id === assistantMessage.id
               ? {
                   ...entry,
-                  content: finalReply
+                  content: reply,
+                  toolPayload
                 }
               : entry
           )
@@ -249,21 +252,58 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
       }));
     }
 
-    persistChatMessage(course.id, "assistant", finalReply, lessonIndex, messageKind, generatedKey);
+    persistChatMessage(course.id, assistantMessage.id, "assistant", reply, lessonIndex, messageKind, generatedKey, toolPayload);
     setTypingMessageId(null);
-    return finalReply;
+    return reply;
+  }
+
+  function applyTutorPatch(course: Course, messageId: string, toolCallId: string) {
+    const message = (storedState.chatByCourse[course.id] ?? []).find((entry) => entry.id === messageId);
+    const patch = message?.toolPayload?.patches.find((entry) => entry.toolCallId === toolCallId);
+    if (!message || !patch) throw new Error("Tutor patch not found.");
+    const files = storedState.workspaceFilesByCourse[course.id] ?? [];
+    const edits = validateClientTutorPatch(patch, files);
+    const result = onApplyFileEdits(course, edits);
+    if (result.appliedCount !== edits.length) throw new Error("Tutor patch could not be fully applied.");
+    setTutorPatchStatus(course.id, messageId, toolCallId, "applied");
+  }
+
+  function rejectTutorPatch(course: Course, messageId: string, toolCallId: string) {
+    setTutorPatchStatus(course.id, messageId, toolCallId, "rejected");
+  }
+
+  function undoTutorPatch(course: Course, messageId: string, toolCallId: string) {
+    if (!onUndoFileEdits()) throw new Error("There is no matching tutor edit to undo.");
+    setTutorPatchStatus(course.id, messageId, toolCallId, "undone");
+  }
+
+  function setTutorPatchStatus(courseId: string, messageId: string, toolCallId: string, status: "applied" | "rejected" | "undone") {
+    const currentMessage = (storedState.chatByCourse[courseId] ?? []).find((entry) => entry.id === messageId);
+    const nextPayload = updateTutorPatchStatus(currentMessage?.toolPayload ?? undefined, toolCallId, status) ?? null;
+    setStoredState((current) => {
+      const messages = (current.chatByCourse[courseId] ?? []).map((entry) => {
+        if (entry.id !== messageId) return entry;
+        return { ...entry, toolPayload: nextPayload };
+      });
+      return { ...current, chatByCourse: { ...current.chatByCourse, [courseId]: messages } };
+    });
+    if (isSupabaseBacked) {
+      queueMicrotask(() => updateSupabaseChatToolPayload(courseId, messageId, nextPayload ?? null).catch(() => null));
+    }
   }
 
   function persistChatMessage(
     courseId: string,
+    clientMessageId: string,
     role: "user" | "assistant",
     content: string,
     lessonIndex: number | undefined,
     messageKind: StoredChatMessage["messageKind"] = "chat",
-    generatedKey: string | null = null
+    generatedKey: string | null = null,
+    toolPayload: StoredChatMessage["toolPayload"] = null
   ) {
     if (!isSupabaseBacked) return;
-    createSupabaseChatMessage({ courseId, role, content, lessonIndex, messageKind, generatedKey }).catch(() => {
+    createSupabaseChatMessage({ courseId, role, content, lessonIndex, messageKind, generatedKey, clientMessageId, toolPayload }).catch(() => {
       // Local UI should keep working when persistence fails; reload will expose durable state.
     });
   }
@@ -295,6 +335,9 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
     requestLessonIntro,
     requestExerciseHint,
     requestExerciseTemplate,
+    applyTutorPatch,
+    rejectTutorPatch,
+    undoTutorPatch,
     updateLessonView,
     updateLessonStep
   };
@@ -302,13 +345,4 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
 
 function getLocalDateKey() {
   return new Date().toLocaleDateString("en-CA");
-}
-
-function formatFinalReply(reply: string, appliedCount: number, didRunFile: boolean) {
-  if (!appliedCount && !didRunFile) return reply;
-  const baseReply = reply.trim() || "Updated the workspace.";
-  const notes = [];
-  if (appliedCount) notes.push(`applied ${appliedCount} file edit${appliedCount === 1 ? "" : "s"}`);
-  if (didRunFile) notes.push("ran the active file in the terminal");
-  return `${baseReply}\n\n_Tutor ${notes.join(" and ")}._`;
 }

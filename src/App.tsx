@@ -1,13 +1,17 @@
-import { ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, MouseEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, lazy, MouseEvent, Suspense, useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { RequireAuth } from "@/auth/RequireAuth";
 import { useAuth } from "@/auth/AuthProvider";
-import { StonecodePrototype } from "@/components/stonecode/StonecodePrototype";
 import { StonecodeLogoMark } from "@/components/stonecode/StonecodeBrand";
 import { defaultCourseCodeHtml } from "@/data/courses";
-import { LandingPage, LegalPage, SupportPage } from "@/components/app/SitePages";
-import { OnboardingPage } from "@/components/app/OnboardingPage";
 import SideRays from "@/components/effects/SideRays";
+
+const loadStonecodePrototype = () => import("@/components/stonecode/StonecodePrototype");
+const StonecodePrototype = lazy(() => loadStonecodePrototype().then((module) => ({ default: module.StonecodePrototype })));
+const OnboardingPage = lazy(() => import("@/components/app/OnboardingPage").then((module) => ({ default: module.OnboardingPage })));
+const LandingPage = lazy(() => import("@/components/app/SitePages").then((module) => ({ default: module.LandingPage })));
+const LegalPage = lazy(() => import("@/components/app/SitePages").then((module) => ({ default: module.LegalPage })));
+const SupportPage = lazy(() => import("@/components/app/SitePages").then((module) => ({ default: module.SupportPage })));
 
 type AuthRevealPhase = "idle" | "holding" | "revealing" | "returning";
 
@@ -86,6 +90,7 @@ export function App() {
         />
       )}
       <AuthTransitionSurface isAuthReturnCycle={isAuthReturnCycle} isAuthRoute={isAuthRoute} phase={authRevealPhase} userEmail={auth.user?.email ?? null} />
+      <Suspense fallback={<main aria-label="Loading Stonecode" className="route-loading-state"><StonecodeLogoMark /></main>}>
       <Routes>
         <Route element={<LandingPage />} path="/" />
         {import.meta.env.DEV && <Route element={<StonecodePrototype promoCapture="discovery" />} path="/promo/discovery" />}
@@ -99,16 +104,11 @@ export function App() {
               <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={finishAuthReveal} />
             </RequireAuth>
           }
-          path="/dashboard"
-        />
-        <Route
-          element={
-            <RequireAuth>
-              <StonecodePrototype authRevealActive={authRevealActive} onAuthRevealComplete={finishAuthReveal} />
-            </RequireAuth>
-          }
-          path="/courses/:courseId"
-        />
+        >
+          <Route element={<></>} path="/dashboard" />
+          <Route element={<></>} path="/courses/:courseId" />
+          <Route element={<></>} path="/marketplace" />
+        </Route>
         <Route element={<Navigate replace to="/settings/overview" />} path="/settings" />
         <Route element={<RequireAuth><StonecodePrototype onSignOutTransition={startWorkspaceSignOut} settingsSection="overview" /></RequireAuth>} path="/settings/overview" />
         <Route element={<RequireAuth><StonecodePrototype onSignOutTransition={startWorkspaceSignOut} settingsSection="profile" /></RequireAuth>} path="/settings/profile" />
@@ -124,6 +124,7 @@ export function App() {
         <Route element={<SupportPage />} path="/support" />
         <Route element={<Navigate replace to="/dashboard" />} path="*" />
       </Routes>
+      </Suspense>
     </>
   );
 }
@@ -171,6 +172,7 @@ function AuthPage({ mode, onAuthReveal }: { mode: "login" | "signup" | "forgot";
   }
 
   function beginDashboardReveal(target: string) {
+    void loadStonecodePrototype();
     onAuthReveal();
     setIsTransitioning(true);
     brightenTimerRef.current = window.setTimeout(() => {

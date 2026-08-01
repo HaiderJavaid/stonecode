@@ -4,9 +4,13 @@ Stonecode uses Judge0 through a provider-neutral server adapter. The browser nev
 
 ## Provision
 
-For paid-beta use, provision a managed Judge0 Cloud instance or a dedicated self-hosted instance separate from the Stonecode application server.
+For paid-beta use, subscribe to the official Judge0 CE RapidAPI product, provision Judge0 Cloud, or use a dedicated self-hosted instance separate from the Stonecode application server.
 
 Do not use a public unauthenticated execution endpoint for production learner code.
+
+Judge0 is Stonecode's headless console compiler/runner and grader. It does not provide persistent terminal sessions, remote GUI windows, VNC/WebRTC desktops, native mobile emulators, or external game engines. Those remote-streamed execution modes are outside Stonecode scope.
+
+Per-user daily caps and a global operator hard circuit breaker are implemented. Apply `2026-07-30-atomic-usage-and-operator-limits.sql` before production so those limits are atomic across instances. The current `wait=true` adapter still needs production concurrency validation and provider cost alerts.
 
 ## Environment
 
@@ -30,8 +34,11 @@ For a RapidAPI-hosted instance, set the provider's required key header and host:
 
 ```env
 JUDGE0_API_KEY_HEADER=X-RapidAPI-Key
-JUDGE0_RAPIDAPI_HOST=your-host-value
+JUDGE0_API_URL=https://judge0-ce.p.rapidapi.com
+JUDGE0_RAPIDAPI_HOST=judge0-ce.p.rapidapi.com
 ```
+
+`JUDGE0_API_KEY` is the RapidAPI `X-RapidAPI-Key`. There is no separate Judge0 secret for this hosted product. The RapidAPI account must be subscribed to Judge0 CE; a valid-looking key without a subscription returns `You are not subscribed to this API.`
 
 Restart the Stonecode server after changing environment values.
 
@@ -39,14 +46,11 @@ Restart the Stonecode server after changing environment values.
 
 Judge0 runtime ids differ between installations. Stonecode loads `/languages` from the configured instance and resolves ids by runtime name.
 
-Enable runtimes in this order:
+The expansion roster requires 18 Judge0 technologies. JavaScript, HTML, and CSS run in browser Output. Julia remains hidden because the configured provider does not report it. Every language still requires fresh source approval, a passing isolated corpus, a matching manifest, grading metadata, and runtime discovery before visibility.
 
-1. JavaScript, TypeScript, Python.
-2. Java, C#, C++.
-3. Go, Rust.
-4. Kotlin, Swift, Dart.
-5. PHP, Ruby, SQL, R, Julia.
-6. Fortran, COBOL, BASIC.
+Language matching is anchored and version-aware. R intentionally resolves to the reviewed Judge0 `R (4.0.0)` runtime; `R (4.4.1)` exceeds Stonecode's three-second CPU ceiling even for the starter smoke program. If the pinned runtime disappears, R becomes unavailable until another runtime passes certification.
+
+Run `npm run verify:runtime-matrix` for the static 21-technology contract and `npm run verify:runtime-matrix:live` for all 18 real Judge0 smoke executions.
 
 If a runtime is missing, Stonecode returns `execution_language_unavailable` instead of silently grading without execution.
 
@@ -55,6 +59,7 @@ If a runtime is missing, Stonecode returns `execution_language_unavailable` inst
 Authenticated endpoints:
 
 ```txt
+GET  /api/runtime/capabilities
 GET  /api/execution/capabilities
 POST /api/execution/run
 ```
@@ -94,7 +99,7 @@ If the oracle does not compile or run, the exercise fails with `execution_oracle
 - Runs are rate-limited per user in the Stonecode process.
 - No shell command is accepted from the client.
 - Only registered language capabilities can execute.
-- HTML/CSS remain Visual-preview content.
+- HTML/CSS remain sandboxed browser Output content.
 - Judge0 must run outside the Stonecode application host with no Stonecode or Supabase secrets.
 
 For multi-instance production deployment, move rate limiting from process memory to Redis or another shared store.
@@ -103,6 +108,7 @@ For multi-instance production deployment, move rate limiting from process memory
 
 ```bash
 npm run verify:execution-sandbox
+npm run check:production
 npm run typecheck
 npm run build
 ```

@@ -73,7 +73,7 @@ function HeroEditorPanel() {
     <section className="hero-workspace-editor-panel">
       <div className="editor-workspace-tabs" aria-hidden="true">
         <button className="is-active" disabled type="button">Code</button>
-        <button disabled type="button">Visual</button>
+        <button disabled type="button">Output</button>
         <button disabled type="button">Terminal</button>
       </div>
       <div className="editor-shell is-code">

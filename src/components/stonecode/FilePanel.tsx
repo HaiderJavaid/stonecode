@@ -13,9 +13,9 @@ export function FilePanel({
   activeFiles,
   activeFolders,
   activeLessonIndex,
+  preferredView,
   planName,
   selectedFileIndex,
-  selectedFile,
   userEmail,
   onCreateFile,
   onCreateFolder,
@@ -31,9 +31,9 @@ export function FilePanel({
   activeFiles: WorkspaceFile[];
   activeFolders: WorkspaceFolder[];
   activeLessonIndex: number;
+  preferredView: "course" | "files";
   planName: string;
   selectedFileIndex: number;
-  selectedFile: WorkspaceFile | null;
   userEmail: string;
   onCreateFile: () => void;
   onCreateFolder: () => void;
@@ -45,15 +45,17 @@ export function FilePanel({
   onMoveFolder: (folderPath: string, targetFolderPath: string) => void;
 }) {
   const [isRootDropTarget, setIsRootDropTarget] = useState(false);
-  const [activeTab, setActiveTab] = useState<"course" | "files">(activeCourse?.courseContent ? "course" : "files");
+  const [activeTab, setActiveTab] = useState<"course" | "files">(
+    preferredView === "course" && activeCourse?.courseContent ? "course" : "files"
+  );
 
   useEffect(() => {
     if (!activeCourse?.courseContent && activeTab === "course") setActiveTab("files");
   }, [activeCourse?.courseContent, activeTab]);
 
   useEffect(() => {
-    setActiveTab(activeCourse?.courseContent ? "course" : "files");
-  }, [activeCourse?.id, activeCourse?.courseContent]);
+    setActiveTab(preferredView === "course" && activeCourse?.courseContent ? "course" : "files");
+  }, [activeCourse?.id, activeCourse?.courseContent, preferredView]);
 
   return (
     <StoneSurface as="aside" variant="side" className={`file-panel${active ? " is-visible" : ""}`} aria-label="Stonecode files" aria-hidden={!active}>
@@ -150,16 +152,19 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
   const content = course.courseContent;
   const activePath = getActiveCoursePath(course, activeLessonIndex);
+  const activeModuleIndex = activePath?.moduleIndex;
+  const activeChapterId = activePath?.chapterId;
+  const activeBlockId = activePath?.blockId;
   const lessonIndexBySectionId = new Map(
     resolveCourseLessonSteps(course).map((lesson, lessonIndex) => [lesson.sectionId, lessonIndex])
   );
 
   useEffect(() => {
-    if (!activePath) return;
-    setSelectedModuleIndex(activePath.moduleIndex);
-    setExpandedChapterId(activePath.chapterId);
-    setExpandedBlockId(activePath.blockId);
-  }, [activePath?.blockId, activePath?.chapterId, activePath?.moduleIndex]);
+    if (activeModuleIndex === undefined) return;
+    setSelectedModuleIndex(activeModuleIndex ?? null);
+    setExpandedChapterId(activeChapterId ?? null);
+    setExpandedBlockId(activeBlockId ?? null);
+  }, [activeBlockId, activeChapterId, activeModuleIndex]);
 
   if (!content) return null;
 
@@ -294,6 +299,7 @@ function ModuleDetail({
       <button className="module-detail-back" onClick={onBack} type="button">Back to modules</button>
       <div className="module-detail-head">
         <strong>{moduleTitle}</strong>
+        <p>{moduleSummary}</p>
       </div>
       <div className="module-chapter-list">
         {chapters.map((chapter) => (

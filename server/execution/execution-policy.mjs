@@ -39,7 +39,7 @@ export function normalizeExecutionInput(input, config) {
   if (code.length > config.codeLimit) throw executionError("execution_code_too_large", `Code exceeds the ${config.codeLimit} character limit.`, 413);
   if (stdin.length > config.stdinLimit) throw executionError("execution_stdin_too_large", `Input exceeds the ${config.stdinLimit} character limit.`, 413);
   if (!capability) throw executionError("execution_language_unsupported", "This language is not registered for sandbox execution.", 400);
-  if (["html", "css"].includes(capability.id)) throw executionError("execution_preview_only", `${capability.label} uses the Visual preview instead of the code sandbox.`, 400);
+  if (["html", "css"].includes(capability.id)) throw executionError("execution_preview_only", `${capability.label} uses browser Output instead of Judge0.`, 400);
   return {
     language: capability.label,
     languageId: capability.id,

@@ -33,8 +33,12 @@ export type CourseCardProps = {
   progress: number;
   view: CardView | null;
   onOpen: () => void;
+  onDelete: () => void;
   onBack: () => void;
   onChat: (message: string, lessonIndex: number) => void;
+  onApplyTutorPatch: (messageId: string, toolCallId: string) => void;
+  onRejectTutorPatch: (messageId: string, toolCallId: string) => void;
+  onUndoTutorPatch: (messageId: string, toolCallId: string) => void;
   requestLessonIntro: (lessonIndex: number, lesson: LessonStep) => void;
   onExerciseHint: (exercise: IndependentExercise, question: string, code: string) => Promise<string>;
   onExerciseTemplate: (exercise: IndependentExercise, code: string) => Promise<string>;

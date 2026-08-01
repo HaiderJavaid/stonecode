@@ -1,9 +1,8 @@
 import { normalizePlanTier, resolvePlanLimit } from "./plan-limits.mjs";
 
-const activeStatuses = new Set(["active", "trialing"]);
+const activeStatuses = new Set(["active"]);
 const planNames = {
   free: "Free",
-  basic: "Basic",
   pro: "Pro"
 };
 
@@ -13,7 +12,8 @@ export function isPaidSubscriptionStatus(status) {
 
 export function formatSubscriptionState(record) {
   const status = typeof record?.status === "string" ? record.status : "free";
-  const plan = record && isPaidSubscriptionStatus(status) ? normalizePlanTier(record.plan) : "free";
+  const normalizedPlan = record && isPaidSubscriptionStatus(status) ? normalizePlanTier(record.plan) : "free";
+  const plan = normalizedPlan === "pro" ? "pro" : "free";
   const limit = resolvePlanLimit(plan);
 
   return {
@@ -22,6 +22,11 @@ export function formatSubscriptionState(record) {
     planName: planNames[plan],
     activeCourseLimit: limit.activeCourseLimit,
     aiMessagesPerMonth: limit.aiMessagesPerMonth,
+    aiImagesPerMonth: limit.aiImagesPerMonth,
+    judge0ActionsPerDay: limit.judge0ActionsPerDay,
+    registrationCredits: limit.registrationCredits,
+    monthlyCredits: limit.monthlyCredits,
+    proposalsPerDay: limit.proposalsPerDay,
     monthlyExperienceGenerationLimit: limit.monthlyExperienceGenerationLimit,
     firstModuleOnly: limit.firstModuleOnly,
     requiresOwnOpenAiKey: limit.requiresOwnOpenAiKey,

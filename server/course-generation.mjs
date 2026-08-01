@@ -21,6 +21,9 @@ import {
   isSupportedProgrammingSubject,
   resolveCourseLanguageCapability
 } from "./course-generation/language-capabilities.mjs";
+import { browserFrameworkCatalog } from "../shared/stonecode-product.mjs";
+
+const browserFrameworkRuntimeContract = JSON.stringify(browserFrameworkCatalog);
 
 export {
   buildBlockGenerationPrompt,
@@ -105,7 +108,6 @@ export function stabilizeAssessmentQuestion({ question, subject, step = 0, answe
 
 export function resolveAssessmentPlan(subject) {
   const normalizedSubject = trimText(subject, "Programming");
-  const lower = normalizedSubject.toLowerCase();
   const intent = classifyCourseIntent(normalizedSubject);
   const supported = isSupportedProgrammingSubject(normalizedSubject);
   const areas = resolvePrerequisiteAreas(normalizedSubject);
@@ -782,8 +784,9 @@ export function normalizeGeneratedCourseContent(input) {
 function normalizeGeneratedCourseContentV2(input) {
   const normalizedLanguages = uniqueStrings(input.languages);
   const defaultLanguageInfo = resolveCourseLanguage(normalizedLanguages[0] || input.subject);
+  const unlockAllModules = input.generationDepth === "full_course";
   const modules = Array.isArray(input.modules)
-    ? input.modules.map((module, index) => normalizeModule(module, index, defaultLanguageInfo)).filter(Boolean)
+    ? input.modules.map((module, index) => normalizeModule(module, index, defaultLanguageInfo, unlockAllModules)).filter(Boolean)
     : [];
   if (!modules.length) throw new Error("Generated course content requires at least one module.");
 
@@ -828,7 +831,7 @@ function blockTitle(sectionTitle, type) {
 function blockSummary(sectionSummary, type) {
   if (type === "mcq") return "Answer a quick multiple-choice check before continuing.";
   if (type === "chat_exercise") return "Explain the idea in your own words for tutor review.";
-  if (type === "code_exercise") return "Use the active IDE file as a whiteboard and submit runnable code.";
+  if (type === "code_exercise") return "Use the active IDE file as a focused scratch file and submit runnable code.";
   return sectionSummary;
 }
 
@@ -878,7 +881,7 @@ Rules:
 - Fully fill only chapter 1 blocks.
 - Later chapters must include section titles/summaries and may use empty blocks.
 - Separate learning beats into separate sections. Do not put theory, MCQ, writing exercise, and code exercise into one section.
-- Theory sections must teach only: concept, analogy, simple example, and topic transition. Start with explanatory prose and a mental model before bullets. Explain why the idea exists, include a useful analogy mapped back to code, and do not ask the learner to answer inside theory.
+- Theory sections must teach only: concept, analogy, simple example, and topic transition. Start with explanatory prose and a mental model before bullets. Explain why the idea exists, include a useful analogy and map it back to code, and do not ask the learner to answer inside theory.
 - Start every new topic with at least 3 consecutive theory-style sections before any MCQ, chat_exercise, or code_exercise.
 - The first course section must meaningfully introduce the course: what the learner will understand or build, the course path, why it matters, and why the first topic comes first. A greeting alone is not an introduction. Do not start with an exercise.
 - Add clear continuity when moving topics, for example "Now that the mental model is clear, next is 1.2 HTML and CSS."
@@ -887,7 +890,7 @@ Rules:
 - If a theory explanation is long, split it into two consecutive theory sections.
 - For broad subjects such as web development, teach only topic-relevant language parts instead of full language mastery.
 - End each chapter with a medium or hard editor code assessment and a final summary theory section.
-- Code exercises must reuse the active IDE file as a whiteboard, not create folder-heavy projects.
+- Code exercises must reuse the active IDE file as a focused scratch file, not create folder-heavy projects.
 - Code exercise file paths should be simple filenames like main.js, index.html, styles.css, or app.py.
 
 Learner objective: ${trimText(objective, "Programming")}
@@ -996,6 +999,7 @@ ${blockContracts.slice(0, 14000)}`;
 
 export function buildAssessmentModuleContentPrompt({ subject, answers = [], assessmentReview, courseOutline, courseBlueprint = null, retrievedContext = null, moduleIndex = 0 }) {
   const learnerContext = buildLearnerGenerationContext({ subject, answers, assessmentReview });
+  const requestedLanguage = resolveCourseLanguage(subject);
   const moduleOutline = extractModuleOutline(courseOutline, moduleIndex);
   const blockKinds = blockKindsInModuleOutline(moduleOutline);
   const blockContracts = blockKinds
@@ -1056,6 +1060,7 @@ Return strict JSON only:
 }
 
 Rules:
+- The exact requested implementation language is ${requestedLanguage.label}, using ${requestedLanguage.filePath} by default. JavaScript shown in the schema example demonstrates field shape only; never copy its language, path, or syntax into a ${requestedLanguage.label} course.
 - Preserve ids and titles from the module outline when possible.
 - Generate complete steps for every block in this module.
 - Every object inside a steps array must have a "type" field.
@@ -1066,7 +1071,9 @@ Rules:
 - Visual web work must use an HTML entrypoint that explicitly links each required local stylesheet and browser script with correct relative href/src paths. Do not assume every CSS/JavaScript file is injected automatically.
 - Terminal-output work uses requiresTerminal:true and workspaceView:"terminal" when the immediate learner action is run/read/fix output.
 - Preserve planned block kinds from the module outline. Do not turn a planned quiz/workshop/lab/project block into a theory block.
-- A quiz block must have 4 to 10 mcq step objects.
+- A quiz block is low-stakes topic practice and must have 4 to 10 mcq step objects.
+- Every quiz question must practice a different concrete concept, code example, runtime behavior, or scenario taught in this exact topic. Never use prerequisite assessment, generic study advice, trivia, or paraphrased repeat questions.
+- Each explanation must reconnect the answer to the topic teaching so a wrong answer still improves understanding.
 - A workshop block must have enough workshop step objects to complete its deliverable through atomic edits. One-step or two-step workshops are invalid.
 - Every workshop step must include id, buildsOnStepId, conceptIds, expectedChange, starterCode, and resultCode.
 - Every workshop coding step must also include codeExplanation for only that micro-change and 2 to 3 suggestedQuestions tied to the current line.
@@ -1083,8 +1090,8 @@ Rules:
 - A project block must stay kind "project".
 - A milestone project requires multiple earlier workshops and at least one earlier lab. It must not be the learner's first or second practical coding experience.
 - Multiple labs and milestone projects are allowed. Choose their timing dynamically from demonstrated curriculum readiness; reserve the final project as the main exam near the end.
-- Only module 1 content should be fully loaded during initial course generation.
-- Keep later-module outline content out of this response.
+- Fully load only module ${moduleIndex + 1} in this response.
+- Keep every other module's content out of this response.
 - Every topic must start with a theory block.
 - A theory block must contain real teaching steps before checks. Never return a theory block whose steps are only MCQs.
 - When teaching syntax, include a fenced code snippet with the correct language tag and explain the new tokens before any workshop/lab asks the learner to edit them.
@@ -1262,7 +1269,8 @@ Repair rules:
 - If workshop_suggested_questions_missing appears, add 2 to 3 short questions relevant to that exact step.
 - If theory is thin, expand the theory markdown with mental model, explanation, and tiny example.
 - If exercise context is thin, add concrete context tied to the current topic and prior teaching.
-- If quiz is too short, add enough MCQ steps to reach 4 to 10.
+- If quiz is too short, add enough distinct, topic-grounded MCQ practice steps to reach 4 to 10.
+- If quiz questions repeat or drift from the topic, replace only those questions with concrete exercises based on this topic's preceding explanation or worked example.
 - If a loaded topic is missing quiz, workshop, lab, or project practice, add the planned interactive block that best matches the topic.
 - If lab_before_workshop appears, insert or restore a relevant guided workshop before the lab; do not solve it by adding more theory.
 - If project_before_practice_readiness appears, move the project later or replace it with a workshop/lab until multiple workshops and at least one lab establish readiness.
@@ -1275,6 +1283,7 @@ ${formatEditableCourseGenerationRules(3000)}`;
 }
 
 export function buildGeneratedModuleRepairPrompt({ subject, module, moduleIndex = 0, qualityWarnings = [] }) {
+  const requestedLanguage = resolveCourseLanguage(subject);
   return `Repair only this generated module.
 
 Return strict JSON only:
@@ -1284,6 +1293,7 @@ Return strict JSON only:
 }
 
 Rules:
+- Keep every coding step in ${requestedLanguage.label}, using ${requestedLanguage.filePath} by default. Do not copy JavaScript syntax from generic schema examples.
 - Preserve this module's id, title, topic ids, and block ids unless invalid.
 - Fix only the warning-related topics/blocks in this module.
 - Do not rewrite other modules.
@@ -1303,7 +1313,7 @@ Rules:
 - If project_before_practice_readiness appears, move the project later or use workshops/labs first until multiple workshops and at least one lab establish readiness.
 - Workshop blocks need enough atomic workshop step objects to complete their concrete deliverable. Do not target a fixed count.
 - Every workshop ends with one non-coding summary step after its atomic coding steps.
-- Quiz blocks need 4 to 10 mcq step objects.
+- Quiz blocks need 4 to 10 distinct topic-practice mcq step objects. They reinforce the exact preceding topic; they do not assess prerequisites or ask generic study questions.
 - If a lab step was emitted as workshop, return it as type "lab".
 - If a review step was emitted as theory, return it as type "summary".
 - Use complete step objects, not kind/content field lists.
@@ -1316,6 +1326,7 @@ ${formatEditableCourseGenerationRules(3000)}`;
 }
 
 export function buildGeneratedTopicRepairPrompt({ subject, topic, moduleIndex = 0, topicIndex = 0, qualityWarnings = [] }) {
+  const requestedLanguage = resolveCourseLanguage(subject);
   return `Repair only this generated Stonecode topic.
 
 Return strict JSON only:
@@ -1326,10 +1337,11 @@ Return strict JSON only:
 }
 
 Rules:
+- Keep every coding step in ${requestedLanguage.label}, using ${requestedLanguage.filePath} by default. Do not copy JavaScript syntax from generic schema examples.
 - Preserve the topic id, title, block ids, block kinds, and all valid content.
 - Fix only the blocks named by the supplied warnings.
 - The first block must be theory with real theory/analogy/example/summary teaching before any check.
-- A quiz block contains 4 to 10 MCQ steps.
+- A quiz block contains 4 to 10 distinct topic-practice MCQ steps tied to this exact topic's teaching and examples.
 - Workshops are guided tutorials with enough atomic steps for the deliverable.
 - Every workshop step needs id, buildsOnStepId, conceptIds, context, prompt, expectedChange, starterCode, resultCode, and acceptanceCriteria.
 - Every workshop coding step also needs codeExplanation and 2 to 3 suggestedQuestions relevant to that exact micro-change.
@@ -1353,6 +1365,7 @@ ${formatEditableCourseGenerationRules(2600)}`;
 
 export function buildAssessmentCourseGenerationPrompt({ subject, answers = [], assessmentReview, courseBlueprint = null, retrievedContext = null }) {
   const learnerContext = buildLearnerGenerationContext({ subject, answers, assessmentReview });
+  const requestedLanguage = resolveCourseLanguage(subject);
   const contextChunks = retrievedContext ?? retrieveStaticCourseGenerationContext({ subject, learnerContext });
   return `Generate a full Stonecode course as strict JSON.
 
@@ -1364,7 +1377,7 @@ Return only JSON matching:
   "description":"one sentence",
   "languages":["JavaScript"],
   "tags":["Assessment based"],
-  "generationDepth":"full_structure_first_module",
+  "generationDepth":"full_course",
   "assessmentReview":{"strengths":["..."],"gaps":["..."],"suggestedModules":["..."]},
   "courseBlueprint":{"finalProject":{"title":"...","description":"...","capabilities":["..."]},"miniProjects":[],"conceptSequence":[],"prerequisiteBridges":[],"moduleGoals":[]},
   "modules":[
@@ -1422,12 +1435,15 @@ Return only JSON matching:
 }
 
 Rules:
+- The exact requested implementation language is ${requestedLanguage.label}, using ${requestedLanguage.filePath} by default. JavaScript shown in the schema example demonstrates field shape only; never copy its language, path, or syntax into a ${requestedLanguage.label} course.
 - Generate a complete top-level curriculum like a freeCodeCamp index, with as many modules as the subject and learner gaps naturally need.
+- Use only plain raw code in the approved technology catalog. Browser libraries are limited to React, Vue, Svelte, D3, Chart.js, and p5.js with pinned sandboxed versions. Never require external engines, native GUI frameworks, server-dependent frameworks, arbitrary packages, package installation, Assembly, or unreviewed runtimes.
+- Pinned browser runtime manifest: ${browserFrameworkRuntimeContract}
+- Use only those exact asset URLs. React browser lessons use plain JavaScript with React.createElement, not JSX or a build tool. Vue single-file lessons connect App.vue from HTML with <script type="text/vue" src="App.vue" data-target="#app"></script>; App.vue exports an Options API component with render() using Vue.h, never a template compiler or imports. Svelte connects App.svelte with type="text/svelte" the same way. Other approved libraries use their exact pinned script URL.
 - Use the Course blueprint as the hidden spine for the whole syllabus. The course should secretly lead to the final project; each workshop/lab/project should contribute a mini-function, behavior, or capability used later.
-- Fully load module 1 with enough chapters/topics to teach the first path properly. Each loaded chapter/topic should contain intentional blocks and visible numbered steps.
+- Fully load every generated module with enough chapters/topics to teach its approved direction properly. Each chapter/topic should contain intentional blocks and visible numbered steps.
 - The first loaded course step should be a substantive, friendly course introduction before formal teaching. Use 3 to 6 short paragraphs to explain what the learner will understand or build, common real-world uses, the course path, one interesting practical fact, and why the first topic comes first. Do not make it only a tutor greeting.
-- Keep modules 2 and later as locked outline shells for later high-quality generation after module 1 is validated.
-- Modules 3 and later must appear in the left panel as locked shell buttons with outline-level chapters only.
+- Return complete teaching and guided practice for every module. Never return locked outline-only shells as a completed Course.
 - Every block must include a "kind" field: "theory", "quiz", "workshop", "lab", "project", or "review".
 - Start each new topic/chapter with a theory block before any quiz, workshop, lab, or project. Its opening must orient the learner: the problem this topic solves, how it connects to the course goal/project, and what the learner will understand or build by the end.
 - Every theory block must include real teaching steps before any MCQ. Never create a theory block made only of MCQ steps.
@@ -1437,13 +1453,15 @@ Rules:
 - A theory block can combine concept and analogy on one page when short, split subtopics across multiple theory steps when the idea is bigger, and place examples wherever they make the explanation click.
 - A theory block may use several theory/analogy/example/summary steps when the topic needs more teaching. Do not force exactly one theory step or exactly one MCQ.
 - Assume the learner has no programming, coding, or syntax knowledge unless the assessment clearly proved otherwise. Explain every new code word, symbol, punctuation mark, and line before requiring the learner to use it.
-- Analogy and example are teaching tools, not mandatory separate pages for every topic. Use them when they improve understanding.
+- Analogy and example are teaching tools, not mandatory separate pages for every topic. Use them when they improve understanding, and map it back to code or runtime behavior before moving on.
 - Use one consistent analogy theme per topic. Do not change analogy themes inside that topic.
 - Do not write filler like "beginner confusion", "common confusion", or "typical confusion". Teach the issue directly only when needed.
 - Use block kinds intentionally:
   - A "theory" block may contain only theory, analogy, example, summary, and optional mcq steps.
   - Single MCQ checks belong inside theory blocks. If the AI only wants to assess understanding once during teaching, insert an mcq step in the current theory block instead of creating a quiz block.
-  - Quiz blocks are exam-style checkpoints. A "quiz" block must contain only mcq steps and should have 4 to 10 MCQ steps like a test, not one quick question.
+  - Quiz blocks are low-stakes reinforcement exercises. A "quiz" block must contain only mcq steps and should have 4 to 10 distinct questions grounded in the exact topic just taught.
+  - Never use course MCQs to reassess prior knowledge, ask generic study-strategy questions, repeat the same concept in different words, or introduce an untaught concept.
+  - Prefer code tracing, output prediction, debugging, and scenario choices. Every explanation teaches the topic connection after either a correct or incorrect choice.
 - A "workshop" block must be guided practical continuity. Each workshop step is one atomic editor action that builds on the previous step until a feature or mini-feature is complete.
   - Workshop length is variable. The deliverable decides the step count. Never make a one-step or two-step workshop.
   - A "lab" block is a small checkpoint exam: one bug, problem, or feature for the learner to solve with optional AI help. Use labs only after a relevant guided workshop; thorough theory alone is not enough. The workshop and lab need not be adjacent. Usually make a lab one step.
@@ -1459,13 +1477,13 @@ Rules:
 - Keep workshop steps granular. Prefer many small atomic steps over a few large vague tasks when the deliverable needs it.
 - A workshop step is not a lab. Do not say "build this on your own" in a workshop. Save independent problem solving for lab/project blocks.
 - For each workshop, lab, project, or MCQ, make the output depend on what has already been taught, what syntax has not yet been taught, what syntax must be explained in this step, what tiny action the learner will do, and how the next step builds on it. Never include hidden planning, prompts, system instructions, or reasoning notes in learner-facing markdown/prompt/context fields.
-- Labs and project exams may create multiple small connected files when the exercise genuinely needs them, such as an HTML/CSS/JS mini-page, a Python package, or a multi-file bug-fix. workspaceFiles must include the active file and all supporting files with real folder paths. Normal early workshops may still prefer one active whiteboard file.
+- Labs and project exams may create multiple small connected files when the exercise genuinely needs them, such as an HTML/CSS/JS mini-page or a multi-file bug-fix. workspaceFiles must include the active file and all supporting files with real folder paths. Normal early workshops should prefer one active scratch file.
 - If a workshop asks the learner to write syntax, the immediately previous theory/example or the same workshop prompt must have taught that syntax first.
 - Labs should reuse the project pattern of an earlier relevant workshop with a different variant and less guidance, so the learner practices transfer instead of guessing a new concept. They do not need to be adjacent.
 - A workshop must be the first practical code experience. Never place a lab or project before guided hands-on teaching.
-- Use requiresPreview:true on workshop/lab/project steps where the learner should inspect visual changes in the Visual view, such as web UI, animation, canvas, game, or layout work.
-- For visual work, generate the initial visible scene before the learner edits: an existing broken scene for debugging, or a minimal working baseline for feature work. Include a browser-renderable index.html scene even when the taught game source uses Python or another native runtime; label it as a visual reference, not the real runtime.
-- Use workspaceView:"preview" on the first visual step so the learner sees the starting state, then workspaceView:"code" for edits and keep requiresPreview:true for comparison.
+- Use requiresPreview:true only when the learner should inspect actual browser-rendered HTML/CSS/JavaScript changes in Output. Never generate a substitute visual preview for console or native code.
+- For browser-rendered work, generate the real initial HTML/CSS/JavaScript baseline before the learner edits. Never create an HTML substitute for console or native-language output.
+- Use workspaceView:"preview" only on browser steps that render the learner's actual code, then workspaceView:"code" for edits and keep requiresPreview:true for comparison.
 - Use requiresTerminal:true and workspaceView:"terminal" for steps whose immediate goal is to execute a command/program or inspect stdout, errors, tests, or logs. Never pretend a browser preview executed a native language.
 - Treat workspaceFiles as the exercise project snapshot. The tutor must reason about imports, paths, assets, styles, tests, and behavior across all listed folders/files, not only filePath.
 - Every workshop/lab/project step needs an acceptanceCriteria checklist with 2 to 5 concrete MVP requirements. These criteria become the dynamic checklist in the UI.
@@ -1480,13 +1498,15 @@ Rules:
 - Every exercise must test relevant material already taught and practiced earlier in the course path. Do not introduce an exercise that requires an untaught idea. Only workshop micro-steps require immediate step-to-step code continuity.
 - Reflection/"Answer in chat" prompts must include a short recap or clue before asking the learner to answer.
 - Theory never asks the learner to answer; questions only use mcq, reflection, lab, workshop, or project steps.
-- Course-shaping assessment answers are learner preferences. Use them to choose relevant languages, libraries, frameworks, and optional modules where they fit the subject. Do not treat them as right or wrong.
+- Course-shaping assessment answers are learner preferences. Use them only to choose relevant catalog languages and approved browser libraries. Do not treat them as right or wrong.
 - Assessment review suggestedModules are planning inputs. The generated modules must visibly include them, rename them naturally, or merge them into equivalent module coverage; do not ignore them.
-- For advanced/applied subjects, use learnerContext.refresher as a gate: when needed, Module 1 is a narrow refresher containing only base-language concepts required by the target (for example, Pygame-relevant Python functions, loops, collections, imports, and classes). When not needed, do not add a generic refresher.
+- For advanced/applied subjects, use learnerContext.refresher as a gate: when needed, Module 1 is a narrow refresher containing only base-language concepts required by the target (for example, JavaScript functions, arrays, objects, and DOM events needed before React). When not needed, do not add a generic refresher.
 - For all generated MCQ steps, make distractors plausible and similar length. Distribute correctOptionIndex across 0, 1, 2, and 3; do not default to 0.
 - Use language-appropriate simple file paths. Examples: main.js, main.ts, index.html, styles.css, main.py, Main.java, main.cpp, main.c, Program.cs, main.go, main.rs, index.php, main.rb, main.swift.
 - Match starterCode to the language. Never use JavaScript starter code for C++, Java, Python, Go, Rust, Ruby, Swift, C#, PHP, SQL, or shell exercises.
 - Broad courses should teach only relevant language parts.
+- A step may include optional visualCue using {"version":"tutor-visual-cue/v1","id":"...","kind":"diagram|illustration","title":"...","description":"...","caption":"...","altText":"...","labels":["..."],"preferredRenderer":"auto|svg|image"}.
+- Add visualCue only when a diagram or spatial illustration materially improves the explanation. Prefer diagram/svg for algorithms, data structures, control flow, memory, architecture, and exact relationships. Do not use it for browser program output.
 
 Subject: ${trimText(subject, "Programming")}
 Learner generation context: ${JSON.stringify(learnerContext).slice(0, 2200)}
@@ -1545,15 +1565,17 @@ Transcript:
 ${transcript || "No messages yet. Start the conversation."}
 
 Rules:
-- When there is no transcript, greet the learner naturally, ask what they want to learn or build, and provide 5 to 6 varied recommended programming starting points.
+- When there is no transcript, greet the learner naturally and make it clear they may start from a project idea, language, feature, end goal, or lesson type. Ask one broad first question and provide 5 varied recommended programming starting points that directly answer that question.
 - Suggestions must answer the exact question in reply. Make them short, distinct, useful, and clickable without editing.
 - Keep free typing possible; never imply the learner must choose a suggestion.
 - Ask only one main clarification question per turn.
+- Keep discovery short; do not drag the learner past 6 to 7 useful clarification questions.
 - Clarify only what changes the curriculum: intended outcome, product type, platform, or relevant technology choice.
 - If the learner names an exact standalone language fundamentals course, it can be ready immediately.
 - If the learner says only "make a game", "build a website", "make an app", "backend", "data", or another broad outcome, ask focused follow-ups until the target is teachable.
-- If the learner does not know a language/framework, recommend suitable choices in suggestions with plain outcome-focused labels. Do not expect technical knowledge.
-- A ready target should be specific enough to plan, for example "Python fundamentals", "2D desktop games with Python and Pygame", or "beginner full-stack web apps with React and Node.js".
+- The learner does not need to know a language/framework. If they do not, recommend a reviewed catalog choice in suggestions with plain outcome-focused labels. Do not expect technical knowledge.
+- A ready target should be specific enough to plan, for example "Python fundamentals", "browser games with JavaScript Canvas", or "beginner component interfaces with React".
+- Return unsupported for external engines, native GUI frameworks, server-dependent frameworks, arbitrary packages, Assembly, or a framework/library outside React, Vue, Svelte, D3, Chart.js, and p5.js.
 - Do not ask for self-rated level, learning style, pace, Leetcode preference, or design preference. Prerequisite knowledge is handled by assessment later.
 - Stonecode supports programming/software courses only. For unsupported requests, briefly redirect and suggest programming alternatives.
 - Do not fabricate live popularity, usage counts, or claims about what other users learned this week. You may call suggestions "popular starting points" without claiming real-time analytics.
@@ -1822,27 +1844,27 @@ function normalizeRagSources(sources) {
     : [];
 }
 
-function normalizeModule(module, moduleIndex, defaultLanguageInfo = courseLanguages[0]) {
+function normalizeModule(module, moduleIndex, defaultLanguageInfo = courseLanguages[0], unlockAllModules = false) {
   const title = trimText(module?.title, `Module ${moduleIndex + 1}`);
   const id = slugify(module?.id || `${moduleIndex + 1}-${title}`);
   const rawTopics = Array.isArray(module?.chapters) ? module.chapters : module?.topics;
   const normalizedTopics = Array.isArray(rawTopics)
-    ? rawTopics.map((topic, topicIndex) => normalizeTopic(topic, topicIndex, id, moduleIndex, defaultLanguageInfo)).filter(Boolean)
+    ? rawTopics.map((topic, topicIndex) => normalizeTopic(topic, topicIndex, id, moduleIndex, defaultLanguageInfo, unlockAllModules)).filter(Boolean)
     : [];
-  const topics = ensureLoadedModulePracticalBlock(normalizedTopics, id, title, moduleIndex, defaultLanguageInfo);
+  const topics = ensureLoadedModulePracticalBlock(normalizedTopics, id, title, moduleIndex, defaultLanguageInfo, unlockAllModules);
   if (!topics.length) return null;
   return {
     id,
     title,
     summary: trimText(module?.summary, "Generated module."),
     order: moduleIndex,
-    unlocked: moduleIndex === 0,
+    unlocked: unlockAllModules || moduleIndex === 0,
     topics
   };
 }
 
-function ensureLoadedModulePracticalBlock(topics, moduleId, moduleTitle, moduleIndex, defaultLanguageInfo) {
-  if (moduleIndex !== 0 || !topics.length) return topics;
+function ensureLoadedModulePracticalBlock(topics, moduleId, moduleTitle, moduleIndex, defaultLanguageInfo, unlockAllModules = false) {
+  if ((!unlockAllModules && moduleIndex !== 0) || !topics.length) return topics;
   const hasPracticalBlock = topics.some((topic) =>
     topic.blocks.some((block) => ["workshop", "lab", "project"].includes(block.kind))
   );
@@ -1863,74 +1885,23 @@ function ensureLoadedModulePracticalBlock(topics, moduleId, moduleTitle, moduleI
   );
 }
 
-function normalizeTopic(topic, topicIndex, moduleId, moduleIndex = 0, defaultLanguageInfo = courseLanguages[0]) {
+function normalizeTopic(topic, topicIndex, moduleId, moduleIndex = 0, defaultLanguageInfo = courseLanguages[0], unlockAllModules = false) {
   const title = trimText(topic?.title, `Topic ${topicIndex + 1}`);
   const summary = trimText(topic?.summary, "Generated topic.");
   const id = slugify(topic?.id || `${moduleId}-${topicIndex + 1}-${title}`);
   const normalizedBlocks = Array.isArray(topic?.blocks)
     ? topic.blocks.map((block, blockIndex) => normalizeLearningBlock(block, blockIndex, id, defaultLanguageInfo)).filter(Boolean)
     : [];
-  const blocks = ensureLoadedTopicInteractiveBlock(promoteInlineMcqsToQuizBlock(normalizedBlocks, id, title), id, title, summary, moduleIndex);
+  const blocks = promoteInlineMcqsToQuizBlock(normalizedBlocks, id, title);
   if (!blocks.length) return null;
   return {
     id,
     title,
     summary,
     order: topicIndex,
-    unlocked: moduleIndex === 0,
+    unlocked: unlockAllModules || moduleIndex === 0,
     blocks
   };
-}
-
-function ensureLoadedTopicInteractiveBlock(blocks, topicId, topicTitle, topicSummary, moduleIndex) {
-  if (moduleIndex !== 0) return blocks;
-  if (blocks.some((block) => ["quiz", "workshop", "lab", "project"].includes(block.kind))) return blocks;
-  return [
-    ...blocks,
-    {
-      id: `${topicId}-practice-checkpoint`,
-      kind: "quiz",
-      title: `${topicTitle} practice checkpoint`,
-      summary: "Confirm the core idea before moving on.",
-      order: blocks.length,
-      steps: buildFallbackTopicQuizSteps(topicTitle, topicSummary)
-    }
-  ];
-}
-
-function buildFallbackTopicQuizSteps(topicTitle, topicSummary) {
-  const topic = trimText(topicTitle, "this topic");
-  const summary = trimText(topicSummary, `the main idea in ${topic}`);
-  return [
-    {
-      type: "mcq",
-      prompt: `What is the safest way to study ${topic} as a beginner?`,
-      options: ["Memorize the words only", "Trace one tiny example step by step", "Skip examples until later", "Change many ideas at once"],
-      correctOptionIndex: 1,
-      explanation: `A tiny example makes ${topic} concrete before the course adds more moving parts.`
-    },
-    {
-      type: "mcq",
-      prompt: `Why does this topic matter here?`,
-      options: [`It supports ${summary}`, "It replaces all later practice", "It is only a naming detail", "It should be guessed without code"],
-      correctOptionIndex: 0,
-      explanation: `This checkpoint keeps the learner connected to the topic goal: ${summary}.`
-    },
-    {
-      type: "mcq",
-      prompt: `What should you do before moving past ${topic}?`,
-      options: ["Ignore confusing lines", "Explain the idea in your own words", "Delete the example", "Only copy the final answer"],
-      correctOptionIndex: 1,
-      explanation: "Explaining the idea in your own words is a good signal that the concept is ready for practice."
-    },
-    {
-      type: "mcq",
-      prompt: `Which answer shows useful understanding of ${topic}?`,
-      options: ["I can recognize the idea in a small code example", "I only know the topic title", "I need no examples", "I should avoid checking my reasoning"],
-      correctOptionIndex: 0,
-      explanation: "Recognizing the idea in a small example is the practical beginner-level goal."
-    }
-  ];
 }
 
 function buildFallbackWorkshopBlock({ moduleId, moduleTitle, topic, blockIndex, languageInfo }) {
@@ -2148,20 +2119,20 @@ function coerceStepsForKind(kind, steps) {
 
 function normalizeLearningStep(step, defaultLanguageInfo = courseLanguages[0]) {
   if (!step || typeof step !== "object") return null;
-  if (step.type === "quiz" && Array.isArray(step.options)) return normalizeBlock({ ...step, type: "mcq" });
+  if (step.type === "quiz" && Array.isArray(step.options)) return withTutorVisualCue(normalizeBlock({ ...step, type: "mcq" }), step);
   if (step.type === "theory" || step.type === "analogy" || step.type === "example" || step.type === "summary") {
-    return { type: step.type, markdown: trimText(step.markdown, "## Explanation\n\nStart with the idea, then inspect a simple example.") };
+    return withTutorVisualCue({ type: step.type, markdown: trimText(step.markdown, "## Explanation\n\nStart with the idea, then inspect a simple example.") }, step);
   }
-  if (step.type === "mcq") return normalizeBlock(step);
+  if (step.type === "mcq") return withTutorVisualCue(normalizeBlock(step), step);
   if (step.type === "reflection") {
     const prompt = trimText(step.prompt, "Explain the idea in your own words.");
-    return {
+    return withTutorVisualCue({
       type: "reflection",
       prompt: wordCount(prompt) >= 10
         ? prompt
         : `${prompt} Include what changed, why it changed, and one tiny example from this topic.`,
       rubric: trimText(step.rubric, "Pass when the learner gives coherent beginner reasoning tied to the current topic.")
-    };
+    }, step);
   }
   if (step.type === "workshop" || step.type === "lab" || step.type === "project") {
     const languageInfo = resolveCourseLanguage(step.language || defaultLanguageInfo.label || step.filePath);
@@ -2178,7 +2149,15 @@ function normalizeLearningStep(step, defaultLanguageInfo = courseLanguages[0]) {
       defaultExerciseContext(languageInfo, step.type)
     );
     const prompt = trimText(step.prompt, "Complete the task in the editor.");
-    return {
+    const browserRequested = languageInfo.execution === "preview" || (languageInfo.id === "javascript" && Boolean(step.requiresPreview));
+    const normalizedWorkspaceFiles = normalizeExerciseWorkspaceFiles(step.workspaceFiles, { filePath, starterCode });
+    const rawWorkspaceFiles = browserRequested
+      ? normalizedWorkspaceFiles
+      : normalizedWorkspaceFiles.filter((file) => !file.path.toLowerCase().startsWith("preview/"));
+    const workspaceFiles = browserRequested ? ensureCourseBrowserWorkspace(rawWorkspaceFiles, languageInfo) : rawWorkspaceFiles;
+    const requiresPreview = browserRequested && (hasCourseBrowserEntry(workspaceFiles) || (filePath.toLowerCase() === "index.html" && hasRenderableHtml(step.resultCode)));
+    const requiresTerminal = !requiresPreview && languageInfo.execution !== "preview";
+    return withTutorVisualCue({
       type: step.type,
       id: typeof step.id === "string" ? slugify(step.id) : undefined,
       language: languageInfo.label,
@@ -2201,20 +2180,42 @@ function normalizeLearningStep(step, defaultLanguageInfo = courseLanguages[0]) {
       context: wordCount(context) >= 10
         ? context
         : `${context} This step should stay connected to the current topic and avoid introducing a new concept.`,
-      requiresPreview: Boolean(step.requiresPreview),
-      requiresTerminal: Boolean(step.requiresTerminal),
-      workspaceView: normalizeWorkspaceView(step.workspaceView, step),
-      workspaceFiles: normalizeExerciseWorkspaceFiles(step.workspaceFiles, { filePath, starterCode })
-    };
+      requiresPreview,
+      requiresTerminal,
+      workspaceView: requiresPreview && step.workspaceView === "preview"
+        ? "preview"
+        : requiresTerminal && step.workspaceView === "terminal"
+          ? "terminal"
+          : "code",
+      workspaceFiles
+    }, step);
   }
   return null;
 }
 
-function normalizeWorkspaceView(value, step) {
-  if (value === "code" || value === "preview" || value === "terminal") return value;
-  if (step?.requiresPreview) return "preview";
-  if (step?.requiresTerminal) return "terminal";
-  return "code";
+function withTutorVisualCue(normalizedStep, rawStep) {
+  const visualCue = normalizeTutorVisualCue(rawStep?.visualCue);
+  return visualCue && normalizedStep ? { ...normalizedStep, visualCue } : normalizedStep;
+}
+
+function normalizeTutorVisualCue(value) {
+  if (!value || typeof value !== "object") return undefined;
+  const title = trimText(value.title, "Visual explanation").slice(0, 120);
+  const description = trimText(value.description, "A focused visual explanation for this learning step.").slice(0, 800);
+  const altText = trimText(value.altText, description).slice(0, 300);
+  const caption = trimText(value.caption, title).slice(0, 240);
+  const kind = value.kind === "illustration" ? "illustration" : "diagram";
+  return {
+    version: "tutor-visual-cue/v1",
+    id: slugify(value.id || title),
+    kind,
+    title,
+    description,
+    caption,
+    altText,
+    labels: uniqueStrings(value.labels).slice(0, 6),
+    preferredRenderer: ["auto", "svg", "image"].includes(value.preferredRenderer) ? value.preferredRenderer : "auto"
+  };
 }
 
 function normalizeExerciseWorkspaceFiles(files, { filePath, starterCode }) {
@@ -2238,6 +2239,39 @@ function normalizeExerciseWorkspaceFiles(files, { filePath, starterCode }) {
   if (activeIndex >= 0) normalized[activeIndex] = { ...normalized[activeIndex], ...activeFile };
   else normalized.unshift(activeFile);
   return normalized;
+}
+
+function ensureCourseBrowserWorkspace(files, languageInfo) {
+  const output = files.map((file) => ({ ...file }));
+  let htmlIndex = output.findIndex((file) => file.path.toLowerCase() === "index.html");
+  if (htmlIndex < 0) {
+    const cssLink = languageInfo.id === "css" ? '  <link rel="stylesheet" href="styles.css">\n' : "";
+    const jsScript = languageInfo.id === "javascript" ? '  <script src="main.js" defer></script>\n' : "";
+    output.unshift({
+      path: "index.html",
+      content: `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n${cssLink}${jsScript}  <title>Stonecode output</title>\n</head>\n<body>\n  <main id="app">Learning output</main>\n</body>\n</html>`,
+      purpose: "Browser output shell",
+      editable: languageInfo.id === "html"
+    });
+    htmlIndex = 0;
+  }
+  const html = output[htmlIndex];
+  if (languageInfo.id === "css" && !/href=["'][^"']*\.css["']/i.test(html.content)) {
+    output[htmlIndex] = { ...html, content: html.content.replace(/<\/head>/i, '  <link rel="stylesheet" href="styles.css">\n</head>') };
+  }
+  if (languageInfo.id === "javascript" && !/<script\b[^>]*src=["'][^"']*\.js["']/i.test(html.content)) {
+    output[htmlIndex] = { ...output[htmlIndex], content: output[htmlIndex].content.replace(/<\/body>/i, '  <script src="main.js"></script>\n</body>') };
+  }
+  return output;
+}
+
+function hasCourseBrowserEntry(files) {
+  const html = files.find((file) => file.path.toLowerCase() === "index.html")?.content;
+  return hasRenderableHtml(html);
+}
+
+function hasRenderableHtml(value) {
+  return typeof value === "string" && /<(?:html|body|main|div|canvas|section|article|button|form|input|p|h[1-6]|ul|ol)\b/i.test(value);
 }
 
 function isMismatchedStarterCode(code, languageInfo) {
@@ -2390,7 +2424,7 @@ function buildFallbackModules(subject) {
               title: "Run, inspect, adjust",
               summary: "Learn the edit-run-review cycle.",
               steps: [
-                { type: "theory", markdown: "## Feedback loop\n\nA feedback loop means you make one small change, run it, inspect the result, then adjust. This keeps learning concrete.\n\nThe key is smallness. If you change ten things at once, you will not know which change helped or broke the result. If you change one thing, the output teaches you something specific.\n\nThis is why the editor exercise uses one file as a whiteboard. The goal is not folder structure. The goal is to practice the loop: predict, edit, run, inspect." },
+                { type: "theory", markdown: "## Feedback loop\n\nA feedback loop means you make one small change, run it, inspect the result, then adjust. This keeps learning concrete.\n\nThe key is smallness. If you change ten things at once, you will not know which change helped or broke the result. If you change one thing, the output teaches you something specific.\n\nThis is why the editor exercise uses one focused scratch file. The goal is not folder structure. The goal is to practice the loop: predict, edit, run, inspect." },
                 { type: "analogy", markdown: "## Analogy\n\nStay with the kitchen recipe. Change one ingredient, taste the plate, then decide whether the change helped. If you changed five ingredients at once, you would not know which one mattered." },
                 { type: "example", markdown: `## First ${language} code shape\n\nBefore the workshop asks you to edit anything, read this tiny starter like a sentence:\n\n\`\`\`${language.toLowerCase().replace(/[^a-z0-9+#]/g, "")}\n${starterCode.trim()}\n\`\`\`\n\nThe important parts are simple:\n\n- \`${languageInfo.outputVerb}\` is the output move. It shows a result you can inspect.\n- The text value is the input for the tiny example.\n- The named function is the rule. It receives a value and returns readable text.\n- The last lines call the rule and show the result.\n\nIn the workshop, every step changes only one small part of this same file. No surprise side quest. We are not summoning a whole framework just to print a sentence.` },
                 { type: "summary", markdown: `## Workshop bridge\n\nYou now know what the starter is for: it gives us one visible ${language} result, then we slowly turn that result into a reusable rule. The next block is a guided workshop, not an exam. Each step tells you the exact tiny edit to make and why it works.` }
@@ -2460,7 +2494,7 @@ function buildFallbackModules(subject) {
                   language,
                   filePath: codeFile,
                   context: `This lab uses the same ${appliedTheme.objectName} pattern as the workshop, but with a slightly different variant and less guidance.`,
-                  prompt: `Use the current editor file as a whiteboard. Build one tiny ${appliedTheme.objectName} function, run it with two examples, and keep the output readable.`,
+                  prompt: `Use the current editor scratch file. Build one tiny ${appliedTheme.objectName} function, run it with two examples, and keep the output readable.`,
                   starterCode,
                   acceptanceCriteria: ["Uses a named function", "Runs at least two examples", "Keeps code in one simple file"]
                 }
@@ -2694,131 +2728,6 @@ function normalizePath(value) {
 }
 
 const courseLanguages = courseLanguageCapabilities;
-
-// Kept temporarily as compatibility documentation while generated-course fixtures
-// migrate to the shared language capability registry above.
-const legacyCourseLanguages = [
-  {
-    label: "JavaScript",
-    aliases: [/javascript/i, /\bjs\b/i, /node/i],
-    filePath: "main.js",
-    extensions: ["js", "jsx", "mjs", "cjs"],
-    outputVerb: "console.log",
-    starterCode: "function describe(value) {\n  return `Value: ${value}`;\n}\n\nconsole.log(describe('stone'));\n"
-  },
-  {
-    label: "TypeScript",
-    aliases: [/typescript/i, /\bts\b/i],
-    filePath: "main.ts",
-    extensions: ["ts", "tsx"],
-    outputVerb: "console.log",
-    starterCode: "function describe(value: string): string {\n  return `Value: ${value}`;\n}\n\nconsole.log(describe('stone'));\n"
-  },
-  {
-    label: "Python",
-    aliases: [/python/i, /\bpy\b/i],
-    filePath: "main.py",
-    extensions: ["py", "pyw"],
-    outputVerb: "print",
-    starterCode: "def describe(value):\n    return f\"Value: {value}\"\n\nprint(describe(\"stone\"))\n"
-  },
-  {
-    label: "HTML",
-    aliases: [/html/i, /website/i, /web page/i],
-    filePath: "index.html",
-    extensions: ["html", "htm"],
-    outputVerb: "rendered page",
-    starterCode: "<!doctype html>\n<html>\n  <head>\n    <title>Stonecode Practice</title>\n  </head>\n  <body>\n    <h1>Value: stone</h1>\n  </body>\n</html>\n"
-  },
-  {
-    label: "CSS",
-    aliases: [/css/i],
-    filePath: "styles.css",
-    extensions: ["css"],
-    outputVerb: "visible style",
-    starterCode: ".practice-card {\n  padding: 1rem;\n  color: #102016;\n  background: #8ee8ad;\n}\n"
-  },
-  {
-    label: "Java",
-    aliases: [/\bjava\b/i],
-    filePath: "Main.java",
-    extensions: ["java"],
-    outputVerb: "System.out.println",
-    starterCode: "public class Main {\n  static String describe(String value) {\n    return \"Value: \" + value;\n  }\n\n  public static void main(String[] args) {\n    System.out.println(describe(\"stone\"));\n  }\n}\n"
-  },
-  {
-    label: "C++",
-    aliases: [/c\+\+/i, /cpp/i, /cplusplus/i],
-    filePath: "main.cpp",
-    extensions: ["cpp", "cc", "cxx", "hpp"],
-    outputVerb: "cout",
-    starterCode: "#include <iostream>\n#include <string>\n\nstd::string describe(const std::string& value) {\n  return \"Value: \" + value;\n}\n\nint main() {\n  std::cout << describe(\"stone\") << std::endl;\n  return 0;\n}\n"
-  },
-  {
-    label: "C#",
-    aliases: [/c#/i, /csharp/i, /dotnet/i],
-    filePath: "Program.cs",
-    extensions: ["cs"],
-    outputVerb: "Console.WriteLine",
-    starterCode: "using System;\n\nclass Program {\n  static string Describe(string value) {\n    return \"Value: \" + value;\n  }\n\n  static void Main() {\n    Console.WriteLine(Describe(\"stone\"));\n  }\n}\n"
-  },
-  {
-    label: "C",
-    aliases: [/\bc\b(?!#|\+\+)/i],
-    filePath: "main.c",
-    extensions: ["c", "h"],
-    outputVerb: "printf",
-    starterCode: "#include <stdio.h>\n\nint main(void) {\n  printf(\"Value: stone\\n\");\n  return 0;\n}\n"
-  },
-  {
-    label: "Go",
-    aliases: [/\bgo\b/i, /golang/i],
-    filePath: "main.go",
-    extensions: ["go"],
-    outputVerb: "fmt.Println",
-    starterCode: "package main\n\nimport \"fmt\"\n\nfunc describe(value string) string {\n  return \"Value: \" + value\n}\n\nfunc main() {\n  fmt.Println(describe(\"stone\"))\n}\n"
-  },
-  {
-    label: "Rust",
-    aliases: [/rust/i],
-    filePath: "main.rs",
-    extensions: ["rs"],
-    outputVerb: "println!",
-    starterCode: "fn describe(value: &str) -> String {\n    format!(\"Value: {}\", value)\n}\n\nfn main() {\n    println!(\"{}\", describe(\"stone\"));\n}\n"
-  },
-  {
-    label: "PHP",
-    aliases: [/php/i],
-    filePath: "index.php",
-    extensions: ["php"],
-    outputVerb: "echo",
-    starterCode: "<?php\nfunction describe($value) {\n    return \"Value: \" . $value;\n}\n\necho describe(\"stone\") . PHP_EOL;\n"
-  },
-  {
-    label: "Ruby",
-    aliases: [/ruby/i, /\brb\b/i],
-    filePath: "main.rb",
-    extensions: ["rb"],
-    outputVerb: "puts",
-    starterCode: "def describe(value)\n  \"Value: #{value}\"\nend\n\nputs describe(\"stone\")\n"
-  },
-  {
-    label: "Swift",
-    aliases: [/swift/i],
-    filePath: "main.swift",
-    extensions: ["swift"],
-    outputVerb: "print",
-    starterCode: "func describe(_ value: String) -> String {\n  return \"Value: \\(value)\"\n}\n\nprint(describe(\"stone\"))\n"
-  },
-  {
-    label: "SQL",
-    aliases: [/sql/i],
-    filePath: "query.sql",
-    extensions: ["sql"],
-    outputVerb: "SELECT",
-    starterCode: "SELECT 'Value: stone' AS message;\n"
-  }
-];
 
 function resolveCourseLanguage(value) {
   return resolveCourseLanguageCapability(value);

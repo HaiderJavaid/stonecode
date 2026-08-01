@@ -1,7 +1,8 @@
 import { createServer as createHttpServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
-import { canCreateActiveCourse, canGenerateExperience, normalizePlanTier, resolvePlanLimit } from "./plan-limits.mjs";
+import { canCreateActiveCourse, canGenerateExperience, resolvePlanLimit } from "./plan-limits.mjs";
 import { formatSubscriptionState } from "./subscription-state.mjs";
 import { createSseEventParser } from "./response-stream.mjs";
 import {
@@ -18,7 +19,6 @@ import {
   buildAssessmentPlanPrompt,
   buildCourseBlueprintPrompt,
   buildCourseGenerationPrompt,
-  buildAssessmentCourseContentPrompt,
   buildAssessmentCourseGenerationPrompt,
   buildAssessmentModuleContentPrompt,
   buildAssessmentCourseOutlinePrompt,
@@ -52,8 +52,21 @@ import {
   missingLearningBriefFields,
   normalizeLearningBrief,
   normalizeLearningDiscoveryTurn,
-  subjectForLearningBrief
+  resolveLearningBriefDomainId,
+  resolveLearningBriefTechnologyId,
+  subjectForLearningBrief,
+  unsupportedLearningBriefReason
 } from "./learning-orchestrator/contracts.mjs";
+import { buildLearningProposalPrompt, normalizeLearningProposal } from "./learning-orchestrator/proposals.mjs";
+import {
+  countProposalsSince,
+  createLearningProposalRecord,
+  finalizeLearningProposalRecord,
+  findLearningProposalByIdempotency,
+  findOwnedGenerationJob,
+  findOwnedProposal,
+  updateLearningProposalRecord
+} from "./learning-orchestrator/proposal-store.mjs";
 import {
   buildGuidedProjectMilestonePrompt,
   buildLearningExperiencePrompt,
@@ -63,18 +76,10 @@ import {
 } from "./learning-orchestrator/generation.mjs";
 import { retrieveRagContext } from "./rag/retrieve.mjs";
 import {
-  buildCheckoutMetadata,
-  extractCheckoutSessionState,
-  extractStripeSubscriptionState,
-  patchCheckoutSessionState,
-  upsertSubscriptionState
+  buildCheckoutMetadata
 } from "./stripe-subscriptions.mjs";
+import { estimateOpenAiTextCost } from "./billing/ai-costs.mjs";
 import { formatUsageSummary } from "./usage-events.mjs";
-import {
-  decryptOpenAiKey,
-  encryptOpenAiKey,
-  isValidOpenAiKeyShape
-} from "./user-ai-credentials.mjs";
 import { gradeWithSandbox, resolveExecutionConfig, runSandboxedCode } from "./execution/index.mjs";
 import {
   buildProgressionSummary,
@@ -90,6 +95,42 @@ import {
   normalizeExerciseDifficulty,
   resolveSkillMetadata
 } from "./skill-taxonomy.mjs";
+import { createCreditQuote, getCreditSummary, releaseCredits } from "./credits/credit-store.mjs";
+import { buildRuntimeCapabilityCatalog } from "./runtime/capability-catalog.mjs";
+import { isFeatureEnabled, resolveFeatureFlags } from "./feature-flags.mjs";
+import { extractTutorToolCall, tutorToolDefinitions, validateTutorToolCall } from "./tutor/structured-tools.mjs";
+import { createOrReadTutorVisual, readTutorVisualContent } from "./tutor/visuals.mjs";
+import {
+  consumeOperatorUsage,
+  consumePlanUsage,
+  releaseOperatorUsage,
+  releasePlanUsage,
+  resolveOperatorJudge0Limit,
+  utcPeriodStart
+} from "./usage-limits.mjs";
+import {
+  cloneMarketplaceTemplate,
+  listMarketplaceTemplates,
+  publishMarketplaceTemplate,
+  reportMarketplaceTemplate,
+  setMarketplaceStar,
+  unpublishMarketplaceTemplate
+} from "./marketplace/marketplace-service.mjs";
+import {
+  createSupabaseAdminClient,
+  readAuthenticatedUser,
+  readUserPlan,
+  upsertServerProfile
+} from "./http/authentication.mjs";
+import {
+  createStripeClient,
+  readOrCreateStripeCustomer,
+  readStripeCustomerId,
+  readStripePriceId,
+  reconcileStripeSubscription,
+  shouldReconcileStripeSubscription,
+  syncStripeEventToSubscription
+} from "./billing/stripe-service.mjs";
 
 const root = resolve(process.env.STONECODE_ROOT ?? process.cwd());
 const invokedScript = process.argv[1] ? normalize(resolve(process.argv[1])) : "";
@@ -113,7 +154,38 @@ const mimeTypes = {
 };
 
 export async function handleStonecodeApiRequest(request, response) {
+  const requestId = /^[A-Za-z0-9._:-]{8,100}$/.test(String(request.headers?.["x-request-id"] ?? ""))
+    ? String(request.headers["x-request-id"])
+    : randomUUID();
+  response.stonecodeRequestId = requestId;
+  response.setHeader?.("X-Request-ID", requestId);
+  response.setHeader?.("X-Content-Type-Options", "nosniff");
+  response.setHeader?.("Referrer-Policy", "strict-origin-when-cross-origin");
   try {
+    if (request.url?.startsWith("/api/health")) {
+      await handleHealthRequest(request, response);
+      return true;
+    }
+
+    if (request.url?.startsWith("/api/account")) {
+      await handleAccountRequest(request, response);
+      return true;
+    }
+    if (request.url?.startsWith("/api/visual-assets")) {
+      await handleTutorVisualContentRequest(request, response);
+      return true;
+    }
+
+    if (request.url?.startsWith("/api/marketplace")) {
+      await handleMarketplaceRequest(request, response);
+      return true;
+    }
+
+    if (/^\/api\/courses\/[^/]+\/steps\/[^/]+\/tutor-visual(?:\?|$)/.test(request.url ?? "")) {
+      await handleTutorVisualRequest(request, response);
+      return true;
+    }
+
     if (request.url?.startsWith("/api/tutor")) {
       await handleTutorRequest(request, response);
       return true;
@@ -134,8 +206,28 @@ export async function handleStonecodeApiRequest(request, response) {
       return true;
     }
 
+    if (request.url?.startsWith("/api/generation-jobs")) {
+      await handleGenerationJobRequest(request, response);
+      return true;
+    }
+
     if (request.url?.startsWith("/api/execution")) {
       await handleExecutionRequest(request, response);
+      return true;
+    }
+
+    if (request.url?.startsWith("/api/runtime/capabilities")) {
+      await handleRuntimeCapabilitiesRequest(request, response);
+      return true;
+    }
+
+    if (request.url?.startsWith("/api/credits")) {
+      await handleCreditsRequest(request, response);
+      return true;
+    }
+
+    if (request.url?.startsWith("/api/features")) {
+      sendJson(response, 200, { features: resolveFeatureFlags(process.env) });
       return true;
     }
 
@@ -145,7 +237,7 @@ export async function handleStonecodeApiRequest(request, response) {
     }
 
     if (request.url?.startsWith("/api/ai-credentials/openai")) {
-      await handleOpenAiCredentialRequest(request, response);
+      sendJson(response, 410, { error: "User-supplied AI keys are no longer supported. AI access is included with Stonecode plan limits.", code: "byo_ai_keys_removed" });
       return true;
     }
 
@@ -176,10 +268,348 @@ export async function handleStonecodeApiRequest(request, response) {
 
     return false;
   } catch (error) {
+    reportOperationalError({ error, request, requestId });
     sendJson(response, 500, {
       error: error instanceof Error ? error.message : "Unexpected server error."
     });
     return true;
+  }
+}
+
+async function handleHealthRequest(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+  const url = new URL(request.url ?? "/api/health", "http://localhost");
+  if (url.pathname === "/api/health/live") {
+    sendJson(response, 200, { status: "ok", service: "stonecode-api", timestamp: new Date().toISOString() });
+    return;
+  }
+  const admin = createSupabaseAdminClient(response);
+  if (!admin) return;
+  const startedAt = Date.now();
+  const { error } = await admin.from("technology_manifests").select("technology_id", { count: "exact", head: true }).limit(1);
+  const checks = {
+    database: !error,
+    openai: Boolean(process.env.OPENAI_API_KEY),
+    judge0: Boolean(process.env.JUDGE0_API_KEY || process.env.X_RAPIDAPI_KEY),
+    stripe: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET)
+  };
+  const ready = Object.values(checks).every(Boolean);
+  sendJson(response, ready ? 200 : 503, {
+    status: ready ? "ready" : "degraded",
+    checks,
+    latencyMs: Date.now() - startedAt,
+    timestamp: new Date().toISOString()
+  });
+}
+
+async function handleAccountRequest(request, response) {
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const { admin, user } = auth;
+  const url = new URL(request.url ?? "/api/account", "http://localhost");
+
+  if (request.method === "GET" && url.pathname === "/api/account/export") {
+    const accountExport = await buildAccountExport(admin, user);
+    response.setHeader?.("Content-Disposition", `attachment; filename="stonecode-export-${new Date().toISOString().slice(0, 10)}.json"`);
+    sendJson(response, 200, accountExport);
+    return;
+  }
+
+  if (request.method === "DELETE" && url.pathname === "/api/account") {
+    const body = await readJsonBody(request);
+    if (body?.confirmation !== "DELETE") {
+      sendJson(response, 400, { error: "Type DELETE to confirm permanent account deletion.", code: "deletion_confirmation_required" });
+      return;
+    }
+
+    const { data: subscription, error: subscriptionError } = await admin
+      .from("subscriptions")
+      .select("status,stripe_customer_id,stripe_subscription_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (subscriptionError) throw subscriptionError;
+
+    if (subscription?.stripe_subscription_id || subscription?.stripe_customer_id) {
+      const stripe = createStripeClient(process.env);
+      if (!stripe) {
+        sendJson(response, 503, {
+          error: "Billing cancellation is unavailable, so the account was not deleted. Contact support with this request ID.",
+          code: "billing_cancellation_unavailable"
+        });
+        return;
+      }
+      try {
+        const subscriptions = subscription.stripe_customer_id
+          ? await stripe.subscriptions.list({ customer: subscription.stripe_customer_id, status: "all", limit: 100 })
+          : { data: [await stripe.subscriptions.retrieve(subscription.stripe_subscription_id)] };
+        for (const stripeSubscription of subscriptions.data) {
+          if (["canceled", "incomplete_expired"].includes(stripeSubscription.status)) continue;
+          await stripe.subscriptions.cancel(stripeSubscription.id);
+        }
+      } catch (error) {
+        if (!/No such (?:subscription|customer)|resource_missing/i.test(String(error?.message ?? ""))) throw error;
+      }
+    }
+
+    const { data: visualRows, error: visualError } = await admin
+      .from("tutor_visuals")
+      .select("storage_path")
+      .eq("user_id", user.id);
+    if (visualError && !isMissingDatabaseObjectError(visualError)) throw visualError;
+    const visualPaths = (visualRows ?? []).map((row) => row.storage_path).filter(Boolean);
+    if (visualPaths.length) {
+      const { error: storageError } = await admin.storage.from("tutor-visuals").remove(visualPaths);
+      if (storageError) {
+        sendJson(response, 503, {
+          error: "Private tutor assets could not be removed, so the account was not deleted. Please retry.",
+          code: "account_asset_deletion_failed"
+        });
+        return;
+      }
+    }
+
+    const { error: deletionError } = await admin.auth.admin.deleteUser(user.id);
+    if (deletionError) throw deletionError;
+    sendJson(response, 200, { deleted: true });
+    return;
+  }
+
+  sendJson(response, 404, { error: "Unknown account route." });
+}
+
+async function buildAccountExport(admin, user) {
+  const exportRows = {};
+  const directTables = [
+    ["profiles", "id"], ["courses", "user_id"], ["subscriptions", "user_id"], ["usage_events", "user_id"],
+    ["learner_profiles", "user_id"], ["course_assessments", "user_id"], ["exercise_attempts", "user_id"],
+    ["daily_exercise_usage", "user_id"], ["exercise_daily_state", "user_id"], ["challenge_progress", "user_id"],
+    ["course_completions", "user_id"],
+    ["xp_ledger", "user_id"], ["user_badges", "user_id"], ["course_section_completions", "user_id"],
+    ["credit_accounts", "user_id"], ["credit_grants", "user_id"], ["credit_quotes", "user_id"],
+    ["credit_reservations", "user_id"], ["credit_ledger", "user_id"], ["learning_proposals", "user_id"],
+    ["generation_jobs", "user_id"], ["tutor_visuals", "user_id"], ["plan_usage_counters", "user_id"],
+    ["marketplace_templates", "owner_user_id"], ["marketplace_stars", "user_id"], ["marketplace_reports", "reporter_user_id"]
+  ];
+
+  for (const [table, column] of directTables) {
+    exportRows[table] = await readAllOwnedRows(admin, table, column, user.id);
+  }
+
+  const courseIds = (exportRows.courses ?? []).map((course) => course.id).filter(Boolean);
+  for (const table of ["workspace_folders", "workspace_files", "chat_messages", "course_progress"]) {
+    exportRows[table] = await readAllRowsForIds(admin, table, "course_id", courseIds);
+  }
+  const templateIds = (exportRows.marketplace_templates ?? []).map((template) => template.id).filter(Boolean);
+  exportRows.marketplace_template_versions = await readAllRowsForIds(admin, "marketplace_template_versions", "template_id", templateIds);
+  const reservationIds = (exportRows.credit_reservations ?? []).map((reservation) => reservation.id).filter(Boolean);
+  exportRows.credit_reservation_allocations = await readAllRowsForIds(admin, "credit_reservation_allocations", "reservation_id", reservationIds);
+
+  return {
+    schemaVersion: "stonecode-account-export/v1",
+    exportedAt: new Date().toISOString(),
+    account: { id: user.id, email: user.email ?? null, createdAt: user.created_at ?? null },
+    data: exportRows,
+    note: "Payment records retained by Stripe are governed by Stripe and applicable financial record-retention requirements."
+  };
+}
+
+async function readAllOwnedRows(admin, table, column, value) {
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin.from(table).select("*").eq(column, value).range(offset, offset + 999);
+    if (error) {
+      if (isMissingDatabaseObjectError(error)) return rows;
+      throw error;
+    }
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < 1000) return rows;
+  }
+}
+
+async function readAllRowsForIds(admin, table, column, ids) {
+  if (!ids.length) return [];
+  const rows = [];
+  for (let index = 0; index < ids.length; index += 100) {
+    const { data, error } = await admin.from(table).select("*").in(column, ids.slice(index, index + 100));
+    if (error) {
+      if (isMissingDatabaseObjectError(error)) return rows;
+      throw error;
+    }
+    rows.push(...(data ?? []));
+  }
+  return rows;
+}
+
+function isMissingDatabaseObjectError(error) {
+  return /does not exist|schema cache|could not find the table|relation .* does not exist/i.test(String(error?.message ?? ""));
+}
+
+async function handleMarketplaceRequest(request, response) {
+  if (!isFeatureEnabled("marketplace_v1")) {
+    sendJson(response, 503, { error: "Marketplace is not enabled on this deployment yet.", code: "marketplace_disabled" });
+    return;
+  }
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const profileError = await upsertServerProfile(auth.admin, auth.user);
+  if (profileError) {
+    sendJson(response, 500, { error: profileError.message, code: "profile_sync_failed" });
+    return;
+  }
+  const url = new URL(request.url ?? "/", "http://localhost");
+  try {
+    if (request.method === "GET" && url.pathname === "/api/marketplace") {
+      const templates = await listMarketplaceTemplates(auth.admin, {
+        search: url.searchParams.get("search"),
+        technology: url.searchParams.get("technology"),
+        userId: auth.user.id
+      });
+      sendJson(response, 200, { templates });
+      return;
+    }
+    const body = request.method === "POST" ? await readJsonBody(request) : null;
+    if (request.method === "POST" && url.pathname === "/api/marketplace/publish") {
+      const template = await publishMarketplaceTemplate(auth.admin, {
+        userId: auth.user.id,
+        courseId: body?.courseId,
+        metadata: body?.metadata
+      });
+      sendJson(response, 201, { template });
+      return;
+    }
+    const action = url.pathname.match(/^\/api\/marketplace\/([0-9a-f-]{36})\/(unpublish|star|clone|report)$/i);
+    if (!action) {
+      sendJson(response, 404, { error: "Unknown Marketplace route." });
+      return;
+    }
+    const [, templateId, operation] = action;
+    if (operation === "unpublish") {
+      const template = await unpublishMarketplaceTemplate(auth.admin, { userId: auth.user.id, templateId });
+      sendJson(response, 200, { template });
+      return;
+    }
+    if (operation === "star") {
+      const result = await setMarketplaceStar(auth.admin, { userId: auth.user.id, templateId, starred: body?.starred !== false });
+      sendJson(response, 200, result);
+      return;
+    }
+    if (operation === "report") {
+      const report = await reportMarketplaceTemplate(auth.admin, { userId: auth.user.id, templateId, reason: body?.reason, details: body?.details });
+      sendJson(response, 201, { report });
+      return;
+    }
+    const plan = await readUserPlan(auth.admin, auth.user.id);
+    const result = await cloneMarketplaceTemplate(auth.admin, {
+      userId: auth.user.id,
+      templateId,
+      idempotencyKey: body?.idempotencyKey,
+      activePathLimit: resolvePlanLimit(plan).activeCourseLimit
+    });
+    sendJson(response, result.idempotent ? 200 : 201, result);
+  } catch (error) {
+    sendDomainError(response, error, "Marketplace operation failed.");
+  }
+}
+
+async function handleTutorVisualRequest(request, response) {
+  if (request.method !== "POST") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+  if (!isFeatureEnabled("chat_visuals_v1")) {
+    sendJson(response, 503, { error: "Tutor chat visuals are not enabled yet.", code: "chat_visuals_disabled" });
+    return;
+  }
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const url = new URL(request.url ?? "/", "http://localhost");
+  const match = url.pathname.match(/^\/api\/courses\/([^/]+)\/steps\/([^/]+)\/tutor-visual$/);
+  if (!match) {
+    sendJson(response, 404, { error: "Unknown tutor visual route." });
+    return;
+  }
+  try {
+    const plan = await readUserPlan(auth.admin, auth.user.id);
+    const visual = await createOrReadTutorVisual({
+      admin: auth.admin,
+      userId: auth.user.id,
+      courseId: decodeURIComponent(match[1]),
+      stepId: decodeURIComponent(match[2]),
+      plan,
+      env: process.env
+    });
+    sendJson(response, 200, { visual });
+  } catch (error) {
+    sendDomainError(response, error, "Tutor visual generation failed.");
+  }
+}
+
+async function handleTutorVisualContentRequest(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const url = new URL(request.url ?? "/", "http://localhost");
+  const match = url.pathname.match(/^\/api\/visual-assets\/([0-9a-f-]{36})$/i);
+  if (!match) {
+    sendJson(response, 404, { error: "Tutor visual not found." });
+    return;
+  }
+  try {
+    const content = await readTutorVisualContent({ admin: auth.admin, userId: auth.user.id, visualId: match[1] });
+    response.writeHead(200, { "Content-Type": content.contentType, "Cache-Control": "private, max-age=86400" });
+    response.end(content.body);
+  } catch (error) {
+    sendDomainError(response, error, "Tutor visual lookup failed.");
+  }
+}
+
+async function handleRuntimeCapabilitiesRequest(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const capabilities = await buildRuntimeCapabilityCatalog({ admin: auth.admin, env: process.env });
+  sendJson(response, 200, { capabilities });
+}
+
+async function handleCreditsRequest(request, response) {
+  if (!isFeatureEnabled("credits_v1")) {
+    sendJson(response, 503, { error: "Credits are not enabled on this deployment yet.", code: "credits_disabled" });
+    return;
+  }
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  try {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    if (request.method === "GET" && url.pathname === "/api/credits") {
+      const credits = await getCreditSummary(auth.admin, auth.user.id);
+      sendJson(response, 200, { credits });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/credits/quote") {
+      const body = await readJsonBody(request);
+      const quote = await createCreditQuote(auth.admin, {
+        userId: auth.user.id,
+        scope: body?.scope,
+        idempotencyKey: body?.idempotencyKey
+      });
+      sendJson(response, 200, { quote });
+      return;
+    }
+    sendJson(response, 404, { error: "Unknown credit route." });
+  } catch (error) {
+    sendJson(response, Number(error?.status) || 500, {
+      error: error instanceof Error ? error.message : "Credit operation failed.",
+      code: error?.code ?? "credit_operation_failed"
+    });
   }
 }
 
@@ -246,6 +676,19 @@ async function handleExecutionRequest(request, response) {
     sendJson(response, 404, { error: "Course not found." });
     return;
   }
+  const allowance = await consumeJudge0Allowance(auth.admin, auth.user.id);
+  if (!allowance.allowed) {
+    sendJson(response, 429, {
+      error: allowance.reason === "operator"
+        ? "Stonecode's daily Judge0 safety budget is exhausted. Try again after the UTC reset."
+        : `Daily Judge0 action limit reached for the ${allowance.plan} plan.`,
+      code: allowance.reason === "operator" ? "judge0_operator_limit_reached" : "judge0_daily_limit_reached",
+      limit: allowance.limit,
+      used: allowance.used
+    });
+    return;
+  }
+  const executionStartedAt = Date.now();
   try {
     const result = await runSandboxedCode({
       env: process.env,
@@ -257,8 +700,27 @@ async function handleExecutionRequest(request, response) {
         stdin: body?.stdin
       }
     });
+    await recordUsageEvent(auth.admin, {
+      userId: auth.user.id,
+      courseId,
+      eventType: "code_run",
+      feature: "judge0_execution",
+      costCategory: "plan_included",
+      latencyMs: Date.now() - executionStartedAt,
+      status: "success"
+    });
     sendJson(response, 200, { result });
   } catch (error) {
+    if (shouldReleaseJudge0Reservation(error)) await releaseJudge0Allowance(auth.admin, auth.user.id, allowance).catch(() => null);
+    await recordUsageEvent(auth.admin, {
+      userId: auth.user.id,
+      courseId,
+      eventType: "code_run",
+      feature: "judge0_execution",
+      costCategory: "plan_included",
+      latencyMs: Date.now() - executionStartedAt,
+      status: "failed"
+    });
     sendJson(response, Number(error?.status) || 500, {
       error: error instanceof Error ? error.message : "Execution failed.",
       code: error?.code ?? "execution_failed"
@@ -277,24 +739,44 @@ async function handleTutorRequest(request, response) {
   const { admin, user } = auth;
 
   const body = await readJsonBody(request);
-  const context = body?.context;
-  if (!isTutorContext(context)) {
+  const clientContext = body?.context;
+  if (!isTutorContext(clientContext)) {
     sendJson(response, 400, { error: "Invalid tutor context." });
+    return;
+  }
+  const context = await resolveTrustedTutorContext(admin, user.id, clientContext);
+  if (!context) {
+    sendJson(response, 404, { error: "Owned learning path not found." });
+    return;
+  }
+  const tutorAllowance = await consumeTutorAllowance(admin, user.id);
+  if (!tutorAllowance.allowed) {
+    sendJson(response, 429, {
+      error: `Monthly tutor reply limit reached for the ${tutorAllowance.plan} plan.`,
+      code: "tutor_reply_limit_reached",
+      limit: tutorAllowance.limit,
+      used: tutorAllowance.used
+    });
     return;
   }
 
   const providerConfig = await resolveUserProviderConfig(admin, user, "tutor_chat");
   const profileError = await upsertServerProfile(admin, user);
   if (profileError) {
+    await releaseTutorAllowance(admin, user.id, tutorAllowance).catch(() => null);
     sendJson(response, 500, { error: profileError.message });
     return;
   }
 
   if (providerConfig.error) {
+    await releaseTutorAllowance(admin, user.id, tutorAllowance).catch(() => null);
     await recordUsageEvent(admin, {
       userId: user.id,
       courseId: context.courseId,
       model: providerConfig.model,
+      eventType: "tutor_message",
+      feature: "tutor_chat",
+      costCategory: "plan_included",
       status: "blocked"
     });
     sendJson(response, 503, { error: providerConfig.error });
@@ -313,18 +795,33 @@ async function handleTutorRequest(request, response) {
     }).slice(0, 2400),
     limit: 6
   });
-  const upstreamResponse = await requestTutorStream({
-    config: providerConfig,
-    context: { ...context, ragContext: tutorRagContext },
-    instructions: tutorInstructions
-  });
+  const structuredTools = isFeatureEnabled("structured_tutor_tools");
+  const tutorStartedAt = Date.now();
+  let upstreamResponse;
+  try {
+    upstreamResponse = await requestTutorStream({
+      config: providerConfig,
+      context: { ...context, ragContext: tutorRagContext },
+      instructions: tutorInstructions,
+      tools: structuredTools ? tutorToolDefinitions : []
+    });
+  } catch (error) {
+    await releaseTutorAllowance(admin, user.id, tutorAllowance).catch(() => null);
+    sendJson(response, 502, { error: error instanceof Error ? error.message : "Tutor provider request failed." });
+    return;
+  }
 
   if (!upstreamResponse.ok) {
+    await releaseTutorAllowance(admin, user.id, tutorAllowance).catch(() => null);
     const upstreamJson = await upstreamResponse.json().catch(() => null);
     await recordUsageEvent(admin, {
       userId: user.id,
       courseId: context.courseId,
       model: providerConfig.model,
+      eventType: "tutor_message",
+      feature: "tutor_chat",
+      costCategory: "plan_included",
+      latencyMs: Date.now() - tutorStartedAt,
       status: "failed"
     });
     sendJson(response, upstreamResponse.status, {
@@ -334,10 +831,15 @@ async function handleTutorRequest(request, response) {
   }
 
   if (!upstreamResponse.body) {
+    await releaseTutorAllowance(admin, user.id, tutorAllowance).catch(() => null);
     await recordUsageEvent(admin, {
       userId: user.id,
       courseId: context.courseId,
       model: providerConfig.model,
+      eventType: "tutor_message",
+      feature: "tutor_chat",
+      costCategory: "plan_included",
+      latencyMs: Date.now() - tutorStartedAt,
       status: "failed"
     });
     sendJson(response, 502, { error: `${providerConfig.provider} response stream was empty.` });
@@ -345,7 +847,7 @@ async function handleTutorRequest(request, response) {
   }
 
   response.writeHead(200, {
-    "Content-Type": "text/plain; charset=utf-8",
+    "Content-Type": structuredTools ? "text/event-stream; charset=utf-8" : "text/plain; charset=utf-8",
     "Cache-Control": "no-store"
   });
 
@@ -353,15 +855,23 @@ async function handleTutorRequest(request, response) {
   const encoder = new TextEncoder();
   let streamStatus = "failed";
   let hasReplyText = false;
+  let streamUsage = null;
+  const rawToolCalls = [];
   const parser = createSseEventParser((event) => {
     const delta = extractTutorStreamDelta(providerConfig.provider, event);
     if (delta) {
       hasReplyText = true;
-      response.write(encoder.encode(delta));
+      response.write(encoder.encode(structuredTools ? encodeClientSse("delta", { text: delta }) : delta));
       return;
     }
 
+    if (structuredTools) {
+      const toolCall = extractTutorToolCall(event);
+      if (toolCall) rawToolCalls.push(toolCall);
+    }
+
     if (isTutorStreamDone(providerConfig.provider, event)) {
+      streamUsage = event.data?.response?.usage ?? event.data?.usage ?? null;
       streamStatus = hasReplyText ? "success" : "failed";
       return;
     }
@@ -379,27 +889,61 @@ async function handleTutorRequest(request, response) {
 
     const tail = decoder.decode();
     if (tail) parser.push(tail);
-    if (hasReplyText) streamStatus = "success";
+    if (hasReplyText || rawToolCalls.length) streamStatus = "success";
   } catch {
     streamStatus = "failed";
   } finally {
+    if (structuredTools) {
+      for (const toolCall of rawToolCalls) {
+        try {
+          const tool = validateTutorToolCall(toolCall, context);
+          response.write(encoder.encode(encodeClientSse("tool", { tool })));
+          await recordUsageEvent(admin, {
+            userId: user.id,
+            courseId: context.courseId,
+            eventType: "tool_call",
+            feature: "tutor_patch_proposal",
+            costCategory: "plan_included",
+            status: "success"
+          });
+        } catch (toolError) {
+          response.write(encoder.encode(encodeClientSse("tool_error", {
+            code: toolError?.code ?? "invalid_tutor_tool",
+            message: toolError instanceof Error ? toolError.message : "Tutor tool validation failed."
+          })));
+        }
+      }
+      response.write(encoder.encode(encodeClientSse("done", { status: streamStatus })));
+    }
     await recordUsageEvent(admin, {
       userId: user.id,
       courseId: context.courseId,
       model: providerConfig.model,
+      eventType: "tutor_message",
+      feature: "tutor_chat",
+      costCategory: "plan_included",
+      usage: streamUsage,
+      latencyMs: Date.now() - tutorStartedAt,
       status: streamStatus
     });
+    if (streamStatus !== "success") await releaseTutorAllowance(admin, user.id, tutorAllowance).catch(() => null);
     response.end();
   }
 }
 async function handleCourseRequest(request, response) {
-  if (request.method === "POST") {
+  const url = new URL(request.url ?? "/", "http://localhost");
+  if (request.method === "POST" && url.pathname === "/api/courses") {
     await handleCreateCourseRequest(request, response);
     return;
   }
 
   if (request.method === "DELETE") {
-    await handleResetCoursesRequest(request, response);
+    const courseId = decodeURIComponent(url.pathname.slice("/api/courses/".length));
+    if (!courseId || url.pathname === "/api/courses") {
+      sendJson(response, 410, { error: "Course reset was removed. Delete one learning path at a time." });
+      return;
+    }
+    await handleDeleteCourseRequest(request, courseId, response);
     return;
   }
 
@@ -466,22 +1010,529 @@ async function handleCourseGenerationRequest(request, response) {
 }
 
 async function handleLearningRequest(request, response) {
-  if (request.method !== "POST") {
+  if (request.method !== "POST" && request.method !== "PATCH") {
     sendJson(response, 405, { error: "Method not allowed." });
     return;
   }
   const auth = await readAuthenticatedUser(request, response);
   if (!auth) return;
+  const profileError = await upsertServerProfile(auth.admin, auth.user);
+  if (profileError) {
+    sendJson(response, 500, { error: profileError.message, code: "profile_sync_failed" });
+    return;
+  }
   const url = new URL(request.url ?? "/", "http://localhost");
   const body = await readJsonBody(request);
 
   if (url.pathname === "/api/learning/discovery-turn") return handleLearningDiscoveryTurn(auth, body, response);
+  if (request.method === "POST" && url.pathname === "/api/learning/proposals") return handleCreateLearningProposal(auth, body, response);
+  const proposalMatch = url.pathname.match(/^\/api\/learning\/proposals\/([0-9a-f-]{36})$/i);
+  if (request.method === "PATCH" && proposalMatch) return handlePatchLearningProposal(auth, proposalMatch[1], body, response);
+  const finalizeMatch = url.pathname.match(/^\/api\/learning\/proposals\/([0-9a-f-]{36})\/finalize$/i);
+  if (request.method === "POST" && finalizeMatch) return handleFinalizeLearningProposal(auth, finalizeMatch[1], body, response);
   if (url.pathname === "/api/learning/assessment-plan") return handleCourseAssessmentPlan(auth, { ...body, subject: subjectForLearningBrief(body?.brief) }, response);
   if (url.pathname === "/api/learning/assessment-question") return handleCourseAssessmentQuestion(auth, { ...body, subject: subjectForLearningBrief(body?.brief) }, response);
   if (url.pathname === "/api/learning/assessment-review") return handleCourseAssessmentReview(auth, { ...body, subject: subjectForLearningBrief(body?.brief) }, response);
   if (url.pathname === "/api/learning/generate") return handleLearningGeneration(auth, body, response);
   if (url.pathname === "/api/learning/project/milestone") return handleGuidedProjectMilestone(auth, body, response);
   sendJson(response, 404, { error: "Unknown learning route." });
+}
+
+async function handleCreateLearningProposal({ admin, user }, body, response) {
+  if (!isFeatureEnabled("learning_proposals_v1") || !isFeatureEnabled("credits_v1")) {
+    sendJson(response, 503, { error: "Learning proposals are not enabled on this deployment yet.", code: "learning_proposals_disabled" });
+    return;
+  }
+  try {
+    const brief = normalizeLearningBrief(body?.brief ?? {});
+    const unsupportedReason = unsupportedLearningBriefReason(brief);
+    if (unsupportedReason) {
+      sendJson(response, 400, { error: unsupportedReason, code: "technology_not_supported" });
+      return;
+    }
+    const missingFields = missingLearningBriefFields(brief);
+    if (missingFields.length) {
+      sendJson(response, 400, { error: `Learning brief is missing: ${missingFields.join(", ")}.` });
+      return;
+    }
+    if (isFeatureEnabled("runtime_catalog_v1")) {
+      const capabilities = await buildRuntimeCapabilityCatalog({ admin, env: process.env });
+      const domainId = resolveLearningBriefDomainId(brief);
+      const domain = capabilities.domains.find((item) => item.id === domainId);
+      if (!domain?.available) {
+        sendJson(response, 409, {
+          error: `${domain?.displayName ?? "That learning area"} is not available until its manifest and reviewed RAG checks pass.`,
+          code: "learning_domain_unavailable",
+          domain: domain ?? null
+        });
+        return;
+      }
+      const technologyId = resolveLearningBriefTechnologyId(brief);
+      const technology = capabilities.technologies.find((item) => item.id === technologyId);
+      if (technologyId && !technology?.available) {
+        sendJson(response, 409, {
+          error: `${technology?.displayName ?? "That technology"} is not available until editor, runtime, grading, and reviewed RAG checks pass.`,
+          code: "technology_unavailable",
+          technology: technology ?? null
+        });
+        return;
+      }
+    }
+    const existing = await findLearningProposalByIdempotency(admin, user.id, body?.idempotencyKey);
+    if (existing) {
+      sendJson(response, 200, { proposal: proposalResponse(existing), idempotent: true });
+      return;
+    }
+    const plan = await readUserPlan(admin, user.id);
+    const proposalLimit = resolvePlanLimit(plan).proposalsPerDay;
+    const proposalAllowance = await consumeProposalAllowance(admin, user.id, plan, proposalLimit);
+    if (!proposalAllowance.allowed) {
+      sendJson(response, 429, { error: `Daily proposal limit reached for the ${plan} plan.`, code: "proposal_limit_reached", limit: proposalLimit });
+      return;
+    }
+    const providerConfig = await resolveUserProviderConfig(admin, user, "course_structure");
+    if (providerConfig.error) {
+      await releaseProposalAllowance(admin, user.id, proposalAllowance).catch(() => null);
+      sendJson(response, 503, { error: providerConfig.error });
+      return;
+    }
+    const result = await requestCourseGenerationJson({
+      config: providerConfig,
+      prompt: buildLearningProposalPrompt(brief),
+      maxTokens: 2600
+    });
+    if (!result.ok) {
+      await releaseProposalAllowance(admin, user.id, proposalAllowance).catch(() => null);
+      sendJson(response, 502, { error: result.error ?? "AI learning proposal failed." });
+      return;
+    }
+    let proposal;
+    let persisted;
+    try {
+      proposal = normalizeLearningProposal(parseJsonObject(result.text), brief);
+      persisted = await createLearningProposalRecord(admin, {
+        userId: user.id,
+        brief,
+        proposal,
+        idempotencyKey: body?.idempotencyKey
+      });
+    } catch (error) {
+      await releaseProposalAllowance(admin, user.id, proposalAllowance).catch(() => null);
+      throw error;
+    }
+    await recordUsageEvent(admin, {
+      userId: user.id,
+      courseId: null,
+      proposalId: persisted.proposal.id,
+      model: providerConfig.model,
+      eventType: "ai_generation",
+      status: "success",
+      feature: "learning_proposal",
+      costCategory: "proposal_free",
+      usage: result.usage,
+      latencyMs: result.latencyMs
+    });
+    if (persisted.idempotent) await releaseProposalAllowance(admin, user.id, proposalAllowance).catch(() => null);
+    const proposalsUsed = proposalAllowance.atomic === false
+      ? proposalAllowance.used + (persisted.idempotent ? 0 : 1)
+      : Math.max(0, proposalAllowance.used - (persisted.idempotent ? 1 : 0));
+    sendJson(response, persisted.idempotent ? 200 : 201, {
+      proposal: proposalResponse(persisted.proposal),
+      plan,
+      proposalsRemainingToday: Math.max(0, proposalLimit - proposalsUsed),
+      idempotent: persisted.idempotent
+    });
+  } catch (error) {
+    sendDomainError(response, error, "Learning proposal failed.");
+  }
+}
+
+async function handlePatchLearningProposal({ admin, user }, proposalId, body, response) {
+  if (!isFeatureEnabled("learning_proposals_v1") || !isFeatureEnabled("credits_v1")) {
+    sendJson(response, 503, { error: "Learning proposals are not enabled on this deployment yet.", code: "learning_proposals_disabled" });
+    return;
+  }
+  try {
+    const current = await findOwnedProposal(admin, user.id, proposalId);
+    if (!current) {
+      sendJson(response, 404, { error: "Learning proposal not found." });
+      return;
+    }
+    const patch = body?.proposal && typeof body.proposal === "object" ? body.proposal : {};
+    const merged = { ...current.proposal, ...patch };
+    const totals = { ...(current.proposal?.totals ?? {}), ...(patch.totals ?? {}) };
+    const normalized = normalizeLearningProposal({
+      ...merged,
+      totalSteps: totals.steps,
+      totalFiles: totals.files,
+      exerciseCount: totals.exercises
+    }, current.brief);
+    const updated = await updateLearningProposalRecord(admin, {
+      userId: user.id,
+      proposalId,
+      proposal: normalized,
+      idempotencyKey: body?.idempotencyKey
+    });
+    sendJson(response, 200, { proposal: proposalResponse(updated) });
+  } catch (error) {
+    sendDomainError(response, error, "Learning proposal update failed.");
+  }
+}
+
+async function handleFinalizeLearningProposal({ admin, user }, proposalId, body, response) {
+  if (!isFeatureEnabled("learning_proposals_v1") || !isFeatureEnabled("credits_v1")) {
+    sendJson(response, 503, { error: "Learning proposals are not enabled on this deployment yet.", code: "learning_proposals_disabled" });
+    return;
+  }
+  try {
+    const finalized = await finalizeLearningProposalRecord(admin, {
+      userId: user.id,
+      proposalId,
+      idempotencyKey: body?.idempotencyKey
+    });
+    if (!finalized.idempotent && finalized.job.status === "queued") {
+      try {
+        await dispatchGenerationJob({ admin, job: finalized.job });
+      } catch (dispatchError) {
+        await Promise.all([
+          releaseCredits(admin, { userId: user.id, reservationId: finalized.job.reservation_id }).catch(() => null),
+          admin.from("generation_jobs").update({
+            status: "failed",
+            error_code: "background_dispatch_failed",
+            error_message: dispatchError instanceof Error ? dispatchError.message : "Background dispatch failed.",
+            completed_at: new Date().toISOString()
+          }).eq("id", finalized.job.id)
+        ]);
+        throw dispatchError;
+      }
+    }
+    sendJson(response, finalized.idempotent ? 200 : 202, { job: finalized.job, idempotent: finalized.idempotent });
+  } catch (error) {
+    sendDomainError(response, error, "Learning proposal finalization failed.");
+  }
+}
+
+async function dispatchGenerationJob({ admin, job }) {
+  if (process.env.NETLIFY) {
+    const origin = process.env.DEPLOY_PRIME_URL || process.env.URL;
+    const secret = process.env.STONECODE_INTERNAL_JOB_SECRET;
+    if (!origin || !secret) {
+      const error = new Error("Background generation dispatch is not configured.");
+      error.code = "background_dispatch_unavailable";
+      error.status = 503;
+      throw error;
+    }
+    const response = await fetch(`${origin.replace(/\/$/, "")}/.netlify/functions/generate-learning-background`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Stonecode-Job-Secret": secret },
+      body: JSON.stringify({ jobId: job.id })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      const error = new Error(payload?.error ?? `Background generation dispatch failed with HTTP ${response.status}.`);
+      error.code = "background_dispatch_failed";
+      error.status = 503;
+      throw error;
+    }
+    return;
+  }
+  setTimeout(() => {
+    import("./learning-orchestrator/generation-worker.mjs")
+      .then(({ processGenerationJob }) => processGenerationJob({ admin, jobId: job.id, env: process.env }))
+      .catch((error) => console.error("Local generation job failed", error));
+  }, 0);
+}
+
+async function handleGenerationJobRequest(request, response) {
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+  const auth = await readAuthenticatedUser(request, response);
+  if (!auth) return;
+  const url = new URL(request.url ?? "/", "http://localhost");
+  const match = url.pathname.match(/^\/api\/generation-jobs\/([0-9a-f-]{36})$/i);
+  if (!match) {
+    sendJson(response, 404, { error: "Unknown generation job route." });
+    return;
+  }
+  try {
+    let job = await findOwnedGenerationJob(auth.admin, auth.user.id, match[1]);
+    if (!job) {
+      sendJson(response, 404, { error: "Generation job not found." });
+      return;
+    }
+    job = await recoverStaleGenerationJob(auth.admin, auth.user.id, job);
+    sendJson(response, 200, { job });
+  } catch (error) {
+    sendDomainError(response, error, "Generation job lookup failed.");
+  }
+}
+
+async function recoverStaleGenerationJob(admin, userId, job) {
+  if (!job || job.heartbeat_at === undefined) return job;
+  if (job.status === "queued" && Number(job.attempt_count ?? 0) > 0 && Number(job.attempt_count ?? 0) < 3) {
+    await dispatchGenerationJob({ admin, job }).catch((error) => console.error("Generation retry dispatch failed", error instanceof Error ? error.message : error));
+    return job;
+  }
+  const heartbeat = new Date(job.heartbeat_at || job.started_at || job.created_at).getTime();
+  if (job.status !== "running" || !Number.isFinite(heartbeat) || Date.now() - heartbeat < 20 * 60_000) return job;
+  if (Number(job.attempt_count ?? 0) >= 3) {
+    await Promise.all([
+      releaseCredits(admin, { userId, reservationId: job.reservation_id }).catch(() => null),
+      admin.from("generation_jobs").update({ status: "failed", error_code: "generation_job_stale", error_message: "Generation stopped responding after three attempts.", completed_at: new Date().toISOString() }).eq("id", job.id).eq("user_id", userId).eq("status", "running")
+    ]);
+    return { ...job, status: "failed", error_code: "generation_job_stale", error_message: "Generation stopped responding after three attempts." };
+  }
+  const { data, error } = await admin.from("generation_jobs").update({ status: "queued", progress: 5, started_at: null, error_code: "generation_job_retry", error_message: "Retrying an interrupted generation." }).eq("id", job.id).eq("user_id", userId).eq("status", "running").select("*").maybeSingle();
+  if (error || !data) return job;
+  await dispatchGenerationJob({ admin, job: data }).catch((dispatchError) => console.error("Stale generation retry dispatch failed", dispatchError instanceof Error ? dispatchError.message : dispatchError));
+  return data;
+}
+
+function proposalResponse(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    brief: row.brief,
+    ...row.proposal,
+    quoteId: row.quote_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function sendDomainError(response, error, fallback) {
+  sendJson(response, Number(error?.status) || 500, {
+    error: error instanceof Error ? error.message : fallback,
+    code: error?.code ?? "domain_operation_failed"
+  });
+}
+
+async function resolveTrustedTutorContext(admin, userId, clientContext) {
+  const { data: course, error: courseError } = await admin
+    .from("courses")
+    .select("*")
+    .eq("id", clientContext.courseId)
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (courseError || !course) return null;
+  const [{ data: files }, { data: folders }, { data: progress }, { data: messages }] = await Promise.all([
+    admin.from("workspace_files").select("path,content").eq("course_id", course.id).order("path"),
+    admin.from("workspace_folders").select("path").eq("course_id", course.id).order("path"),
+    admin.from("course_progress").select("lesson_index,lesson_view,selected_file_path").eq("course_id", course.id).maybeSingle(),
+    admin.from("chat_messages").select("role,content").eq("course_id", course.id).order("created_at", { ascending: false }).limit(8)
+  ]);
+  const workspaceFiles = (Array.isArray(files) ? files : []).map((file) => ({ path: file.path, content: String(file.content ?? "").slice(0, 100000) }));
+  const selectedPath = workspaceFiles.some((file) => file.path === clientContext.currentFilePath)
+    ? clientContext.currentFilePath
+    : progress?.selected_file_path;
+  const selectedFile = workspaceFiles.find((file) => file.path === selectedPath) ?? workspaceFiles[0] ?? null;
+  const courseContent = course.course_content && typeof course.course_content === "object" ? course.course_content : null;
+  const lessonIndex = Number.isInteger(progress?.lesson_index) ? progress.lesson_index : 0;
+  return {
+    courseId: course.id,
+    experienceType: normalizeExperienceType(course.experience_type),
+    learningBrief: courseContent?.learningBrief ?? null,
+    courseTitle: course.title,
+    courseSubject: course.subject,
+    courseMode: course.mode,
+    courseDescription: course.description ?? "",
+    courseLanguages: Array.isArray(course.languages) ? course.languages : [],
+    courseTags: Array.isArray(course.tags) ? course.tags : [],
+    courseSyllabus: [],
+    courseContent,
+    checkpoint: course.checkpoint,
+    currentFilePath: selectedFile?.path ?? null,
+    currentFileContent: selectedFile?.content ?? null,
+    fileTree: [
+      ...(Array.isArray(folders) ? folders : []).map((folder) => `${folder.path}/`),
+      ...workspaceFiles.map((file) => file.path)
+    ],
+    workspaceFolders: (Array.isArray(folders) ? folders : []).map((folder) => folder.path),
+    workspaceFiles,
+    recentMessages: (Array.isArray(messages) ? [...messages].reverse() : []).map((message) => ({
+      role: message.role,
+      content: String(message.content ?? "").slice(0, 4000)
+    })),
+    userMessage: String(clientContext.userMessage ?? "").slice(0, 6000),
+    requestKind: ["chat", "lesson_intro", "exercise_hint", "exercise_template"].includes(clientContext.requestKind) ? clientContext.requestKind : "chat",
+    lesson: clientContext.lesson && clientContext.lesson.index === lessonIndex ? clientContext.lesson : undefined,
+    currentCourseStep: resolveTrustedCourseStep(courseContent, lessonIndex),
+    exercise: sanitizeTutorExercise(clientContext.exercise)
+  };
+}
+
+function resolveTrustedCourseStep(content, targetIndex) {
+  if (!content || typeof content !== "object") return null;
+  const modules = content.schemaVersion === "guided-project-content/v2"
+    ? [content.module]
+    : Array.isArray(content.modules)
+      ? content.modules
+      : Array.isArray(content.milestones)
+        ? content.milestones
+        : [];
+  const steps = [];
+  for (const module of modules.filter(Boolean)) {
+    const topics = Array.isArray(module.topics) ? module.topics : [{ id: module.id, title: module.title, blocks: module.blocks ?? [] }];
+    for (const topic of topics) {
+      for (const block of Array.isArray(topic.blocks) ? topic.blocks : []) {
+        for (const [stepIndex, step] of (Array.isArray(block.steps) ? block.steps : []).entries()) {
+          steps.push({ module, topic, block, step, stepIndex });
+        }
+      }
+    }
+  }
+  const current = steps[Math.max(0, Math.min(Number(targetIndex) || 0, steps.length - 1))];
+  if (!current) return null;
+  return {
+    schemaVersion: "course-content/v2",
+    moduleId: current.module.id,
+    moduleTitle: current.module.title,
+    topicId: current.topic.id,
+    topicTitle: current.topic.title,
+    blockId: current.block.id,
+    blockKind: current.block.kind,
+    blockTitle: current.block.title,
+    blockSummary: current.block.summary,
+    stepIndex: current.stepIndex,
+    stepType: current.step?.type,
+    step: current.step
+  };
+}
+
+function sanitizeTutorExercise(value) {
+  if (!value || typeof value !== "object") return undefined;
+  return {
+    id: String(value.id ?? "").slice(0, 120),
+    title: String(value.title ?? "").slice(0, 180),
+    scenario: String(value.scenario ?? "").slice(0, 2000),
+    acceptanceCriteria: uniqueServerStrings(value.acceptanceCriteria).slice(0, 8),
+    language: String(value.language ?? "").slice(0, 80),
+    topic: String(value.topic ?? "").slice(0, 120),
+    difficulty: String(value.difficulty ?? "").slice(0, 40),
+    xp: Math.max(0, Math.min(Number(value.xp) || 0, 1000)),
+    currentCode: String(value.currentCode ?? "").slice(0, 100000)
+  };
+}
+
+async function consumeTutorAllowance(admin, userId) {
+  const plan = await readUserPlan(admin, userId);
+  const limit = resolvePlanLimit(plan).aiMessagesPerMonth;
+  const periodStart = utcPeriodStart("month");
+  const allowance = await consumePlanUsage({
+    admin,
+    userId,
+    feature: "tutor_reply",
+    periodStart,
+    limit,
+    fallback: () => readLegacyUsageAllowance(admin, userId, "tutor_message", `${periodStart}T00:00:00.000Z`, limit)
+  });
+  return { ...allowance, plan, periodStart };
+}
+
+async function releaseTutorAllowance(admin, userId, allowance) {
+  if (!allowance?.periodStart || allowance.atomic === false) return;
+  await releasePlanUsage({ admin, userId, feature: "tutor_reply", periodStart: allowance.periodStart });
+}
+
+async function consumeProposalAllowance(admin, userId, plan, limit) {
+  const periodStart = utcPeriodStart("day");
+  const allowance = await consumePlanUsage({
+    admin,
+    userId,
+    feature: "learning_proposal",
+    periodStart,
+    limit,
+    fallback: async () => {
+      const count = await countProposalsSince(admin, userId, `${periodStart}T00:00:00.000Z`);
+      return { allowed: count < limit, used: count, limit };
+    }
+  });
+  return { ...allowance, plan, periodStart };
+}
+
+async function releaseProposalAllowance(admin, userId, allowance) {
+  if (!allowance?.periodStart || allowance.atomic === false) return;
+  await releasePlanUsage({ admin, userId, feature: "learning_proposal", periodStart: allowance.periodStart });
+}
+
+async function consumeJudge0Allowance(admin, userId, { operatorAmount = 1 } = {}) {
+  const plan = await readUserPlan(admin, userId);
+  const limit = resolvePlanLimit(plan).judge0ActionsPerDay;
+  const periodStart = utcPeriodStart("day");
+  const planAllowance = await consumePlanUsage({
+    admin,
+    userId,
+    feature: "judge0_action",
+    periodStart,
+    limit,
+    fallback: () => readLegacyUsageAllowance(admin, userId, "code_run", `${periodStart}T00:00:00.000Z`, limit)
+  });
+  if (!planAllowance.allowed) return { ...planAllowance, plan, periodStart, operatorAmount, reason: "plan" };
+
+  const operatorAllowance = await consumeOperatorUsage({
+    admin,
+    feature: "judge0_action",
+    periodStart,
+    limit: resolveOperatorJudge0Limit(process.env),
+    amount: operatorAmount
+  });
+  if (!operatorAllowance.allowed) {
+    if (planAllowance.atomic !== false) await releasePlanUsage({ admin, userId, feature: "judge0_action", periodStart }).catch(() => null);
+    return { ...operatorAllowance, plan, periodStart, operatorAmount, reason: "operator" };
+  }
+  return {
+    ...planAllowance,
+    plan,
+    periodStart,
+    operatorAmount,
+    operatorAtomic: operatorAllowance.atomic,
+    reason: null
+  };
+}
+
+async function releaseJudge0Allowance(admin, userId, allowance) {
+  if (!allowance?.periodStart) return;
+  if (allowance.atomic !== false) {
+    await releasePlanUsage({ admin, userId, feature: "judge0_action", periodStart: allowance.periodStart }).catch(() => null);
+  }
+  await releaseOperatorUsage({
+    admin,
+    feature: "judge0_action",
+    periodStart: allowance.periodStart,
+    amount: allowance.operatorAmount ?? 1
+  }).catch(() => null);
+}
+
+async function readLegacyUsageAllowance(admin, userId, eventType, sinceIso, limit) {
+  const { count, error } = await admin
+    .from("usage_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("event_type", eventType)
+    .gte("created_at", sinceIso);
+  if (error) throw new Error(error.message);
+  return { allowed: (count ?? 0) < limit, used: count ?? 0, limit };
+}
+
+function shouldReleaseJudge0Reservation(error) {
+  return new Set([
+    "execution_not_configured",
+    "execution_provider_unsupported",
+    "execution_empty_code",
+    "execution_code_too_large",
+    "execution_stdin_too_large",
+    "execution_language_unsupported",
+    "execution_preview_only",
+    "execution_language_unavailable",
+    "execution_rate_limited"
+  ]).has(error?.code);
+}
+
+function encodeClientSse(event, data) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
 async function handleLearningDiscoveryTurn({ admin, user }, body, response) {
@@ -493,6 +1544,13 @@ async function handleLearningDiscoveryTurn({ admin, user }, body, response) {
     sendJson(response, 400, { error: "Learning discovery needs a valid turn number." });
     return;
   }
+  const capabilities = await buildRuntimeCapabilityCatalog({ admin, env: process.env });
+  const availableTechnologyIds = capabilities.technologies.filter((technology) => technology.available).map((technology) => technology.id);
+  const availableDomainIds = capabilities.domains.filter((domain) => domain.available).map((domain) => domain.id);
+  if (!availableTechnologyIds.length) {
+    sendJson(response, 503, { error: "No learning runtimes are currently available. Please try again shortly.", code: "runtime_catalog_unavailable" });
+    return;
+  }
   const providerConfig = await resolveUserProviderConfig(admin, user, "learning_discovery");
   if (providerConfig.error) {
     sendJson(response, 503, { error: providerConfig.error });
@@ -500,7 +1558,7 @@ async function handleLearningDiscoveryTurn({ admin, user }, body, response) {
   }
   const result = await requestCourseGenerationJson({
     config: providerConfig,
-    prompt: buildLearningDiscoveryPrompt({ messages, turn }),
+    prompt: buildLearningDiscoveryPrompt({ messages, turn, availableTechnologyIds, availableDomainIds }),
     maxTokens: 900
   });
   if (!result.ok) {
@@ -508,8 +1566,8 @@ async function handleLearningDiscoveryTurn({ admin, user }, body, response) {
     return;
   }
   try {
-    const discovery = normalizeLearningDiscoveryTurn(parseJsonObject(result.text), { turn, messages });
-    await recordUsageEvent(admin, { userId: user.id, courseId: null, model: providerConfig.model, status: "success" });
+    const discovery = normalizeLearningDiscoveryTurn(parseJsonObject(result.text), { turn, messages, availableTechnologyIds, availableDomainIds });
+    await recordUsageEvent(admin, { userId: user.id, courseId: null, model: providerConfig.model, status: "success", feature: "learning_discovery", usage: result.usage, latencyMs: result.latencyMs });
     sendJson(response, 200, { discovery, source: "ai" });
   } catch (error) {
     console.error("Learning discovery validation failed", error instanceof Error ? error.message : error);
@@ -523,6 +1581,11 @@ async function handleLearningGeneration({ admin, user }, body, response) {
     brief = normalizeLearningBrief(body?.brief ?? {});
   } catch {
     sendJson(response, 400, { error: "Learning generation needs a valid brief." });
+    return;
+  }
+  const unsupportedReason = unsupportedLearningBriefReason(brief);
+  if (unsupportedReason) {
+    sendJson(response, 400, { error: unsupportedReason, code: "technology_not_supported" });
     return;
   }
   const missingFields = missingLearningBriefFields(brief);
@@ -594,7 +1657,7 @@ async function handleLearningGeneration({ admin, user }, body, response) {
         return;
       }
     }
-    await recordUsageEvent(admin, { userId: user.id, courseId: null, model: providerConfig.model, status: "success" });
+    await recordUsageEvent(admin, { userId: user.id, courseId: null, model: providerConfig.model, status: "success", feature: "legacy_learning_generation", usage: result.usage, latencyMs: result.latencyMs });
     sendJson(response, 200, { content, source: "ai" });
   } catch (error) {
     console.error("Learning generation validation failed", error instanceof Error ? error.message : error);
@@ -648,7 +1711,7 @@ async function handleGuidedProjectMilestone({ admin, user }, body, response) {
     const nextContent = mergeGuidedProjectMilestone(content, parsed.milestone ?? parsed, milestoneIndex);
     const { error } = await admin.from("courses").update({ course_content: nextContent, updated_at: new Date().toISOString() }).eq("id", courseId).eq("user_id", user.id);
     if (error) throw error;
-    await recordUsageEvent(admin, { userId: user.id, courseId, model: providerConfig.model, status: "success" });
+    await recordUsageEvent(admin, { userId: user.id, courseId, model: providerConfig.model, status: "success", feature: "project_milestone_generation", usage: result.usage, latencyMs: result.latencyMs });
     sendJson(response, 200, { content: nextContent, source: "ai" });
   } catch (error) {
     console.error("Project milestone validation failed", error instanceof Error ? error.message : error);
@@ -686,6 +1749,9 @@ async function handleCourseSetupReply({ admin, user }, body, response) {
     userId: user.id,
     courseId: null,
     model: providerConfig.model,
+    feature: "legacy_setup_reply",
+    usage: result.usage,
+    latencyMs: result.latencyMs,
     status: "success"
   });
   sendJson(response, 200, { reply, source: "ai" });
@@ -729,6 +1795,9 @@ async function handleCourseDiscoveryTurn({ admin, user }, body, response) {
     userId: user.id,
     courseId: null,
     model: providerConfig.model,
+    feature: "legacy_course_discovery",
+    usage: result.usage,
+    latencyMs: result.latencyMs,
     status: "success"
   });
   sendJson(response, 200, { discovery, source: "ai" });
@@ -771,6 +1840,9 @@ async function handleCourseGenerationPreview({ admin, user }, body, response) {
     userId: user.id,
     courseId: null,
     model: providerConfig.model,
+    feature: "legacy_course_preview",
+    usage: result.usage,
+    latencyMs: result.latencyMs,
     status: "success"
   });
   sendJson(response, 200, { content, source: "ai" });
@@ -818,6 +1890,9 @@ async function handleCourseAssessmentPlan({ admin, user }, body, response) {
     userId: user.id,
     courseId: null,
     model: providerConfig.model,
+    feature: "legacy_assessment_plan",
+    usage: result.usage,
+    latencyMs: result.latencyMs,
     status: "success"
   });
   sendJson(response, 200, { plan, source: "ai" });
@@ -863,6 +1938,9 @@ async function handleCourseAssessmentQuestion({ admin, user }, body, response) {
     userId: user.id,
     courseId: null,
     model: providerConfig.model,
+    feature: "legacy_assessment_question",
+    usage: result.usage,
+    latencyMs: result.latencyMs,
     status: "success"
   });
   sendJson(response, 200, { question, source: "ai" });
@@ -913,6 +1991,9 @@ async function handleCourseAssessmentReview({ admin, user }, body, response) {
     userId: user.id,
     courseId: null,
     model: providerConfig.model,
+    feature: "legacy_assessment_review",
+    usage: result.usage,
+    latencyMs: result.latencyMs,
     status: "success"
   });
   sendJson(response, 200, { review, source: "ai" });
@@ -934,6 +2015,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
   const providerConfig = await resolveUserProviderConfig(admin, user, "course_structure");
   let content;
   let generationWarnings = [];
+  const generationCalls = [];
   if (providerConfig.error) {
     sendJson(response, 503, { error: providerConfig.error });
     return;
@@ -952,6 +2034,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
     const learnerContext = null;
     const blueprintPrompt = buildCourseBlueprintPrompt({ subject, answers, assessmentReview, learnerContext, retrievedContext });
     const blueprintResult = await requestCourseGenerationJson({ config: providerConfig, prompt: blueprintPrompt, maxTokens: 1600 });
+    generationCalls.push(blueprintResult);
     let courseBlueprint = null;
     if (blueprintResult.ok && blueprintResult.text.trim()) {
       try {
@@ -964,6 +2047,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
 
     const outlinePrompt = buildAssessmentCourseOutlinePrompt({ subject, answers, assessmentReview, courseBlueprint, retrievedContext });
     const outlineResult = await requestCourseGenerationJson({ config: providerConfig, prompt: outlinePrompt, maxTokens: 2600 });
+    generationCalls.push(outlineResult);
     let courseOutline = null;
     if (outlineResult.ok && outlineResult.text.trim()) {
       try {
@@ -986,6 +2070,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
           const moduleProviderConfig = await resolveUserProviderConfig(admin, user, "module_content");
           const modulePrompt = buildAssessmentModuleContentPrompt({ subject, answers, assessmentReview, courseOutline, courseBlueprint, retrievedContext, moduleIndex });
           const moduleResult = await requestCourseGenerationJson({ config: moduleProviderConfig, prompt: modulePrompt, maxTokens: 6500 });
+          generationCalls.push(moduleResult);
           if (!moduleResult.ok) throw new Error(moduleResult.error ?? `Module ${moduleIndex + 1} generation failed.`);
           skeleton.modules[moduleIndex] = extractGeneratedModuleFromResponse(parseJsonObject(moduleResult.text), skeleton.modules[moduleIndex], moduleIndex);
         }
@@ -1003,6 +2088,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
     } else {
       const prompt = buildAssessmentCourseGenerationPrompt({ subject, answers, assessmentReview, courseBlueprint, retrievedContext });
       const result = await requestCourseGenerationJson({ config: providerConfig, prompt, maxTokens: 9000 });
+      generationCalls.push(result);
       if (result.ok) {
         try {
           content = normalizeGeneratedCourseContent({
@@ -1038,6 +2124,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
               if (hasModuleLevelWarnings || topicWarningGroups.size === 0) {
                 const repairPrompt = buildGeneratedModuleRepairPrompt({ subject, module, moduleIndex, qualityWarnings: moduleWarnings });
                 const repairResult = await requestCourseGenerationJson({ config: repairProviderConfig, prompt: repairPrompt, maxTokens: 7500 });
+                generationCalls.push(repairResult);
                 if (!repairResult.ok) throw new Error(repairResult.error ?? `Module ${moduleIndex + 1} repair failed.`);
                 repairedModules[moduleIndex] = extractGeneratedModuleFromResponse(parseJsonObject(repairResult.text), module, moduleIndex);
                 continue;
@@ -1049,6 +2136,7 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
                 if (!topic) return;
                 const repairPrompt = buildGeneratedTopicRepairPrompt({ subject, topic, moduleIndex, topicIndex, qualityWarnings: topicWarnings });
                 const repairResult = await requestCourseGenerationJson({ config: repairProviderConfig, prompt: repairPrompt, maxTokens: 5000 });
+                generationCalls.push(repairResult);
                 if (!repairResult.ok) throw new Error(repairResult.error ?? `Module ${moduleIndex + 1}, topic ${topicIndex + 1} repair failed.`);
                 repairedTopics[topicIndex] = extractGeneratedTopicFromResponse(parseJsonObject(repairResult.text), topic, topicIndex, topicWarnings);
               }));
@@ -1080,6 +2168,8 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
       userId: user.id,
       courseId: null,
       model: providerConfig.model,
+      feature: "legacy_full_course_generation",
+      ...summarizeUsage(generationCalls),
       status: "failed"
     });
     sendJson(response, 502, {
@@ -1092,6 +2182,8 @@ async function handleCourseGenerationFromAssessment({ admin, user }, body, respo
     userId: user.id,
     courseId: null,
     model: providerConfig.model,
+    feature: "legacy_full_course_generation",
+    ...summarizeUsage(generationCalls),
     status: "success"
   });
   await persistAssessmentAndLearnerProfile(admin, user.id, { subject, answers, assessmentReview, content });
@@ -1172,6 +2264,9 @@ async function handleCourseGenerationChapter({ admin, user }, body, response) {
     userId: user.id,
     courseId,
     model: providerConfig.model,
+    feature: "legacy_chapter_generation",
+    usage: result.usage,
+    latencyMs: result.latencyMs,
     status: "success"
   });
   sendJson(response, 200, { content, chapter: generated.chapter, chapterIndex, source: "ai" });
@@ -1195,7 +2290,7 @@ async function handleSubscriptionRequest(request, response) {
 
   const { data, error } = await admin
     .from("subscriptions")
-    .select("plan,status,current_period_end")
+    .select("plan,status,stripe_customer_id,stripe_subscription_id,current_period_end")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -1204,7 +2299,15 @@ async function handleSubscriptionRequest(request, response) {
     return;
   }
 
-  const subscription = formatSubscriptionState(data);
+  let subscriptionRecord = data;
+  if (shouldReconcileStripeSubscription(data)) {
+    try {
+      subscriptionRecord = await reconcileStripeSubscription(admin, user.id, data);
+    } catch (syncError) {
+      console.error("Stripe subscription reconciliation failed", syncError instanceof Error ? syncError.message : syncError);
+    }
+  }
+  const subscription = formatSubscriptionState(subscriptionRecord);
   const generatedThisMonth = await readMonthlyExperienceGenerationCount(admin, user.id);
   sendJson(response, 200, {
     subscription: {
@@ -1217,111 +2320,6 @@ async function handleSubscriptionRequest(request, response) {
   });
 }
 
-async function handleOpenAiCredentialRequest(request, response) {
-  const auth = await readAuthenticatedUser(request, response);
-  if (!auth) return;
-  const { admin, user } = auth;
-
-  if (request.method === "GET") {
-    const { data, error } = await admin
-      .from("user_ai_credentials")
-      .select("provider,last_four,verified_at,updated_at")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (error) {
-      sendJson(response, 500, { error: formatGeneratedContentSchemaError(error) });
-      return;
-    }
-    sendJson(response, 200, {
-      credential: data
-        ? {
-            configured: true,
-            provider: data.provider,
-            lastFour: data.last_four,
-            verifiedAt: data.verified_at,
-            updatedAt: data.updated_at
-          }
-        : { configured: false, provider: "openai", lastFour: null, verifiedAt: null, updatedAt: null }
-    });
-    return;
-  }
-
-  if (request.method === "DELETE") {
-    const { error } = await admin.from("user_ai_credentials").delete().eq("user_id", user.id);
-    if (error) {
-      sendJson(response, 500, { error: formatGeneratedContentSchemaError(error) });
-      return;
-    }
-    sendJson(response, 200, { deleted: true });
-    return;
-  }
-
-  if (request.method !== "PUT" && request.method !== "POST") {
-    sendJson(response, 405, { error: "Method not allowed." });
-    return;
-  }
-
-  const body = await readJsonBody(request);
-  const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
-  if (!isValidOpenAiKeyShape(apiKey)) {
-    sendJson(response, 400, { error: "Enter a valid OpenAI API key." });
-    return;
-  }
-
-  const verification = await verifyOpenAiCredential(apiKey);
-  if (!verification.ok) {
-    sendJson(response, verification.status, { error: verification.error });
-    return;
-  }
-
-  try {
-    const encrypted = encryptOpenAiKey(apiKey);
-    const now = new Date().toISOString();
-    const profileError = await upsertServerProfile(admin, user);
-    if (profileError) throw profileError;
-    const { error } = await admin.from("user_ai_credentials").upsert({
-      user_id: user.id,
-      provider: "openai",
-      encrypted_secret: encrypted.encryptedSecret,
-      secret_iv: encrypted.secretIv,
-      secret_tag: encrypted.secretTag,
-      last_four: encrypted.lastFour,
-      verified_at: now,
-      updated_at: now
-    });
-    if (error) throw error;
-    sendJson(response, 200, {
-      credential: {
-        configured: true,
-        provider: "openai",
-        lastFour: encrypted.lastFour,
-        verifiedAt: now,
-        updatedAt: now
-      }
-    });
-  } catch (error) {
-    sendJson(response, 500, { error: error instanceof Error ? error.message : "Failed to save OpenAI key." });
-  }
-}
-
-async function verifyOpenAiCredential(apiKey) {
-  try {
-    const verificationResponse = await fetch("https://api.openai.com/v1/models", {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(10_000)
-    });
-    if (verificationResponse.ok) return { ok: true, status: 200, error: null };
-    const payload = await verificationResponse.json().catch(() => null);
-    return {
-      ok: false,
-      status: verificationResponse.status === 401 ? 401 : 502,
-      error: payload?.error?.message ?? "OpenAI could not verify this API key."
-    };
-  } catch {
-    return { ok: false, status: 502, error: "OpenAI key verification is temporarily unavailable." };
-  }
-}
-
 async function handleUsageRequest(request, response) {
   if (request.method !== "GET") {
     sendJson(response, 405, { error: "Method not allowed." });
@@ -1332,19 +2330,64 @@ async function handleUsageRequest(request, response) {
   if (!auth) return;
   const { admin, user } = auth;
 
-  const { data, error } = await admin
+  const monthStart = utcPeriodStart("month");
+  const dayStart = utcPeriodStart("day");
+  let { data, error } = await admin
     .from("usage_events")
-    .select("status,created_at")
+    .select("status,event_type,feature,created_at,input_tokens,output_tokens,cached_input_tokens,cache_write_input_tokens,reasoning_tokens,estimated_cost_microusd")
     .eq("user_id", user.id)
-    .eq("event_type", "tutor_message")
+    .gte("created_at", `${monthStart}T00:00:00.000Z`)
     .order("created_at", { ascending: false });
+
+  if (error && isMissingUsageCostColumn(error)) {
+    ({ data, error } = await admin
+      .from("usage_events")
+      .select("status,event_type,feature,created_at,input_tokens,output_tokens")
+      .eq("user_id", user.id)
+      .gte("created_at", `${monthStart}T00:00:00.000Z`)
+      .order("created_at", { ascending: false }));
+  }
 
   if (error) {
     sendJson(response, 500, { error: error.message });
     return;
   }
 
-  sendJson(response, 200, { usage: formatUsageSummary(data ?? []) });
+  const events = data ?? [];
+  const [plan, countersResult, activePathsResult, proposalsResult] = await Promise.all([
+    readUserPlan(admin, user.id),
+    admin.from("plan_usage_counters").select("feature,period_start,used").eq("user_id", user.id).gte("period_start", monthStart),
+    admin.from("courses").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("status", "active"),
+    admin.from("learning_proposals").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", `${dayStart}T00:00:00.000Z`)
+  ]);
+  const limits = resolvePlanLimit(plan);
+  const counters = countersResult.error ? [] : countersResult.data ?? [];
+  const tutorEvents = events.filter((event) => event.event_type === "tutor_message");
+  const dayEvents = events.filter((event) => typeof event.created_at === "string" && event.created_at >= `${dayStart}T00:00:00.000Z`);
+  const used = (feature, periodStart, fallback) => Number(counters.find((counter) => counter.feature === feature && counter.period_start === periodStart)?.used ?? fallback ?? 0);
+  const allowance = (amount, limit, period) => ({ used: amount, limit, remaining: Math.max(0, limit - amount), period });
+  const tokenTotals = events.reduce((totals, event) => ({
+    input: totals.input + (Number(event.input_tokens) || 0),
+    cachedInput: totals.cachedInput + (Number(event.cached_input_tokens) || 0),
+    cacheWriteInput: totals.cacheWriteInput + (Number(event.cache_write_input_tokens) || 0),
+    output: totals.output + (Number(event.output_tokens) || 0),
+    reasoning: totals.reasoning + (Number(event.reasoning_tokens) || 0),
+    estimatedCostMicrousd: totals.estimatedCostMicrousd + (Number(event.estimated_cost_microusd) || 0)
+  }), { input: 0, cachedInput: 0, cacheWriteInput: 0, output: 0, reasoning: 0, estimatedCostMicrousd: 0 });
+  sendJson(response, 200, { usage: {
+    ...formatUsageSummary(tutorEvents),
+    periodStart: monthStart,
+    plan,
+    allowances: {
+      tutorReplies: allowance(used("tutor_reply", monthStart, tutorEvents.length), limits.aiMessagesPerMonth, "month"),
+      aiImages: allowance(used("ai_image", monthStart, events.filter((event) => event.event_type === "ai_image").length), limits.aiImagesPerMonth, "month"),
+      judge0Actions: allowance(used("judge0_action", dayStart, dayEvents.filter((event) => event.event_type === "code_run").length), limits.judge0ActionsPerDay, "day"),
+      proposals: allowance(used("learning_proposal", dayStart, proposalsResult.count ?? 0), limits.proposalsPerDay, "day"),
+      activePaths: allowance(activePathsResult.count ?? 0, limits.activeCourseLimit, "current")
+    },
+    tokens: tokenTotals,
+    estimatedApiCostUsd: tokenTotals.estimatedCostMicrousd / 1_000_000
+  }});
 }
 
 async function handleProgressionRequest(request, response) {
@@ -1524,7 +2567,6 @@ async function handleProgressionExercise({ admin, user }, request, response) {
   }
 
   if (action === "hint") {
-    const dateKey = await readUserDateKey(admin, user.id);
     const { data: existing } = await admin.from("exercise_attempts")
       .select("hint_used").eq("user_id", user.id).eq("source", source).eq("exercise_key", existingKey).maybeSingle();
     if (existing?.hint_used) {
@@ -1549,8 +2591,8 @@ async function handleProgressionExercise({ admin, user }, request, response) {
     return;
   }
 
-  let passed = false;
-  let feedback = "Not passing yet.";
+  let passed;
+  let feedback;
   if (definition.kind === "chat" && action === "complete") {
     const providerConfig = await resolveUserProviderConfig(admin, user, "reflection_grade");
     if (providerConfig.error) {
@@ -1564,9 +2606,11 @@ async function handleProgressionExercise({ admin, user }, request, response) {
       rubric: definition.rubric
     });
     if (!gradeResponse.ok) {
+      await recordUsageEvent(admin, { userId: user.id, courseId, model: providerConfig.model, eventType: "grading", feature: "reflection_grading", usage: gradeResponse.usage, latencyMs: gradeResponse.latencyMs, status: "failed" });
       sendJson(response, 502, { error: gradeResponse.error ?? "Exercise grader failed." });
       return;
     }
+    await recordUsageEvent(admin, { userId: user.id, courseId, model: providerConfig.model, eventType: "grading", feature: "reflection_grading", usage: gradeResponse.usage, latencyMs: gradeResponse.latencyMs, status: "success" });
     const grade = parseChatGrade(gradeResponse.text);
     passed = grade.passed;
     feedback = grade.feedback;
@@ -1578,6 +2622,17 @@ async function handleProgressionExercise({ admin, user }, request, response) {
     const staticPassed = action === "complete" && gradeGeneratedCodeExercise(submittedCode, definition);
     const executionConfig = resolveExecutionConfig(process.env);
     if (action === "complete" && executionConfig.configured) {
+      const allowance = await consumeJudge0Allowance(admin, user.id, { operatorAmount: 2 });
+      if (!allowance.allowed) {
+        sendJson(response, 429, {
+          error: allowance.reason === "operator" ? "Stonecode's daily Judge0 safety budget is exhausted. Try again after the UTC reset." : `Daily Judge0 action limit reached for the ${allowance.plan} plan.`,
+          code: allowance.reason === "operator" ? "judge0_operator_limit_reached" : "judge0_daily_limit_reached",
+          limit: allowance.limit,
+          used: allowance.used
+        });
+        return;
+      }
+      const gradingStartedAt = Date.now();
       try {
         const sandboxGrade = await gradeWithSandbox({
           env: process.env,
@@ -1594,7 +2649,10 @@ async function handleProgressionExercise({ admin, user }, request, response) {
           : !staticPassed
             ? "Code ran, but it does not satisfy the generated acceptance criteria yet."
             : sandboxGrade.feedback;
+        await recordUsageEvent(admin, { userId: user.id, courseId, eventType: "code_run", feature: "judge0_grading", costCategory: "plan_included", latencyMs: Date.now() - gradingStartedAt, status: "success" });
       } catch (error) {
+        if (shouldReleaseJudge0Reservation(error)) await releaseJudge0Allowance(admin, user.id, allowance).catch(() => null);
+        await recordUsageEvent(admin, { userId: user.id, courseId, eventType: "code_run", feature: "judge0_grading", costCategory: "plan_included", latencyMs: Date.now() - gradingStartedAt, status: "failed" });
         sendJson(response, Number(error?.status) || 502, {
           error: error instanceof Error ? error.message : "Exercise sandbox failed.",
           code: error?.code ?? "execution_failed"
@@ -2302,7 +3360,7 @@ async function createCourseFromDraft({ admin, user }, draft, response) {
       }
     : {};
 
-  let { data, error } = await admin
+  const { data, error } = await admin
     .from("courses")
     .insert({ ...basePayload, ...generatedPayload })
     .select("*")
@@ -2335,19 +3393,38 @@ async function readMonthlyExperienceGenerationCount(admin, userId) {
   return count ?? 0;
 }
 
-async function handleResetCoursesRequest(request, response) {
+async function handleDeleteCourseRequest(request, courseId, response) {
   const auth = await readAuthenticatedUser(request, response);
   if (!auth) return;
   const { admin, user } = auth;
+  if (!/^[a-z0-9-]{8,120}$/i.test(courseId)) {
+    sendJson(response, 400, { error: "Invalid course id." });
+    return;
+  }
+
+  const { data: visualRows, error: visualLookupError } = await admin
+    .from("tutor_visuals")
+    .select("storage_path")
+    .eq("course_id", courseId)
+    .eq("user_id", user.id);
+  if (visualLookupError && !/tutor_visuals|schema cache|does not exist/i.test(visualLookupError.message ?? "")) {
+    sendJson(response, 500, { error: visualLookupError.message });
+    return;
+  }
+  const visualPaths = (visualRows ?? []).map((row) => row.storage_path).filter(Boolean);
+  if (visualPaths.length) {
+    const { error: storageError } = await admin.storage.from("tutor-visuals").remove(visualPaths);
+    if (storageError) {
+      sendJson(response, 500, { error: "Tutor visual assets could not be removed. The learning path was not deleted." });
+      return;
+    }
+  }
 
   const { data, error } = await admin
     .from("courses")
-    .update({
-      status: "archived",
-      updated_at: new Date().toISOString()
-    })
+    .delete()
+    .eq("id", courseId)
     .eq("user_id", user.id)
-    .eq("status", "active")
     .select("id");
 
   if (error) {
@@ -2355,27 +3432,11 @@ async function handleResetCoursesRequest(request, response) {
     return;
   }
 
-  sendJson(response, 200, { archivedCount: data?.length ?? 0 });
-}
-
-async function readAuthenticatedUser(request, response) {
-  const authToken = readBearerToken(request);
-  if (!authToken) {
-    sendJson(response, 401, { error: "Authentication is required." });
-    return null;
+  if (!data?.length) {
+    sendJson(response, 404, { error: "Learning path not found." });
+    return;
   }
-
-  const admin = await createSupabaseAdminClient(response);
-  if (!admin) return null;
-
-  const { data: userData, error: userError } = await admin.auth.getUser(authToken);
-  const user = userData?.user;
-  if (userError || !user) {
-    sendJson(response, 401, { error: userError?.message ?? "Invalid authentication token." });
-    return null;
-  }
-
-  return { admin, user };
+  sendJson(response, 200, { deletedCourseId: courseId, xpPreserved: true });
 }
 
 async function handleCheckoutRequest(request, response) {
@@ -2388,14 +3449,18 @@ async function handleCheckoutRequest(request, response) {
   if (!auth) return;
   const { admin, user } = auth;
 
-  const stripe = await createStripeClient(response);
+  const stripe = requireStripeClient(response);
   if (!stripe) return;
 
   const body = await readJsonBody(request);
-  const plan = normalizePlanTier(body?.plan ?? "pro");
-  const priceId = readStripePriceId(plan);
-  const successUrl = body?.successUrl ?? process.env.STRIPE_SUCCESS_URL;
-  const cancelUrl = body?.cancelUrl ?? process.env.STRIPE_CANCEL_URL;
+  if (body?.plan !== "pro") {
+    sendJson(response, 400, { error: "Only the Pro plan is available for checkout." });
+    return;
+  }
+  const plan = "pro";
+  const priceId = readStripePriceId(plan, process.env);
+  const successUrl = process.env.STRIPE_SUCCESS_URL;
+  const cancelUrl = process.env.STRIPE_CANCEL_URL;
 
   if (!priceId || !successUrl || !cancelUrl) {
     sendJson(response, 400, { error: "Stripe price and redirect URLs are required." });
@@ -2438,11 +3503,10 @@ async function handleBillingPortalRequest(request, response) {
   if (!auth) return;
   const { admin, user } = auth;
 
-  const stripe = await createStripeClient(response);
+  const stripe = requireStripeClient(response);
   if (!stripe) return;
 
-  const body = await readJsonBody(request);
-  const returnUrl = body?.returnUrl ?? process.env.STRIPE_PORTAL_RETURN_URL;
+  const returnUrl = process.env.STRIPE_PORTAL_RETURN_URL;
   const customerId = await readStripeCustomerId(admin, user.id);
 
   if (!customerId || !returnUrl) {
@@ -2464,7 +3528,7 @@ async function handleStripeWebhook(request, response) {
     return;
   }
 
-  const stripe = await createStripeClient(response);
+  const stripe = requireStripeClient(response);
   if (!stripe) return;
 
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -2495,165 +3559,115 @@ async function handleStripeWebhook(request, response) {
   sendJson(response, 200, { received: true });
 }
 
-async function createStripeClient(response) {
-  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-  if (!stripeSecretKey) {
+function requireStripeClient(response) {
+  const stripe = createStripeClient(process.env);
+  if (!stripe) {
     sendJson(response, 503, { error: "STRIPE_SECRET_KEY is not configured." });
     return null;
   }
-
-  const { default: Stripe } = await import("stripe");
-  return new Stripe(stripeSecretKey, {
-    apiVersion: "2026-02-25.clover"
-  });
-}
-
-function readStripePriceId(plan) {
-  if (plan === "pro") return process.env.STRIPE_PRO_PRICE_ID;
-  return process.env.STRIPE_BASIC_PRICE_ID;
-}
-
-async function readStripeCustomerId(client, userId) {
-  const { data, error } = await client
-    .from("subscriptions")
-    .select("stripe_customer_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data?.stripe_customer_id ?? null;
-}
-
-async function readOrCreateStripeCustomer(client, stripe, user) {
-  const existingCustomerId = await readStripeCustomerId(client, user.id);
-  if (existingCustomerId) return existingCustomerId;
-
-  const customer = await stripe.customers.create({
-    email: user.email ?? undefined,
-    metadata: {
-      user_id: user.id
-    }
-  });
-
-  const { error } = await client.from("subscriptions").upsert({
-    user_id: user.id,
-    plan: "free",
-    status: "free",
-    stripe_customer_id: customer.id,
-    updated_at: new Date().toISOString()
-  });
-  if (error) throw error;
-
-  return customer.id;
-}
-
-async function syncStripeEventToSubscription(client, event) {
-  const subscriptionState = extractStripeSubscriptionState(event);
-  if (subscriptionState) {
-    await upsertSubscriptionState(client, subscriptionState);
-    return;
-  }
-
-  const checkoutState = extractCheckoutSessionState(event);
-  if (checkoutState) {
-    await patchCheckoutSessionState(client, checkoutState);
-  }
-}
-
-async function createSupabaseAdminClient(response) {
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
-    sendJson(response, 503, { error: "Supabase service role is not configured on the server." });
-    return null;
-  }
-
-  const { createClient } = await import("@supabase/supabase-js");
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
-
-async function upsertServerProfile(client, user) {
-  const { error } = await client.from("profiles").upsert({
-    id: user.id,
-    email: user.email ?? "",
-    updated_at: new Date().toISOString()
-  });
-  if (error) return error;
-
-  const displayName = typeof user.user_metadata?.display_name === "string"
-    ? user.user_metadata.display_name.trim().slice(0, 50)
-    : "";
-  if (displayName.length >= 2) {
-    const { error: displayNameError } = await client
-      .from("profiles")
-      .update({ display_name: displayName, updated_at: new Date().toISOString() })
-      .eq("id", user.id)
-      .is("display_name", null);
-    if (displayNameError) return displayNameError;
-  }
-  return null;
-}
-
-async function readUserPlan(client, userId) {
-  const { data, error } = await client
-    .from("subscriptions")
-    .select("plan,status")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error || !data) return "free";
-  if (data.status !== "active" && data.status !== "trialing") return "free";
-  return normalizePlanTier(data.plan);
+  return stripe;
 }
 
 async function resolveUserProviderConfig(admin, user, task) {
-  const plan = await readUserPlan(admin, user.id);
-  if (plan !== "free") return resolveTutorProviderConfig(process.env, task);
-
-  const baseConfig = resolveTutorProviderConfig(process.env, task);
-  const { data, error } = await admin
-    .from("user_ai_credentials")
-    .select("encrypted_secret,secret_iv,secret_tag")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (error) {
-    return { ...baseConfig, apiKey: null, error: formatGeneratedContentSchemaError(error) };
-  }
-  if (!data) {
-    return {
-      ...baseConfig,
-      apiKey: null,
-      error: "Connect an OpenAI API key in Settings → Billing to use AI on the Free plan."
-    };
-  }
-  try {
-    const apiKey = decryptOpenAiKey(data);
-    return resolveTutorProviderConfig({ ...process.env, OPENAI_API_KEY: apiKey }, task);
-  } catch (error) {
-    return {
-      ...baseConfig,
-      apiKey: null,
-      error: error instanceof Error ? error.message : "The saved OpenAI key could not be decrypted."
-    };
-  }
+  return resolveTutorProviderConfig(process.env, task);
 }
 
-async function recordUsageEvent(admin, { userId, courseId, model, status }) {
-  const { error } = await admin.from("usage_events").insert({
+async function recordUsageEvent(admin, {
+  userId,
+  courseId,
+  proposalId = null,
+  model = null,
+  status,
+  eventType = "ai_generation",
+  feature = "legacy_ai",
+  costCategory = "plan_included",
+  latencyMs = null,
+  usage = null
+}) {
+  const inputTokens = usageInteger(usage?.input_tokens ?? usage?.inputTokens);
+  const outputTokens = usageInteger(usage?.output_tokens ?? usage?.outputTokens);
+  const cachedInputTokens = usageInteger(usage?.cached_input_tokens ?? usage?.cachedInputTokens) ?? 0;
+  const cacheWriteInputTokens = usageInteger(usage?.cache_write_input_tokens ?? usage?.cacheWriteInputTokens) ?? 0;
+  const reasoningTokens = usageInteger(usage?.reasoning_tokens ?? usage?.reasoningTokens) ?? 0;
+  const cost = estimateOpenAiTextCost({ model, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens });
+  const base = {
     user_id: userId,
     course_id: typeof courseId === "string" && courseId ? courseId : null,
-    event_type: "tutor_message",
+    event_type: eventType,
     model: typeof model === "string" ? model : null,
-    input_tokens: null,
-    output_tokens: null,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    feature,
+    latency_ms: usageInteger(latencyMs),
+    cost_category: costCategory,
     status
-  });
+  };
+  const hardeningPayload = {
+    ...base,
+    proposal_id: typeof proposalId === "string" && proposalId ? proposalId : null,
+    cached_input_tokens: cachedInputTokens,
+    cache_write_input_tokens: cacheWriteInputTokens,
+    reasoning_tokens: reasoningTokens,
+    estimated_cost_microusd: cost.estimatedCostMicrousd,
+    pricing_version: cost.pricingVersion
+  };
+  let { error } = await admin.from("usage_events").insert(hardeningPayload);
+  if (error && isMissingUsageCostColumn(error)) {
+    const { cache_write_input_tokens: _cache_write_input_tokens, ...preLunaHardeningPayload } = hardeningPayload;
+    ({ error } = await admin.from("usage_events").insert(preLunaHardeningPayload));
+  }
+  if (error && isMissingUsageCostColumn(error)) {
+    ({ error } = await admin.from("usage_events").insert(base));
+  }
 
   if (error) {
     console.error("Failed to record usage event", error.message);
   }
+}
+
+function isMissingUsageCostColumn(error) {
+  return ["PGRST204", "42703"].includes(String(error?.code ?? "")) || /proposal_id|cached_input_tokens|cache_write_input_tokens|reasoning_tokens|estimated_cost_microusd|pricing_version/i.test(String(error?.message ?? ""));
+}
+
+function usageInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.round(number) : null;
+}
+
+function summarizeUsage(results) {
+  let inputTokens = 0;
+  let cachedInputTokens = 0;
+  let cacheWriteTokens = 0;
+  let outputTokens = 0;
+  let reasoningTokens = 0;
+  let latencyMs = 0;
+  let hasInput = false;
+  let hasOutput = false;
+  let hasLatency = false;
+  for (const result of results) {
+    const input = usageInteger(result?.usage?.inputTokens ?? result?.usage?.input_tokens);
+    const cachedInput = usageInteger(result?.usage?.cachedInputTokens ?? result?.usage?.cached_input_tokens);
+    const cacheWrite = usageInteger(result?.usage?.cacheWriteTokens ?? result?.usage?.cache_write_input_tokens);
+    const output = usageInteger(result?.usage?.outputTokens ?? result?.usage?.output_tokens);
+    const reasoning = usageInteger(result?.usage?.reasoningTokens ?? result?.usage?.reasoning_tokens);
+    const latency = usageInteger(result?.latencyMs);
+    if (input !== null) { inputTokens += input; hasInput = true; }
+    if (cachedInput !== null) cachedInputTokens += cachedInput;
+    if (cacheWrite !== null) cacheWriteTokens += cacheWrite;
+    if (output !== null) { outputTokens += output; hasOutput = true; }
+    if (reasoning !== null) reasoningTokens += reasoning;
+    if (latency !== null) { latencyMs += latency; hasLatency = true; }
+  }
+  return {
+    usage: {
+      inputTokens: hasInput ? inputTokens : null,
+      cachedInputTokens,
+      cacheWriteTokens,
+      outputTokens: hasOutput ? outputTokens : null,
+      reasoningTokens
+    },
+    latencyMs: hasLatency ? latencyMs : null
+  };
 }
 
 function isTutorContext(context) {
@@ -2754,14 +3768,6 @@ function normalizeExperienceType(value) {
   return value === "short_course" || value === "exercise" || value === "guided_project" ? value : "course";
 }
 
-function readBearerToken(request) {
-  const header = request.headers.authorization;
-  if (typeof header !== "string") return null;
-  const [scheme, token] = header.split(" ");
-  if (scheme !== "Bearer" || !token) return null;
-  return token;
-}
-
 function readJsonBody(request) {
   return new Promise((resolveBody, rejectBody) => {
     let body = "";
@@ -2821,11 +3827,37 @@ function readRawBody(request) {
 }
 
 function sendJson(response, status, body) {
+  const payload = status >= 400 && response.stonecodeRequestId && body && typeof body === "object" && !Array.isArray(body)
+    ? { ...body, traceId: response.stonecodeRequestId }
+    : body;
   response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store"
   });
-  response.end(JSON.stringify(body));
+  response.end(JSON.stringify(payload));
+}
+
+function reportOperationalError({ error, request, requestId }) {
+  const event = {
+    severity: "error",
+    service: "stonecode-api",
+    requestId,
+    method: request.method ?? "UNKNOWN",
+    path: String(request.url ?? "/").split("?")[0],
+    message: error instanceof Error ? error.message : "Unexpected server error.",
+    timestamp: new Date().toISOString()
+  };
+  console.error(JSON.stringify(event));
+  const webhookUrl = process.env.STONECODE_ALERT_WEBHOOK_URL;
+  if (!webhookUrl) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3_000);
+  void fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(event),
+    signal: controller.signal
+  }).catch(() => null).finally(() => clearTimeout(timer));
 }
 
 function serveStatic(request, response) {
@@ -2839,7 +3871,10 @@ function serveStatic(request, response) {
   }
 
   response.writeHead(200, {
-    "Content-Type": mimeTypes[extname(filePath)] ?? "application/octet-stream"
+    "Content-Type": mimeTypes[extname(filePath)] ?? "application/octet-stream",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Frame-Options": "DENY"
   });
   createReadStream(filePath).pipe(response);
 }

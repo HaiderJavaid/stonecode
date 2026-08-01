@@ -1,281 +1,97 @@
 # Stonecode Tasks
 
-## Completed
+## Production Revamp — Implemented Locally
 
-- Landing now uses a full-bleed hero with top-left React Bits SideRays and a natural-scale tilted composition of the extracted course, CodeMirror editor, and tutor panels; all panels share one non-overlapping plane, catch light from the ray direction, and crop/fade at viewport edges.
-- Removed the landing's legacy centered glows and duplicate global SideRays canvas; capped the remaining landing ray at 30fps and 1.25 DPR to reduce GPU work.
-- Matched landing wall texture/color and frosted card surfaces to the dashboard/auth system; removed the hero editor's extra outer StoneSurface and rounded the cutout's outer clipping.
-- Landing hero types and deletes JavaScript, Python, C++, C#, Web Development, and Game Development with a reduced-motion fallback while retaining the global landing typography.
-- Retained the existing three-row feature layout and made its AI positioning explicit: AI-generated courses, building projects side-by-side with AI, and AI-generated exercises.
-- Unsupported trust logos, testimonial, learner counts, lesson counts, satisfaction claims, and Team pricing were replaced with truthful product content and two public choices: Free and Pro.
-- Free entitlement metadata now exposes complete paths and all learning modes with required BYO OpenAI configuration; $9 Pro includes Stonecode-managed AI.
-- [ ] Update the production Stripe Pro price ID/product to $9 per person per month before publishing the revised pricing.
-- Added server-only encrypted OpenAI credentials, authenticated save/status/delete endpoints, Settings connection controls, and Free-user provider routing.
-- Replaced the synthetic discovery media with an exact browser-captured dashboard → adaptive setup → assessment clip; remaining feature clips must use the same real-component capture workflow.
-- Prototype converted to React.
-- Course workspace model added.
-- Local persistence added for selected course, files, chat, and lesson state.
-- CodeMirror IDE editor added.
-- Server-side `/api/tutor` endpoint added.
-- Browser Worker lesson runner added.
-- Required SaaS routes added as placeholders.
-- Major UI/state refactor started:
-  - `src/App.tsx`
-  - `CourseWorkspace`
-  - `DashboardPage`
-  - `FilePanel`
-  - `WorkspaceFileTree`
-  - `CourseCard`
-  - `RunTerminal`
-  - `useCourseWorkspace`
-  - `useTutorChat`
-  - `useTerminalRunner`
-- Supabase schema scaffold added.
-- Stripe checkout, billing portal, and webhook endpoints scaffolded.
-- Supabase Auth provider, login/signup/reset forms, protected routes, and sign-out added.
-- Supabase-backed course/file/folder/chat/progress persistence code added with local fallback.
-- Empty dashboard and guided course setup flow added locally.
-- Start project initializes only one reusable whiteboard file.
-- Auth transition checkpoint branches created for comparing saved states.
-- Current WIP branch `work/auth-transition-from-06` created from checkpoint 06.
-- Login startup/load-in fade and zoom sequence accepted by product lead.
-- First dashboard animation optimization pass completed without changing the accepted login zoom.
-- Right panel/add-course reveal now mounts after auth zoom with a preload gap, waits for workspace readiness, then animates from the right.
-- Course selection panel defers heavier chat/Markdown/typewriter content until the panel shell animation finishes.
-- Live verifier script now proves `workspace_folders` is the only missing persistence table in the current Supabase project.
-- Course creation now goes through server-side `/api/courses`, which enforces Free active-course limits before inserting.
-- Reset demo now archives active Supabase courses through `DELETE /api/courses` instead of only clearing local state.
+- [x] Add canonical product contracts, feature flags, Free/Pro entitlements, and deterministic creation quotes.
+- [x] Add append-only credit grants/ledger/reservations/allocations with expiry order, retry safety, settlement, and release.
+- [x] Grant 10 permanent registration credits and idempotent 100-credit active Pro billing-cycle grants.
+- [x] Replace onboarding tests with short conversational discovery, contextual suggested answers, any-entry-point intake, and editable Course/Guided Project/Exercise Pack proposals.
+- [x] Add persisted asynchronous generation jobs and Netlify background worker entrypoint.
+- [x] Keep legacy `short_course` readable while normalizing new compact requests to Course.
+- [x] Add runtime manifests and dynamic Judge0 discovery for the 22-language catalog.
+- [x] Add isolated, versioned RAG corpus/source/chunk/evaluation records and seed/evaluate scripts for all 22 technologies.
+- [x] Ingest official documentation for all 22 technologies and reach 1.00 top-five fixture relevance with zero cross-language leakage; enable only provenance-approved corpora (five priority technologies currently enabled).
+- [x] Gate visible technologies on editor, manifest, grading, runtime, provenance, relevance, and leakage checks.
+- [x] Replace regex tutor mutations with strict structured patches plus Apply/Reject/Undo.
+- [x] Add lazy private tutor-chat visuals with SVG-first rendering, image caps, caching, fallbacks, and accessible zoom/pan viewer.
+- [x] Limit workspace surfaces to dynamic Code/Output/Terminal and remove fake native previews/Whiteboard tabs.
+- [x] Pin and sandbox React, Vue, Svelte, D3, Chart.js, and p5.js browser assets; block arbitrary remote preview dependencies.
+- [x] Add permanent owned-course deletion with XP preservation and themed confirmation UI.
+- [x] Add route-backed Marketplace publishing, immutable snapshots, search, stars, reports, moderation state, unpublish, and one-credit clone.
+- [x] Integrate Marketplace into the persistent dashboard scene with a top route switcher, neutral landing-derived surfaces, fully offscreen staggered Dashboard exits, a 500ms transition pause, and a separate Marketplace title/listings card composition.
+- [x] Polish dashboard learning cards with compact one-line dated rows, balanced outer content padding and inline progress, newest-first ordering, an independently scrolling list, corrected Stone marks, synchronized reversible expansion, one contextual Back action, and X close; simplify proposal creation to Generate + Stone quote and restyle Terminal with the charcoal stone system plus semantic progress-green accents.
+- [x] Remove active BYO OpenAI key UI/services and leave the old route as a compatibility `410`.
+- [x] Record actual model, tokens, latency, feature, status, and cost category across AI/runtime paths.
+- [x] Update Free/Pro public pricing and product copy.
+- [x] Route-split public/authenticated surfaces and heavy vendors; production build has no JavaScript chunk over 500 kB.
+- [x] Add atomic per-user usage counters and a hard global Judge0 circuit breaker migration.
+- [x] Upgrade to supported Vite 7/React Router 7, add ESLint flat config, remove applicable dependency advisories, and pin Node 22.12 for Netlify.
+- [x] Pass local typecheck, lint with zero errors, production build, all non-live verifiers, and rendered landing/login/browser-runtime QA.
+- [x] Pass a 200-request/20-concurrency local feature-endpoint smoke load check; authenticated production load remains gated on deployment approval.
+- [x] Add share metadata plus a 1200x630 preview asset, authenticated dashboard Stones balance, concise typing dots, any-order discovery completion, and home-first course reopening with the default dashboard IDE preserved until Resume/file selection.
+- [x] Integrate Marketplace into the persistent workspace with slow symmetric stagger/pause transitions; animate lesson-card expansion and restore green list progress bars.
+- [x] Explicitly reject and disable the 17 non-launch technologies/sources; production now exposes only Python, JavaScript, TypeScript, HTML, and CSS.
+- [x] Centralize authenticated browser API calls with near-expiry refresh and one 401 retry; add transient Supabase auth recovery on the server.
+- [x] Repair Stripe item-level billing-period parsing, active-Pro credit self-reconciliation, and server-owned redirect URLs.
+- [x] Extract HTTP authentication and Stripe operations into focused backend domain modules.
+- [x] Repair Exercise Pack generation with exact-count code/MCQ batches, strict one-problem normalization, targeted batch retry, and final mix validation.
+- [x] Make first Start open the syllabus, later Resume restore Files/last file, split Guided Projects into feature-sized microstep blocks, and enforce topic-grounded non-assessment MCQs.
+- [x] Canonicalize discovery question/suggestion turns and ignore stale browser responses so chips cannot lag behind the visible question.
+- [x] Preserve contextual discovery wording only when its structured field matches the canonical question; answer capability questions with the five approved launch languages and aligned chips.
+- [x] Ground asynchronous generation in the approved language-isolated RAG corpus and persist retrieval provenance.
+- [x] Add retry-aware generation job heartbeats and versioned per-job token/API-cost/Stone economics accounting.
+- [x] Add authenticated account export, typed permanent account deletion with Stripe cancellation, request trace IDs, readiness/liveness endpoints, alert-webhook support, and production security headers.
+- [x] Add actionable support contact/diagnostic IDs, expand beta privacy/terms coverage, and document release/rollback/incident/backup operations.
+- [x] Replace fragile whole-Course quality repair with one smallest-scope repair, one affected-module regeneration, and at most one fresh validation retry; fix false-positive same-block MCQ/exercise grounding checks and keep wording uncertainty advisory.
+- [x] Enforce quote-to-delivery parity: Course proposals normalize to at least six learner steps per module, background generation writes every approved module separately, and persistence/settlement reject partial or out-of-band Courses.
 
-## Current Stage: Production SaaS Foundation
+## Required Before Production Enablement
 
-### Active: Personalized Course Generation V2
+- [x] Switch the default OpenAI text model and Netlify Production selector to GPT-5.6 Luna with reasoning effort none; add Luna cache-read/cache-write pricing tests.
+- [ ] Apply `2026-08-01-gpt-5-6-luna-cache-accounting.sql` through an authenticated Supabase migration path.
+- [x] Implement the 21-technology launch catalog, domain-aware contracts, runtime capabilities, multi-select focus UI, generalized file/runtime surfaces, conceptual Course rules, isolated domain RAG tooling, and 75-path dry certification.
+- [x] Apply `2026-08-01-learning-domains-and-expanded-catalog.sql`; four domain manifests now exist pending review.
+- [x] Repair account-deletion cascade blockers for fresh installs and in the pending 2026-08-01 migration; add regression coverage.
+- [ ] Ingest/review/evaluate all four domain corpora.
+- [ ] After migration, rerun authenticated account deletion with a reserved generation job to verify the cascade repair against Supabase.
+- [ ] Re-open and individually verify hash/chunks/license/attribution for the 17 rejected language sources; re-evaluate all 22 corpora, enable 21 manifests through `approve:learning-capability`, and mark Julia `approved_pending_runtime`.
+- [x] Run live 18-language Judge0 runtime smoke; fix exact C/R matching, FreeBASIC syntax, and pin the reviewed R runtime that meets the CPU ceiling.
+- [ ] Rerun JavaScript/HTML/CSS rendered Output smoke after deployment.
+- [ ] Run paid live generation certification for 63 technology paths and 12 valid domain paths after explicit external-spend approval.
 
-- [x] Replace course-only setup with universal AI learning discovery.
-- [x] Add server-owned learning briefs and deterministic readiness/assessment policy.
-- [x] Add authenticated `/api/learning/*` discovery, assessment, generation, and project-milestone routes.
-- [x] Add validated `short-course-content/v1`, `exercise-session/v1`, legacy `guided-project-content/v1`, and one-module `guided-project-content/v2` schemas.
-- [x] Persist `experience_type`, backfill existing records as courses, and make confirmation saves idempotent.
-- [x] Exclude exercise sessions from active-program limits and group them under Recent Practice.
-- [x] Apply daily practice allowances to generated exercise-session completions.
-- [x] Add conversational exercise scope/purpose discovery, ten-problem default, configurable MCQ/code mix, and editable compact confirmation.
-- [x] Validate pure exercise sessions with exact MCQ/code counts and reject theory/workshop leakage.
-- [x] Persist primary skill, parent language, topics, domains, and exercise kind for attempts and XP.
-- [x] Replace Settings difficulty distribution with solved-count skill distribution while preserving Language XP.
-- [x] Add configurable Frontend, Backend, Game, Mobile, and Full-stack title achievements.
-- [x] Treat guided project and workshop as one experience: intro theory -> 10–20 guided coding steps -> final theory recap.
-- [x] Compact guided-project orientation to 1–3 refresher steps and final recap to 1–2 non-assessment summaries.
-- [x] Make scratch workshops begin blank/minimal, reject run-only/no-op steps, and reserve preloaded code/scenes for repair or add-feature work.
-- [x] Enforce Pygame scratch foundations as imports -> initialization -> dimensions and add source-linked synchronized Visual scenes.
-- [x] Auto-repair saved lightweight visual workshops with source-linked previews that update from current editor code without Terminal or OpenAI.
-- [x] Cover browser Canvas/CSS, Python visual libraries, lightweight C/C++/Java/.NET 2D, and simple mobile UI representations while excluding full external game engines.
-- [x] Compact guided-project AI output into one initial workspace plus deterministic edits, then hydrate full IDE states server-side to stay below provider token limits.
-- [x] Preserve read/resume compatibility for saved milestone-based guided-project v1 records.
-- [x] Move assessment after discovery, make it optional, and cap it at three questions.
-- [x] Remove nested course Exercises action; keep pure practice as a standalone generated conversation.
-- [x] Prompt standalone coding exercises as realistic bug-fix, missing-feature, debugging, or data scenarios.
-- [x] Apply `2026-07-15-add-learning-experience-types.sql` to the live Supabase project.
-- [x] Apply `2026-07-16-add-skill-progression-achievements.sql` after the learning-experience migration.
-- [ ] Run authenticated browser QA for course, short-course, exercise, and the optional assessment take path. Guided-project v2 plus assessment skip is verified.
+- [x] Apply `2026-07-29-production-revamp-foundation.sql` to the configured Supabase project and verify its tables, catalog, and private visual bucket.
+- [x] Review and apply `2026-07-30-atomic-usage-and-operator-limits.sql`; all four atomic RPCs pass readiness checks.
+- [x] Historical state: approve/evaluate five beta corpora and explicitly reject/disable the other 17; the expansion now requires fresh source approval before changing those flags.
+- [x] Confirm every enabled launch corpus retains at least 90% relevance and zero leakage.
+- [x] Restore the RapidAPI key, subscribe to Judge0 CE, validate 71 discovered runtimes, and leave Julia hidden because it is absent.
+- [x] Configure StoneCode sandbox Stripe for Deploy Preview billing QA: $9/month Pro test price, production webhook URL in test mode, default Customer Portal cancellation/plan changes, local `.env`, and Netlify `deploy-preview`/`branch-deploy` Stripe vars.
+- [ ] Configure live production Stripe credentials/webhook after a live Stonecode Stripe account is activated; do not use sandbox credentials in Netlify Production.
+- [ ] Configure the remaining Netlify Production environment. As of 2026-08-02 only `NODE_VERSION` and `OPENAI_MODEL` are present.
+- [x] Review and apply `2026-07-31-ai-cost-and-job-hardening.sql`; paid expanded generation QA still requires explicit spend approval.
+- [x] Run authenticated local discovery-to-proposal QA for Course, Guided Project, and Exercise Pack, including deterministic quotes and rejected-language recovery with zero browser errors.
+- [x] Run self-cleaning authenticated local proposal-to-finalization QA for a 10-problem Exercise Pack and a multi-feature Guided Project.
+- [x] Add a reusable authenticated API smoke test that creates and removes its own temporary Supabase user.
+- [ ] Run deployed finalization/refresh-resume/retry/failure-release QA for all three modes.
+- [ ] QA Free/Pro grants, Stripe renewal idempotency, expiry order, path limits, monthly caps, and daily Judge0 caps against staging.
+- [ ] QA structured tutor Apply/Reject/Undo, traversal/ownership attacks, visual authorization/cache/fallback, deletion, and Marketplace lifecycle.
+- [ ] Run responsive/mobile, accessibility, authenticated rate-limit, concurrency, load, and production observability checks.
+- [x] Configure the local support inbox as `hjv.ventures@gmail.com`; copy it to the hosted environment at release time.
+- [ ] Configure an operational alert webhook and complete legal-counsel review for the operating entity/jurisdiction.
+- [x] Add a hard global Judge0 operator circuit breaker; apply its migration and add provider cost alerts before paid traffic.
+- [ ] Review and sign off the temporary React Router RSC advisory exception in `docs/SECURITY_NOTES.md`, then upgrade when the patched stable package is published.
+- [ ] Roll out flags one at a time with metrics and rollback instructions.
 
-- [x] Formalize dynamic-course policy: generated per learner, no hard-coded course catalog.
-- [x] Skip assessment for standalone language fundamentals; require it for frameworks, libraries, advanced specializations, and applied paths.
-- [x] Add shared server language capability profiles for web, application, enterprise, mobile, data, systems, and legacy language families.
-- [x] Add editor modes/default files for Kotlin, Dart, R, Julia, Fortran, COBOL, and BASIC.
-- [x] Add explicit workshop micro-edit contracts: ids, concept ids, starter/result states, expected change, and step dependencies.
-- [x] Prevent later workshop steps and revisits from destructively reloading starter code.
-- [x] Stop silently saving fallback recovery content as AI-generated output.
-- [x] Add task-based OpenAI model routing with role-specific environment fallbacks.
+## Architecture Follow-up
 
-- [x] Implement `course-content/v2` schema: Course -> Modules -> Topics -> Blocks -> Steps.
-- [x] Keep backward compatibility for existing `course-content/v1` courses.
-- [x] Add adaptive assessment setup flow: subject, ready-for-assessment prompt, then one assessment exercise at a time.
-- [x] Add AI-generated conversational course discovery before assessment planning.
-- [x] Add contextual suggested-answer buttons to every discovery question while keeping free typing available.
-- [x] Resolve vague outcome-first goals into a specific course target before applying assessment policy.
-- [x] Add assessment exercise types: MCQ, writing, and code/editor checks, each with Skip.
-- [x] Rename the learner-facing assessment skip action to `I don't know` while preserving skip behavior.
-- [x] Add course-shaping assessment MCQs for language/library/tool preferences without grading them as right/wrong.
-- [x] Make assessment MCQs choose a diagnostic intent before asking: learner intention, readiness, prerequisite gap, syntax bridge, debugging mindset, or required module coverage.
-- [x] Add server-side assessment stabilization so skipped/repeated prerequisite loops turn into bridge/course-shaping questions.
-- [x] Generate and save the course immediately after assessment review/synthesis completes.
-- [x] Insert prerequisite modules based on assessment gaps and course-shaping preferences.
-- [x] Generate full course structure and fully fill the first module.
-- [x] Add explicit generated block kinds: `theory`, `quiz`, `workshop`, `lab`, `project`, and `review`.
-- [x] Keep one-off MCQ checks inside theory blocks and reserve quiz blocks for multi-question exam-style checkpoints.
-- [x] Require generated teaching to assume zero programming/syntax knowledge unless assessment proves otherwise.
-- [x] Require generated code teaching to explain new tokens, punctuation, symbols, and lines before asking the learner to use them.
-- [x] Reject generated workshops shorter than a real guided tutorial instead of rendering two-step workshops.
-- [x] Render language-aware workshop syntax reminders and starter-code explanations from the actual starter code.
-- [x] Replace repeated workshop syntax/starter dumps with compact step-specific code deltas and explanations.
-- [x] Add relevant workshop question chips, free-form tutor chat, final non-coding recaps, and inline failed-check editor diagnostics.
-- [x] Strip leaked internal/prompt-planning text from rendered generated lessons.
-- [x] Override old generic fallback workshop context at display time so existing saved courses improve after refresh.
-- [x] Add task-based OpenAI model router: low, medium, high, reasoning, grader, embedding.
-- [x] Add provider-neutral multi-language execution contracts and a Judge0 adapter.
-- [x] Add authenticated sandbox Run/capabilities endpoints with ownership, size, resource, output, and rate limits.
-- [x] Route non-browser IDE Run through the remote sandbox.
-- [x] Grade generated code by executing learner code and generated result-code oracles when Judge0 is configured.
-- [x] Add deterministic mocked Judge0 verification.
-- [ ] Revisit an optional self-hosted or paid code sandbox after MVP usage justifies execution cost; Judge0 is not required for launch.
-- [x] Enforce workshop-first practice: reject labs before guided practice and projects before multiple workshops plus a lab establish readiness.
-- [ ] Run live authenticated compile/run/grading QA across enabled runtimes.
-- [ ] Add static-first RAG abstraction for curriculum patterns, prerequisites, learner profile, course content, exercise bank, rubrics, official docs, and style.
-- [ ] Finish splitting `server/course-generation.mjs` into focused modules without changing behavior.
-- [x] Extract editable rulebook loading into `server/course-generation/editable-rules.mjs`.
-- [x] Extract block contracts into `server/course-generation/block-contracts.mjs`.
-- [x] Extract learner generation context and static course-generation context into `server/course-generation/generation-context.mjs`.
-- [ ] Extract assessment plan/question/review prompt builders into dedicated files.
-- [ ] Extract blueprint/outline/module/full-course prompt builders into dedicated files.
-- [ ] Extract fallback generation helpers into dedicated files.
-- [ ] Extract normalization/validation/repair helpers into dedicated files.
-- [ ] Leave `server/course-generation.mjs` as a thin compatibility coordinator/export surface.
-- [x] Replace left-panel toolbar with `Modules` and `Files` tabs.
-- [x] Render Modules tab as expandable modules -> topics -> blocks -> steps, with locked/upcoming steps greyed out.
-- [x] Make course tree step tiles navigate the right-panel lesson conversation.
-- [x] Keep modules 2+ as locked shell buttons until module unlocking/lazy generation is implemented.
-- [x] Add block-level lesson progress and Next section/block/topic/module-boundary labels.
-- [x] Keep current files/folders tree in Files tab.
-- [x] Move file/folder actions into per-item triple-dot dropdown menus.
-- [x] Remove Course Roadmap button and function from the right panel.
-- [ ] Verify new target flow end to end with authenticated QA.
+- [x] Extract shared client authentication, server HTTP authentication, and Stripe operations into focused modules.
+- [ ] Continue extracting legacy-compatible HTTP handlers from `server/stonecode-server.mjs` into domain routers after launch behavior is frozen.
+- [ ] Split prompt construction, normalization, validation, and repair out of `server/course-generation.mjs` while preserving its compatibility exports.
+- [ ] Observe legacy assessment/generation routes for two releases; remove only after zero calls.
+- [ ] Remove the legacy `user_ai_credentials` table in a separately reviewed migration after compatibility observation.
+- [ ] Regenerate marketing media from the updated browser-only scripts if those assets will ship.
 
-### Previous: Onboarding and Practice Flow
+## Post-launch Product Backlog
 
-- [x] Expand signup with display name, password confirmation, terms consent, and product/verification guidance.
-- [x] Keep login/signup content minimal, mirror their left/right panels, and animate immediate directional switching between them.
-- [x] Verify signup through a centered eight-digit Supabase email-code modal with resend support instead of a confirmation-link click.
-- [x] Route verified users through a Stonecode Free/Pro chooser before dashboard entry.
-- [x] Reuse dashboard stone surfaces for verification, plan, and API-key panels; verification now starts the dashboard zoom immediately, while plan/API-key gates wait for an AI-backed learning action.
-- [x] Gate Free-plan AI actions behind the existing verified encrypted OpenAI credential while allowing dashboard browsing.
-- [x] Skip onboarding/key prompts for active paid accounts, avoid automatic Free-key prompts on dashboard entry, and poll Stripe subscription sync after Pro checkout.
-- [x] Add the branded confirmation-email template and hosted Supabase/SMTP setup guide.
-- [ ] Install and live-test the confirmation template/custom SMTP in the hosted Supabase project.
+- [ ] Add one-off Stone packs with dedicated Stripe one-time prices, idempotent grant fulfillment, refund/dispute reversal rules, receipts, regional tax handling, purchase limits, and abuse monitoring. Keep this disabled during current staging; test checkout remains the Pro subscription flow.
 
-- [x] Collect learning objective, level, practical outcome, and include/avoid preferences in setup chat.
-- [x] Generate AI-backed onboarding replies before course preview, with local fallback.
-- [x] Show a structured course proposal with syllabus, languages, and tags before Finalize.
-- [x] Add a course home with summary, overall progress, tags, and primary actions.
-- [x] Replace the placeholder progress path with real syllabus navigation.
-- [x] Add independent course-related exercises with different scenarios from lesson challenges.
-- [x] Add local Free-plan behavior: two independent completions/day, one skip/day, one hint/exercise.
-- [x] Keep course challenges unlimited and separate from independent exercise limits.
-- [x] Add an exercise-session verifier and rendered QA.
-- [x] Update project documentation after implementation.
-
-- [x] Connect Supabase Auth to login/signup/forgot-password pages.
-- [x] Create authenticated route guard.
-- [x] Replace mock courses with user-owned Supabase courses in code.
-- [x] Stop showing seed courses on first login.
-- [x] Add guided local "what do you want to learn?" course setup.
-- [x] Make finalize create a course shell without files.
-- [x] Make Start project initialize a reusable whiteboard file without folders or `README.md`.
-- [x] Render setup outside the course-list stack and hide the launcher while setup is active.
-- [x] Make setup use the full-height learning chat card behavior.
-- [x] Add delayed typing animation to setup, lesson assistant text, and tutor replies.
-- [x] Add VS Code-style colored file glyphs.
-- [x] Add drag/drop file and folder moves with root/folder drop zones and nested visual sorting.
-- [x] Replace local setup finalization with AI-backed course generation.
-- [x] Separate generated theory, MCQ, writing, and code blocks into distinct course lesson steps.
-- [x] Keep theory/chat sections learner-led, with writing checks in a separate answer form and MCQ/code checks gated by completion state.
-- [x] Add one-time typing animation gating for course lesson text before exercise controls and Next unlock.
-- [x] Stop daily independent exercise quota from blocking required course MCQ/writing/code XP awards.
-- [x] Fix lesson-intro animation crash and accept legacy generated MCQ exercise keys from existing saved courses.
-- [x] Add first-lesson tutor greeting and require multiple theory sections before new-topic assessments.
-- [x] Replace setup preview flow with subject -> readiness -> skippable assessment -> review -> auto-generated course.
-- [x] Add `course-content/v2` modules/topics/blocks/steps with v1 compatibility.
-- [x] Move generated course navigation into the left panel Modules tab.
-- [x] Keep files/folders in a separate Files tab and move actions into triple-dot menus.
-- [x] Remove the right-panel Course Roadmap entry point.
-- [x] Reuse/rename the active IDE file for generated code exercises and AI file edits.
-- [x] Add shared editor language registry for syntax support, generated exercise filenames, run capability, and visual preview capability.
-- [x] Add language-aware generated workshop/lab/project starter files for C++, Java, Python, Go, Rust, C#, Ruby, Swift, PHP, SQL, shell, and web files.
-- [x] Replace mismatched JavaScript starter code when generated exercises target non-JS languages.
-- [x] Add dynamic editor exercise MVP checklists from generated acceptance criteria.
-- [x] Make editor exercise MVP checklists collapsible/restorable in the chat dock.
-- [x] Make the left Modules tree auto-track and highlight the active course lesson step.
-- [x] De-escalate assessment follow-up prompts after skipped/wrong prerequisite answers.
-- [x] Replace the bottom terminal and Code/Visual toggle with full-height Code/Visual/Terminal workspace tabs.
-- [x] Move Code/Visual/Terminal tabs above and outside the editor shell and match the left-panel control styling.
-- [x] Collapse workshop MVP checklists by default behind a compact animated chevron.
-- [x] Reuse shared lesson navigation for workshop Check -> Next section and remove the duplicate Submit and next action.
-- [x] Require course/topic orientation, prose-first mental models, analogies mapped to code, and worked examples in generated theory.
-- [x] Make quick-action tutor replies contextual and conversational instead of rendering the full canned response format.
-- [x] Make workshop chat reuse the theory quick-actions/composer layout with at most three suggestions and check feedback above the dock.
-- [x] Scope inline workshop diagnostics to their exact source file and show that file in the editor comment.
-- [x] Grade multi-file workshop steps against their declared file path rather than the currently selected file.
-- [x] Make Visual resolve explicit HTML `link`/`script` dependencies, preview linked CSS/JavaScript through their HTML entrypoint, and guide unlinked or missing files.
-- [x] Add generated `workspaceView`, `requiresPreview`, `requiresTerminal`, and multi-file `workspaceFiles` support.
-- [x] Preload visual scenes for generated web/game bug-fix and feature exercises; keep native scenes labeled as visual references.
-- [x] Send complete file/folder project context to the tutor and preserve nested generated paths.
-- [x] Gate narrow advanced-course refresher modules from prerequisite assessment evidence.
-- [x] Persist workspace files to `workspace_files` in code.
-- [x] Persist workspace folders to `workspace_folders` in code.
-- [x] Persist chat to `chat_messages` in code.
-- [x] Persist progress to `course_progress` in code.
-- [x] Apply live Supabase `workspace_folders` migration and rerun verifier.
-- [x] Finish accepted startup/load-in fade through login zoom.
-- [x] Diagnose right panel/add-course area reveal stutter after login zoom.
-- [ ] Continue dashboard component animation optimization and real-session QA.
-- [x] Sync Stripe webhook events to `subscriptions`.
-- [x] Add Stripe billing portal customer mapping.
-- [x] Enforce Free active-course limit server-side.
-- [x] Load Basic/Pro subscription state into dashboard and enforce paid plan limits end to end.
-- [x] Record AI usage in `usage_events`.
-- [x] Block unauthenticated `/api/tutor` calls.
-- [x] Add streaming tutor response transport.
-- [x] Route AI tutor, generation, and grading through the OpenAI API.
-- [x] Add direct AI file-edit flow with last-edit undo.
-- [x] Add safe active-file terminal execution trigger for AI chat.
-- [x] Design proper app-wide navigation and link existing routes into a coherent user flow.
-- [x] Add profile/account entry points from dashboard/workspace.
-- [x] Create initial content/pages for profile, account, billing, usage, support, privacy, and terms.
-- [x] Add tutor theory, chat exercise, MCQ, terminal exercise, and canvas demo states.
-- [x] Add tutor section progress, exercise language/difficulty/XP metadata, and clickable MCQ options.
-- [x] Fix tutor composer spaces and Enter-to-send; keep Shift+Enter for new lines.
-- [x] Expand file icons and lazy CodeMirror language modes beyond JS/TS.
-- [x] Extract Codex programming-tutor behavior into app-owned production tutor prompt files.
-- [x] Load tutor runtime instructions from `src/ai/prompts/` instead of a hardcoded server string.
-- [x] Generate first-open lesson intro messages through the authenticated AI tutor flow.
-- [x] Reuse the course chat panel layout for independent Exercises.
-- [x] Route exercise hints through the AI tutor with one hint per exercise per day.
-- [x] Implement XP awards by exercise language and difficulty with an idempotent server ledger.
-- [x] Move independent exercise allowance, skip, hint, attempt, completion, and XP state from localStorage to server APIs.
-- [ ] Apply and verify the progression migration against the live Supabase project.
-- [x] Redesign Settings Overview as an opaque dashboard-style progression surface.
-- [x] Rebuild all six Settings routes as a compact fixed desktop shell with responsive mobile scrolling.
-- [x] Persist essential profile fields and replace fake Settings data/icons with real services and Lucide icons.
-- [x] Anchor the dashboard launcher and Settings footer around an independently scrollable course list.
-- [ ] Fix dashboard tab/window-focus refresh/reanimation when returning from another app/window.
-- [x] Replace dashboard/workspace dropdown account controls with direct Settings Overview account buttons.
-- [ ] Clamp long course-card summaries so progress stays visible.
-- [ ] Make course-card progress bar derive from real lesson/course progress.
-- [x] Define model response schema for richer generated interactive tutor blocks and MCQ grading.
-- [ ] Apply and verify the generated course-content migration against the live Supabase project.
-- [x] Run real authenticated v2 course-generation QA through discovery, assessment, generation, saved Module 1 tree, and refresh persistence.
-- [x] Apply and verify the learner-profile/course-assessment/RAG migration against the live Supabase project.
-- [ ] Harden generated code-exercise grading with server-side rubrics/tests beyond the MVP signal-based checker.
-- [ ] Polish AI tool-run feedback, edit status, and error/loading states.
-- [ ] Polish dashboard/workspace UI states and responsive behavior.
-- [ ] Add ESLint 9 config or remove lint script.
-
-## Deferred Until After Launch
-
-- [ ] Design XP, levels, badges, and unlockable hints/exercises progression system.
-- [ ] Persist user XP, badge awards, and course/task completion history.
-- [ ] Let AI estimate XP and badge eligibility from task difficulty after completion.
-- [ ] Design course publishing/replication model for user-created and AI-generated courses.
-- [ ] Add star/favorite/replicate concepts for published courses.
-- [ ] Decide whether freemium monetization should use subscriptions only, generation credits, hint packs, premium course replication, or a hybrid.
-
-## Paid Beta QA
-
-- [ ] signup/login/logout.
-- [ ] seamless login-to-dashboard animation with no code-box refresh or brightness cut.
-- [ ] create course.
-- [ ] open course workspace.
-- [ ] edit file and refresh restore.
-- [ ] send tutor message.
-- [ ] plan limit blocks extra active course.
-- [x] billing portal opens for subscribed user with real Stripe env.
-- [x] privacy/terms/support pages exist.
-- [x] profile/account/billing/usage routes are discoverable from main app UI.
+Do not commit, push, deploy, or apply live migrations without explicit approval.

@@ -57,6 +57,8 @@ export type ChatMessageRecord = {
   lesson_index: number | null;
   message_kind: "chat" | "lesson-intro" | "exercise-hint";
   generated_key: string | null;
+  client_message_id?: string | null;
+  tool_payload?: unknown | null;
   created_at: string;
 };
 

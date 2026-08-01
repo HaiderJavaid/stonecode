@@ -30,7 +30,8 @@ export function extractStripeSubscriptionState(event, env = process.env) {
   if (!subscription || !event?.type?.startsWith("customer.subscription.")) return null;
 
   const status = normalizeStripeStatus(subscription.status);
-  const priceId = subscription.items?.data?.[0]?.price?.id ?? null;
+  const subscriptionItem = subscription.items?.data?.[0] ?? null;
+  const priceId = subscriptionItem?.price?.id ?? null;
   const plan = status === "canceled" || status === "free" ? "free" : normalizeStripePlan(subscription.metadata?.plan, priceId, env);
   const userId = subscription.metadata?.user_id;
   if (!userId) return null;
@@ -41,7 +42,8 @@ export function extractStripeSubscriptionState(event, env = process.env) {
     status,
     stripeCustomerId: readStripeId(subscription.customer),
     stripeSubscriptionId: readStripeId(subscription.id),
-    currentPeriodEnd: secondsToIso(subscription.current_period_end)
+    currentPeriodStart: secondsToIso(subscription.current_period_start ?? subscriptionItem?.current_period_start),
+    currentPeriodEnd: secondsToIso(subscription.current_period_end ?? subscriptionItem?.current_period_end)
   };
 }
 

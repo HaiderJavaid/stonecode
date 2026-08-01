@@ -203,7 +203,7 @@ function ProgressionHeatmap({ days }: { days: ProgressionHeatmapDay[] }) {
       <div className="settings-v2-heatmap" role="img" aria-label="Yearly verified XP activity">
         {days.map((day) => {
           const band = day.xp <= 0 ? 0 : day.xp < 20 ? 1 : day.xp < 50 ? 2 : day.xp < 100 ? 3 : 4;
-          return <span className={`heat-band-${band}`} key={day.date} title={`${day.date}: ${day.xp} XP`} />;
+          return <span aria-hidden="true" className={`heat-band-${band}`} key={day.date} title={`${day.date}: ${day.xp} XP`} />;
         })}
       </div>
       <div className="settings-v2-months">

@@ -1,4 +1,6 @@
-const openAiDefaultModel = "gpt-5.4-mini";
+const openAiDefaultModel = "gpt-5.6-luna";
+const defaultRequestTimeoutMs = 45_000;
+const generationRequestTimeoutMs = 180_000;
 
 const modelRoleByTask = {
   tutor_chat: "low",
@@ -42,8 +44,8 @@ export function resolveTutorProviderConfig(env, task = "tutor_chat") {
   return resolveProviderConfig(env, task);
 }
 
-export async function requestTutorStream({ config, context, instructions }) {
-  return fetch("https://api.openai.com/v1/responses", {
+export async function requestTutorStream({ config, context, instructions, tools = [] }) {
+  return fetchWithTimeout("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
@@ -51,8 +53,10 @@ export async function requestTutorStream({ config, context, instructions }) {
     },
     body: JSON.stringify({
       model: config.model,
+      ...responseReasoningOptions(config.model),
       stream: true,
       instructions,
+      ...(tools.length ? { tools, tool_choice: "auto", parallel_tool_calls: false } : {}),
       input: [
         {
           role: "user",
@@ -66,7 +70,7 @@ export async function requestTutorStream({ config, context, instructions }) {
       ],
       max_output_tokens: 700
     })
-  });
+  }, defaultRequestTimeoutMs);
 }
 
 export async function requestCourseGenerationJson({ config, prompt, maxTokens = 2200 }) {
@@ -74,28 +78,48 @@ export async function requestCourseGenerationJson({ config, prompt, maxTokens = 
 
   let lastResult = null;
   let tokenBudget = maxTokens;
+  let accumulatedUsage = normalizeUsage(null);
+  const startedAt = Date.now();
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: config.model,
-        instructions,
-        input: prompt,
-        text: {
-          format: { type: "json_object" }
+    let response;
+    try {
+      response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          "Content-Type": "application/json"
         },
-        max_output_tokens: tokenBudget
-      })
-    });
+        body: JSON.stringify({
+          model: config.model,
+          ...responseReasoningOptions(config.model),
+          instructions,
+          input: prompt,
+          text: {
+            format: { type: "json_object" }
+          },
+          max_output_tokens: tokenBudget
+        })
+      }, generationRequestTimeoutMs);
+    } catch (error) {
+      lastResult = {
+        ok: false,
+        text: "",
+        error: error?.name === "TimeoutError" || error?.name === "AbortError" ? "OpenAI generation timed out." : `OpenAI generation request failed: ${error instanceof Error ? error.message : String(error)}`,
+        incompleteReason: error?.name === "TimeoutError" || error?.name === "AbortError" ? "timeout" : "network_error",
+        attempts: attempt + 1,
+        usage: accumulatedUsage,
+        latencyMs: Date.now() - startedAt,
+        model: config.model
+      };
+      if (attempt < 2) await retryWait(attempt);
+      continue;
+    }
     const payload = await response.json().catch(() => null);
     const isComplete = !payload?.status || payload.status === "completed";
     const incompleteReason = typeof payload?.incomplete_details?.reason === "string"
       ? payload.incomplete_details.reason
       : null;
+    accumulatedUsage = sumUsage(accumulatedUsage, normalizeUsage(payload?.usage));
     lastResult = {
       ok: response.ok && isComplete,
       text: payload?.output_text ?? payload?.output?.[0]?.content?.[0]?.text ?? "",
@@ -105,13 +129,16 @@ export async function requestCourseGenerationJson({ config, prompt, maxTokens = 
           ? `OpenAI response was ${payload?.status}${incompleteReason ? ` (${incompleteReason})` : ""}.`
           : null),
       incompleteReason,
-      attempts: attempt + 1
+      attempts: attempt + 1,
+      usage: accumulatedUsage,
+      latencyMs: Date.now() - startedAt,
+      model: payload?.model ?? config.model
     };
     if (lastResult.ok) return lastResult;
     const retryableIncomplete = response.ok && !isComplete;
     if (!retryableIncomplete && response.status < 500) return lastResult;
     tokenBudget = Math.min(Math.ceil(tokenBudget * 1.6), 16000);
-    await wait(600 * (attempt + 1));
+    await retryWait(attempt);
   }
   return lastResult;
 }
@@ -120,10 +147,15 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function retryWait(attempt) {
+  return wait(500 * (2 ** attempt) + Math.floor(Math.random() * 250));
+}
+
 export async function requestCourseSetupReply({ config, prompt }) {
   const instructions = "You are Stonecode course setup. After the learner names a subject, decide whether the subject needs prerequisite assessment. Frameworks, libraries, game dev, fullstack, and broad app paths need prerequisite checks. Fundamentals/from-zero courses can start from foundations. Do not ask for user level, learning mode, project type, Leetcode preference, or design preference. Do not generate the course here.";
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const startedAt = Date.now();
+  const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
@@ -131,16 +163,20 @@ export async function requestCourseSetupReply({ config, prompt }) {
     },
     body: JSON.stringify({
       model: config.model,
+      ...responseReasoningOptions(config.model),
       instructions,
       input: prompt,
       max_output_tokens: 180
     })
-  });
+  }, defaultRequestTimeoutMs);
   const payload = await response.json().catch(() => null);
   return {
     ok: response.ok,
     text: payload?.output_text ?? payload?.output?.[0]?.content?.[0]?.text ?? "",
-    error: payload?.error?.message ?? null
+    error: payload?.error?.message ?? null,
+    usage: normalizeUsage(payload?.usage),
+    latencyMs: Date.now() - startedAt,
+    model: payload?.model ?? config.model
   };
 }
 
@@ -150,7 +186,8 @@ Question: ${prompt || "Explain the current programming concept in your own words
 Rubric: ${rubric || "Pass when the learner gives a coherent, relevant explanation."}
 Accept close beginner answers. Return raw JSON only: {"passed":boolean,"feedback":"one concise sentence"}.`;
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const startedAt = Date.now();
+  const response = await fetchWithTimeout("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
@@ -158,17 +195,61 @@ Accept close beginner answers. Return raw JSON only: {"passed":boolean,"feedback
     },
     body: JSON.stringify({
       model: config.model,
+      ...responseReasoningOptions(config.model),
       instructions,
       input: answer,
       max_output_tokens: 120
     })
-  });
+  }, defaultRequestTimeoutMs);
   const payload = await response.json().catch(() => null);
   return {
     ok: response.ok,
     text: payload?.output_text ?? payload?.output?.[0]?.content?.[0]?.text ?? "",
-    error: payload?.error?.message ?? null
+    error: payload?.error?.message ?? null,
+    usage: normalizeUsage(payload?.usage),
+    latencyMs: Date.now() - startedAt,
+    model: payload?.model ?? config.model
   };
+}
+
+function normalizeUsage(value) {
+  return {
+    inputTokens: Number.isFinite(Number(value?.input_tokens)) ? Number(value.input_tokens) : null,
+    outputTokens: Number.isFinite(Number(value?.output_tokens)) ? Number(value.output_tokens) : null,
+    cachedInputTokens: Number.isFinite(Number(value?.input_tokens_details?.cached_tokens)) ? Number(value.input_tokens_details.cached_tokens) : 0,
+    cacheWriteTokens: Number.isFinite(Number(value?.input_tokens_details?.cache_write_tokens)) ? Number(value.input_tokens_details.cache_write_tokens) : 0,
+    reasoningTokens: Number.isFinite(Number(value?.output_tokens_details?.reasoning_tokens)) ? Number(value.output_tokens_details.reasoning_tokens) : 0
+  };
+}
+
+function sumUsage(left, right) {
+  return {
+    inputTokens: sumNullable(left?.inputTokens, right?.inputTokens),
+    outputTokens: sumNullable(left?.outputTokens, right?.outputTokens),
+    cachedInputTokens: nonNegative(left?.cachedInputTokens) + nonNegative(right?.cachedInputTokens),
+    cacheWriteTokens: nonNegative(left?.cacheWriteTokens) + nonNegative(right?.cacheWriteTokens),
+    reasoningTokens: nonNegative(left?.reasoningTokens) + nonNegative(right?.reasoningTokens)
+  };
+}
+
+function responseReasoningOptions(model) {
+  return String(model ?? "").trim().toLowerCase().startsWith("gpt-5.6")
+    ? { reasoning: { effort: "none" } }
+    : {};
+}
+
+function sumNullable(left, right) {
+  const values = [left, right].filter((value) => Number.isFinite(Number(value)));
+  return values.length ? values.reduce((total, value) => total + Number(value), 0) : null;
+}
+
+function nonNegative(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function fetchWithTimeout(url, init, timeoutMs) {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
 
 export function extractTutorStreamDelta(provider, event) {

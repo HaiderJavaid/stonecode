@@ -69,9 +69,11 @@ export function StoneEditor({ filePath, value, onChange, diagnostics = [], readO
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const valueRef = useRef(value);
   const languageCompartmentRef = useRef(new Compartment());
 
   onChangeRef.current = onChange;
+  valueRef.current = value;
 
   const extensions = useMemo(
     () => [
@@ -90,6 +92,9 @@ export function StoneEditor({ filePath, value, onChange, diagnostics = [], readO
       editorDiagnosticsField,
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       EditorView.lineWrapping,
+      EditorView.contentAttributes.of({
+        "aria-label": `${readOnly ? "Read-only" : "Editable"} code editor for ${filePath || "current file"}`
+      }),
       EditorState.readOnly.of(readOnly),
       EditorView.editable.of(!readOnly),
       EditorView.updateListener.of((update) => {
@@ -162,7 +167,7 @@ export function StoneEditor({ filePath, value, onChange, diagnostics = [], readO
         }
       })
     ],
-    [readOnly]
+    [filePath, readOnly]
   );
 
   useEffect(() => {
@@ -171,7 +176,7 @@ export function StoneEditor({ filePath, value, onChange, diagnostics = [], readO
     const view = new EditorView({
       parent: containerRef.current,
       state: EditorState.create({
-        doc: value,
+        doc: valueRef.current,
         extensions
       })
     });

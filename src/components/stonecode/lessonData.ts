@@ -1,6 +1,5 @@
-import { Course, GeneratedCourseBlock, GeneratedCourseLearningBlock, GeneratedCourseSection, GeneratedCourseStep, GeneratedExerciseWorkspaceFile, LearningExperienceType, toGeneratedCourseContentV2 } from "@/data/courses";
+import { Course, GeneratedCourseBlock, GeneratedCourseLearningBlock, GeneratedCourseSection, GeneratedCourseStep, GeneratedExerciseWorkspaceFile, LearningExperienceType, TutorVisualCueV1, toGeneratedCourseContentV2 } from "@/data/courses";
 import { defaultFilePath, defaultStarterCode, resolveEditorLanguage } from "@/services/editorLanguages";
-import { createSimpleVisualPreviewFile, inspectSimpleVisualSource } from "@/services/simpleVisualPreview.mjs";
 
 type GeneratedPracticalStep = Extract<GeneratedCourseStep, { type: "workshop" | "lab" | "project" }>;
 type GeneratedWorkshopStep = GeneratedPracticalStep & { type: "workshop" };
@@ -51,6 +50,7 @@ export type LessonStep = {
   difficulty?: LessonDifficulty;
   xp?: number;
   options?: LessonOption[];
+  visualCue?: TutorVisualCueV1;
 };
 
 export const lessonSteps: LessonStep[] = [
@@ -239,6 +239,7 @@ function generatedCourseStepToLesson({
         ? blockIndex === 0 ? "Project intro" : "Project recap"
         : kind === "theory" ? "Theory" : "Exercise",
     title: stepLessonTitle(title, step.type),
+    visualCue: step.visualCue,
     tutor: renderGeneratedCourseStep(title, blockSummary, displayStep, topicTitle, moduleIndex, topicIndex, blockIndex, stepIndex, courseSubject, experienceType),
     suggestions: codeExercise?.type === "workshop"
       ? workshopSuggestedQuestions(codeExercise)
@@ -289,7 +290,7 @@ function renderGeneratedCourseStep(blockTitle: string, blockSummary: string, ste
         : "";
     return `${greeting}${normalizeTheoryMarkdownForDisplay(step.markdown, courseSubject)}`;
   }
-  if (step.type === "mcq") return `## Quick check\n\n${cleanLearnerText(step.prompt)}`;
+  if (step.type === "mcq") return `## Topic practice\n\n${cleanLearnerText(step.prompt)}`;
   if (step.type === "reflection") return `## Answer in chat\n\n${cleanLearnerText(step.prompt)}`;
   if (step.type === "workshop" || step.type === "lab" || step.type === "project") {
     const contextText = normalizeExerciseContextForDisplay(step.context, step.language);
@@ -299,7 +300,7 @@ function renderGeneratedCourseStep(blockTitle: string, blockSummary: string, ste
       ? renderCompactWorkshopStep(step as GeneratedWorkshopStep, stepIndex)
       : `\n\n## Task\n\n${cleanLearnerText(step.prompt)}${buildSyntaxReminder(step.language, step.starterCode)}`;
     const viewNote = step.requiresPreview
-      ? "\n\n## Visual check\n\nThe Visual tab opens for this step. Compare the scene before and after your edit."
+      ? "\n\n## Output check\n\nThe Output tab opens for this browser step. Compare the page before and after your edit."
       : step.requiresTerminal
         ? "\n\n## Terminal check\n\nThe Terminal tab opens for this step. Run the active file and inspect its output."
         : "";
@@ -356,7 +357,8 @@ function renderCompactWorkshopStep(
     : "";
   const explanation = cleanLearnerText(step.codeExplanation || explainWorkshopCodeChange(code, step.language, step.expectedChange));
   const explanationSection = explanation ? `\n\n## What this code means\n\n${explanation}` : "";
-  return `\n\n## Step ${stepIndex + 1}\n\n${normalizeWorkshopPromptForDisplay(step.prompt, step.language)}${codeSection}${explanationSection}`;
+  const starterSyntax = stepIndex === 0 ? buildSyntaxReminder(step.language, step.starterCode) : "";
+  return `\n\n## Step ${stepIndex + 1}\n\n${normalizeWorkshopPromptForDisplay(step.prompt, step.language)}${starterSyntax}${codeSection}${explanationSection}`;
 }
 
 function extractWorkshopCodeChange(starterCode: string, resultCode: string) {
@@ -416,22 +418,6 @@ function normalizeTheoryMarkdownForDisplay(markdown: string, courseSubject: stri
   return text;
 }
 
-function buildWorkshopMove(step: Extract<GeneratedCourseStep, { type: "workshop" | "lab" | "project" }>) {
-  if (step.type !== "workshop") return cleanLearnerText(step.prompt);
-  const prompt = normalizeWorkshopPromptForDisplay(step.prompt, step.language);
-  const actionSentence = prompt
-    .split(/(?<=[.!?])\s+/)
-    .reverse()
-    .find((sentence) => /\b(add|change|replace|write|create|call|print|show|return|check|move|wrap|put)\b/i.test(sentence))
-    ?? "Make the one code change requested for this step.";
-  return [
-    `1. In the editor, make this one change: ${actionSentence}`,
-    "2. Keep the earlier workshop code unless this step explicitly tells you to change it.",
-    "3. Run or preview the result when this step asks you to.",
-    "4. If something is unclear, ask the tutor about this exact change."
-  ].join("\n");
-}
-
 function normalizeExerciseContextForDisplay(context: string | undefined, language: string) {
   const cleaned = context ? cleanLearnerText(context) : "";
   if (/input-rule-output loop|turns that exact idea into one tiny editable file/i.test(cleaned)) {
@@ -472,35 +458,15 @@ function normalizeGeneratedExerciseStep(
     ? languageDefaults.starterCode
     : step.starterCode;
   const acceptanceCriteria = normalizeAcceptanceCriteriaForDisplay(step.acceptanceCriteria, resolvedLanguage, step.type);
-  let workspaceFiles = (step.workspaceFiles ?? []).map((file) => file.path === step.filePath
+  const workspaceFiles = (step.workspaceFiles ?? []).map((file) => file.path === step.filePath
     ? { ...file, path: resolvedFilePath, content: starterCode }
     : file);
-  const visualInspection = inspectSimpleVisualSource({
-    path: resolvedFilePath,
-    content: starterCode,
-    language: resolvedLanguage,
-    context: [courseSubject, step.context].filter(Boolean).join(" · "),
-    prompt: step.prompt,
-    requiresPreview: step.requiresPreview
-  });
-  const hasConnectedPreview = workspaceFiles.some((file) => {
-    if (!/\.html?$/i.test(file.path)) return false;
-    const sourceName = resolvedFilePath.split("/").at(-1) ?? resolvedFilePath;
-    return file.path === resolvedFilePath || file.content.includes(sourceName) || /stonecode-source/i.test(file.content);
-  });
-  const previewFile = !hasConnectedPreview && visualInspection.supported
-    ? createSimpleVisualPreviewFile({
-        path: resolvedFilePath,
-        content: starterCode,
-        language: resolvedLanguage,
-        context: [courseSubject, step.context].filter(Boolean).join(" · "),
-        prompt: step.prompt,
-        requiresPreview: true
-      }, workspaceFiles.map((file) => file.path))
-    : null;
-  if (previewFile) workspaceFiles = [...workspaceFiles, previewFile];
-  const usesSimpleNativeVisual = visualInspection.supported && !["html", "css", "javascript", "typescript"].includes(resolveEditorLanguage(resolvedFilePath).id);
-  const suppressRuntimeRequirements = visualInspection.excludedEngine || usesSimpleNativeVisual;
+  const languageId = resolveEditorLanguage(resolvedFilePath).id;
+  const hasBrowserEntrypoint = workspaceFiles.some((file) => /\.html?$/i.test(file.path)) || languageId === "html";
+  const supportsRealBrowserOutput = hasBrowserEntrypoint && ["html", "css", "javascript"].includes(languageId);
+  const externalEngine = /\b(unity|unreal|godot|roblox|cryengine|gamemaker|blender)\b/i.test(`${courseSubject} ${step.context ?? ""}`);
+  const requiresPreview = Boolean(step.requiresPreview && supportsRealBrowserOutput && !externalEngine);
+  const requiresTerminal = Boolean(step.requiresTerminal && !externalEngine);
 
   return {
     ...step,
@@ -508,11 +474,11 @@ function normalizeGeneratedExerciseStep(
     filePath: resolvedFilePath,
     starterCode,
     workspaceFiles,
-    requiresPreview: visualInspection.excludedEngine ? false : Boolean(step.requiresPreview || previewFile),
-    requiresTerminal: suppressRuntimeRequirements ? false : step.requiresTerminal,
-    workspaceView: suppressRuntimeRequirements && step.workspaceView === "terminal"
+    requiresPreview,
+    requiresTerminal,
+    workspaceView: !requiresTerminal && step.workspaceView === "terminal"
       ? "code"
-      : visualInspection.excludedEngine && step.workspaceView === "preview"
+      : !requiresPreview && step.workspaceView === "preview"
         ? "code"
         : step.workspaceView,
     acceptanceCriteria
@@ -588,7 +554,7 @@ function languageSyntaxNotes(language: string, starterCode: string) {
   const label = language.toLowerCase();
   if (label === "java") {
     return [
-      "`class` means a container for Java code.",
+      "`public class Main` names the container for this Java program and matches the `Main.java` file.",
       "`public static void main(String[] args)` is the method Java runs first.",
       "`System.out.println(...)` prints visible output.",
       "Parentheses `(...)` hold input for a method call.",
@@ -642,113 +608,6 @@ function languageSyntaxNotes(language: string, starterCode: string) {
   return [];
 }
 
-function explainStarterCode(language: string, starterCode: string) {
-  if (!starterCode.trim()) {
-    return "This step starts from an empty file. Add only the code requested above, then submit it.";
-  }
-  const label = language.toLowerCase();
-  if (label === "java") return explainJavaStarter(starterCode);
-  if (label === "python") return explainPythonStarter(starterCode);
-  if (label === "c++") return explainCppStarter(starterCode);
-  if (label === "c#") return explainCsharpStarter(starterCode);
-  if (label === "html") return explainHtmlStarter(starterCode);
-  if (label === "css") return explainCssStarter(starterCode);
-  if (label === "javascript" || label === "typescript") return explainJavaScriptStarter(starterCode);
-  return explainGenericStarter(starterCode);
-}
-
-function explainJavaStarter(starterCode: string) {
-  const notes = [
-    "`public class Main` names the Java class. In this editor, `Main` matches `Main.java`.",
-    "`{` and `}` are braces. They show where the class or method body begins and ends.",
-    "`public static void main(String[] args)` is the entry point. Java starts running inside this method.",
-    "`String` means text. A `String value` parameter is text given to a method.",
-    "`return` sends a result back from a method.",
-    "`System.out.println(...)` prints something so you can inspect the output.",
-    "`;` ends a Java statement, like a period ending a sentence."
-  ];
-  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`java\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function explainPythonStarter(starterCode: string) {
-  const notes = [
-    "`def` creates a function, which is a named reusable rule.",
-    "The name before `(...)` is the function name.",
-    "Text inside quotes is a string.",
-    "`return` sends a result back from a function.",
-    "`print(...)` shows the result so you can inspect it.",
-    "Indentation matters in Python because indented lines belong inside the function."
-  ];
-  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`python\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function explainCppStarter(starterCode: string) {
-  const notes = [
-    "`#include <iostream>` loads the console output tool.",
-    "`int main()` is where the program starts.",
-    "`std::cout` prints visible output.",
-    "`return` sends a result back from a function.",
-    "`{ ... }` marks a block of code.",
-    "`;` ends one instruction."
-  ];
-  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`cpp\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function explainCsharpStarter(starterCode: string) {
-  const notes = [
-    "`using System;` lets this file use `Console`, the built-in console output tool.",
-    "`class Program` names the code container. For now, think of it as the box that holds your program.",
-    "`static void Main()` is the starting method. C# begins running inside these braces.",
-    "`static string Describe(string value)` creates a reusable method named `Describe`.",
-    "`string value` means the method receives text and calls that text `value` inside the method.",
-    "`return` sends a result back out of the method.",
-    "`Console.WriteLine(...)` prints a result so you can inspect it.",
-    "`+` joins text together here, and `;` ends the instruction."
-  ];
-  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`csharp\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function explainJavaScriptStarter(starterCode: string) {
-  const notes = [
-    "`function` creates a named reusable rule.",
-    "`return` sends a result back from the function.",
-    "`console.log(...)` prints visible output.",
-    "Quotes mark text values.",
-    "`{ ... }` groups code that belongs together."
-  ];
-  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`javascript\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function explainHtmlStarter(starterCode: string) {
-  const notes = [
-    "`<section>` creates a grouped area on the page.",
-    "`class=\"hero\"` gives that element a reusable styling name.",
-    "`<h1>` is the main heading.",
-    "`<p>` is a paragraph of text.",
-    "Closing tags like `</section>` mark where an element ends."
-  ];
-  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`html\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function explainCssStarter(starterCode: string) {
-  const notes = [
-    "A selector like `.hero` chooses which HTML element to style.",
-    "`{ ... }` wraps the style rules for that selector.",
-    "`background-color` sets the element's background.",
-    "`color` sets the text color.",
-    "`padding` adds inside spacing around the content."
-  ];
-  return `${notes.map((note) => `- ${note}`).join("\n")}\n\nSmall starter excerpt:\n\n\`\`\`css\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function explainGenericStarter(starterCode: string) {
-  return `Read this starter one line at a time. First find the input, then the rule, then the visible output.\n\n\`\`\`\n${trimStarterExcerpt(starterCode)}\n\`\`\``;
-}
-
-function trimStarterExcerpt(starterCode: string) {
-  return starterCode.trim().split("\n").slice(0, 12).join("\n");
-}
-
 function cleanLearnerText(value: string) {
   return value
     .split("\n")
@@ -763,8 +622,8 @@ function startsWithHeading(markdown: string, title: string) {
 }
 
 function stepLessonTitle(blockTitle: string, type: GeneratedCourseStep["type"]) {
-  if (type === "mcq") return `${blockTitle} check`;
-  if (type === "reflection") return `${blockTitle} written check`;
+  if (type === "mcq") return `${blockTitle} practice`;
+  if (type === "reflection") return `${blockTitle} written practice`;
   if (type === "workshop" || type === "lab" || type === "project") return `${blockTitle} editor exercise`;
   return blockTitle;
 }
@@ -821,7 +680,7 @@ function renderGeneratedBlock(section: GeneratedCourseSection, block: GeneratedC
     return `${greeting}${block.markdown}`;
   }
   if (block.type === "mcq") {
-    return `## Quick check\n\n${block.prompt}`;
+    return `## Topic practice\n\n${block.prompt}`;
   }
   if (block.type === "chat_exercise") {
     return `## Answer in chat\n\n${block.prompt}`;
@@ -833,8 +692,8 @@ function renderGeneratedBlock(section: GeneratedCourseSection, block: GeneratedC
 }
 
 function blockTitle(sectionTitle: string, type: GeneratedCourseBlock["type"]) {
-  if (type === "mcq") return `${sectionTitle} check`;
-  if (type === "chat_exercise") return `${sectionTitle} written check`;
+  if (type === "mcq") return `${sectionTitle} practice`;
+  if (type === "chat_exercise") return `${sectionTitle} written practice`;
   if (type === "code_exercise") return `${sectionTitle} editor exercise`;
   return sectionTitle;
 }
