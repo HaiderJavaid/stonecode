@@ -948,9 +948,13 @@ Required plan:
 - Every topic plans intentional block kinds using only: theory, quiz, workshop, lab, project, review.
 - Start each topic with theory.
 - Do not force every topic into the same rhythm.
+- Give adjacent topics different practice signatures when the subject allows it. Never repeat the same non-theory sequence (for example quiz -> workshop) for 3 topics in a row.
+- Plan a standalone quiz only when the topic supports at least 4 genuinely distinct checks. Otherwise use one optional inline MCQ in theory, a workshop, a small lab, a bug-fix task, or a review.
 - Practical progression is theory/example -> guided workshop -> independent lab -> later milestone project. This is a dependency rule, not a required template for every topic.
 - Never plan a lab before a relevant workshop. Thorough theory alone does not make an independent lab appropriate.
 - A lab is a small checkpoint exam and does not need to immediately follow its workshop. Reviews, quizzes, theory, topic transitions, or other workshops may appear between them.
+- Mix small implementation, debugging, missing-feature, output-prediction, and bug-fix labs between workshops. Early and middle labs should be easy or medium and test one or two already-practised concepts.
+- Reserve hard or comprehensive labs for the final third of the path, after multiple workshops and smaller labs have established readiness.
 - Plan milestone projects only after multiple workshops and at least one lab have prepared the required ideas. Keep the final project near the end of the course.
 - Multiple labs and milestone projects are allowed when the curriculum naturally needs them. The final project remains the main course exam.
 - Assessment review suggestedModules must visibly appear, be naturally renamed, or be merged into equivalent module coverage.
@@ -1071,7 +1075,9 @@ Rules:
 - Visual web work must use an HTML entrypoint that explicitly links each required local stylesheet and browser script with correct relative href/src paths. Do not assume every CSS/JavaScript file is injected automatically.
 - Terminal-output work uses requiresTerminal:true and workspaceView:"terminal" when the immediate learner action is run/read/fix output.
 - Preserve planned block kinds from the module outline. Do not turn a planned quiz/workshop/lab/project block into a theory block.
+- Preserve intentional variety from the outline. Do not manufacture theory -> quiz -> workshop for every topic. Across 3 adjacent topics, vary the non-theory block sequence.
 - A quiz block is low-stakes topic practice and must have 4 to 10 mcq step objects.
+- Use a standalone quiz only when 4 or more distinct questions add learning value. A single quick check belongs inside theory; some topics need no MCQ.
 - Every quiz question must practice a different concrete concept, code example, runtime behavior, or scenario taught in this exact topic. Never use prerequisite assessment, generic study advice, trivia, or paraphrased repeat questions.
 - Each explanation must reconnect the answer to the topic teaching so a wrong answer still improves understanding.
 - A workshop block must have enough workshop step objects to complete its deliverable through atomic edits. One-step or two-step workshops are invalid.
@@ -1087,6 +1093,8 @@ Rules:
 - A lab block is usually one lab step, but it must stay kind "lab".
 - A lab must follow a relevant workshop and reuse only already workshopped concepts. Thorough theory alone is not enough.
 - The relevant workshop may be earlier rather than adjacent; intervening teaching, quizzes, reviews, and workshops are allowed.
+- Use small implementation, debugging, missing-feature, and bug-fix lab variants throughout the course. Keep early and middle labs easy or medium and narrow.
+- A hard/comprehensive lab belongs only in the final third, after multiple workshops and smaller labs have prepared the learner.
 - A project block must stay kind "project".
 - A milestone project requires multiple earlier workshops and at least one earlier lab. It must not be the learner's first or second practical coding experience.
 - Multiple labs and milestone projects are allowed. Choose their timing dynamically from demonstrated curriculum readiness; reserve the final project as the main exam near the end.
@@ -1271,9 +1279,12 @@ Repair rules:
 - If exercise context is thin, add concrete context tied to the current topic and prior teaching.
 - If quiz is too short, add enough distinct, topic-grounded MCQ practice steps to reach 4 to 10.
 - If quiz questions repeat or drift from the topic, replace only those questions with concrete exercises based on this topic's preceding explanation or worked example.
+- If repetitive_topic_cadence appears, change the smallest affected practice sequence so 3 adjacent topics do not share the same non-theory rhythm. Prefer a small already-prepared lab, bug fix, missing-feature task, inline MCQ, or review; preserve readiness rules.
 - If a loaded topic is missing quiz, workshop, lab, or project practice, add the planned interactive block that best matches the topic.
 - If lab_before_workshop appears, insert or restore a relevant guided workshop before the lab; do not solve it by adding more theory.
 - If project_before_practice_readiness appears, move the project later or replace it with a workshop/lab until multiple workshops and at least one lab establish readiness.
+- If course_introduction_missing_orientation appears, expand the very first teaching step to 3 to 6 short paragraphs. In plain language a 10-year-old can follow, explain what the subject is, why people use it, what learners can build, one memorable fact or analogy, and why the first topic comes first.
+- If hard_lab_before_final_third appears, replace the early hard/cumulative lab with a narrow easy or medium lab, bug fix, or missing-feature task. Save comprehensive assessment for the final third.
 - Keep language, filePath, starterCode, and acceptanceCriteria consistent.
 
 Subject: ${trimText(subject, "Programming")}
@@ -1311,6 +1322,9 @@ Rules:
 - If a loaded module has no workshop, lab, or project, add one guided workshop to the most suitable early topic.
 - If lab_before_workshop appears, insert or restore a relevant guided workshop before that lab. More theory alone does not satisfy this warning.
 - If project_before_practice_readiness appears, move the project later or use workshops/labs first until multiple workshops and at least one lab establish readiness.
+- If repetitive_topic_cadence appears, vary the smallest affected topic's practice sequence. A standalone quiz is optional; use a small prepared lab, debugging/missing-feature workshop, inline check, or review when it teaches better.
+- If course_introduction_missing_orientation appears, expand the first teaching step to 3 to 6 short, plain-language paragraphs covering purpose, real uses, things learners can build, one memorable fact or analogy, and why this first topic matters.
+- If hard_lab_before_final_third appears, turn the early comprehensive lab into a narrow easy or medium lab, bug fix, or missing-feature task. Hard cumulative assessment belongs only in the final third.
 - Workshop blocks need enough atomic workshop step objects to complete their concrete deliverable. Do not target a fixed count.
 - Every workshop ends with one non-coding summary step after its atomic coding steps.
 - Quiz blocks need 4 to 10 distinct topic-practice mcq step objects. They reinforce the exact preceding topic; they do not assess prerequisites or ask generic study questions.
@@ -1338,7 +1352,7 @@ Return strict JSON only:
 
 Rules:
 - Keep every coding step in ${requestedLanguage.label}, using ${requestedLanguage.filePath} by default. Do not copy JavaScript syntax from generic schema examples.
-- Preserve the topic id, title, block ids, block kinds, and all valid content.
+- Preserve the topic id, title, block ids, block kinds, and all valid content, except that repetitive_topic_cadence or hard_lab_before_final_third may require replacing one practice block kind or scope.
 - Fix only the blocks named by the supplied warnings.
 - The first block must be theory with real theory/analogy/example/summary teaching before any check.
 - A quiz block contains 4 to 10 distinct topic-practice MCQ steps tied to this exact topic's teaching and examples.
@@ -1353,6 +1367,9 @@ Rules:
 - Explain new syntax with a correctly tagged fenced code example before asking the learner to edit it.
 - Exercises must directly practice the topic and preceding teaching.
 - A lab may appear only after a relevant workshop; a project requires multiple earlier workshops and at least one lab.
+- If repetitive_topic_cadence appears, change only enough of this topic's non-theory sequence to break the repeated rhythm while respecting lab/project readiness.
+- If course_introduction_missing_orientation appears, make the first teaching step a 3-to-6-paragraph child-friendly orientation: what this subject does, why it is useful, what learners can build, one memorable fact or analogy, and why this topic starts the path.
+- If hard_lab_before_final_third appears, replace the early hard/cumulative lab with a narrow easy or medium lab, bug fix, or missing-feature task; do not keep comprehensive wording or scope.
 - Return the complete corrected topic, not a patch, commentary, module, or course.
 
 Subject: ${trimText(subject, "Programming")}
@@ -1449,6 +1466,7 @@ Rules:
 - Every theory block must include real teaching steps before any MCQ. Never create a theory block made only of MCQ steps.
 - When a topic introduces code syntax, use fenced code snippets with language tags and explain new tokens before the learner uses them in a workshop, lab, or project.
 - Do not generate every topic as the same template. Avoid repeating "concept -> analogy -> example -> quiz -> review" as a fixed rhythm.
+- Do not repeat theory -> quiz -> workshop (or any identical non-theory block signature) for 3 adjacent topics. Vary reinforcement by need: inline check, workshop, small lab, debugging task, missing-feature task, review, or no quiz.
 - Do not use fixed counts like exactly 4 theory steps or exactly 2 workshop steps. The step count must follow the idea size, learner prerequisite gaps, and project complexity.
 - A theory block can combine concept and analogy on one page when short, split subtopics across multiple theory steps when the idea is bigger, and place examples wherever they make the explanation click.
 - A theory block may use several theory/analogy/example/summary steps when the topic needs more teaching. Do not force exactly one theory step or exactly one MCQ.
@@ -1460,6 +1478,8 @@ Rules:
   - A "theory" block may contain only theory, analogy, example, summary, and optional mcq steps.
   - Single MCQ checks belong inside theory blocks. If the AI only wants to assess understanding once during teaching, insert an mcq step in the current theory block instead of creating a quiz block.
   - Quiz blocks are low-stakes reinforcement exercises. A "quiz" block must contain only mcq steps and should have 4 to 10 distinct questions grounded in the exact topic just taught.
+  - Create a standalone quiz only when at least 4 distinct checks are useful. Do not add one merely to complete a template.
+  - Interleave narrow easy/medium labs—including bug fixes and missing features—after relevant workshops. Save hard, cumulative labs for the final third after several workshops and smaller lab checks.
   - Never use course MCQs to reassess prior knowledge, ask generic study-strategy questions, repeat the same concept in different words, or introduce an untaught concept.
   - Prefer code tracing, output prediction, debugging, and scenario choices. Every explanation teaches the topic connection after either a correct or incorrect choice.
 - A "workshop" block must be guided practical continuity. Each workshop step is one atomic editor action that builds on the previous step until a feature or mini-feature is complete.
@@ -1514,7 +1534,7 @@ Course blueprint:
 ${JSON.stringify(courseBlueprint ?? {}).slice(0, 2400)}
 Retrieved course-generation context:
 ${formatStaticCourseGenerationContext(contextChunks).slice(0, 2200)}
-${formatEditableCourseGenerationRules(4500)}
+${formatEditableCourseGenerationRules(5200)}
 Assessment answers: ${JSON.stringify(answers).slice(0, 2000)}
 Assessment review: ${JSON.stringify(assessmentReview ?? {}).slice(0, 1000)}`;
 }

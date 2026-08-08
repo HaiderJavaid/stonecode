@@ -12,9 +12,14 @@ export function CourseHome({
   onStartOrResume: () => void;
 }) {
   const completedSections = course.syllabus.filter((section) => section.lessonIndex < lessonIndex).length;
-  const progress = course.syllabus.length
+  const loadedProgress = course.syllabus.length
     ? Math.max(course.progress, Math.round((completedSections / course.syllabus.length) * 100))
     : Math.max(course.progress, 0);
+  const progressive = course.courseContent?.schemaVersion === "course-content/v2" ? course.courseContent.progressiveGeneration : null;
+  const generatedFraction = progressive?.status === "background"
+    ? progressive.readyModuleCount / Math.max(progressive.totalModules, 1)
+    : 1;
+  const progress = Math.min(100, Math.round(loadedProgress * generatedFraction));
   const currentSection = course.syllabus[Math.min(lessonIndex, course.syllabus.length - 1)];
 
   return (
@@ -30,7 +35,7 @@ export function CourseHome({
         <small>Current: {currentSection?.title ?? `${learningExperienceLabel(course.experienceType)} setup`}</small>
       </div>
       <div className="course-home-tags" aria-label="Course languages and tags">
-        {[...course.languages, ...course.tags].map((tag) => <span key={tag}>{tag}</span>)}
+        {[...new Set([...course.languages, ...course.tags])].map((tag) => <span key={tag}>{tag}</span>)}
       </div>
       <div className="course-home-actions">
         <button onClick={onStartOrResume} type="button">

@@ -105,8 +105,10 @@ export async function mutateExerciseProgression(input: {
   return payload.exercise as {
     passed?: boolean;
     awarded?: boolean;
+    xpEligible?: boolean;
     xp?: number;
     feedback?: string;
+    criteria?: Array<{ label: string; passed: boolean }>;
     hintUsed?: boolean;
     skipped?: boolean;
   };

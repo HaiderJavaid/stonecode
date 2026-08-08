@@ -8,10 +8,10 @@ Stonecode is a production-oriented AI computing tutor for self-taught beginners.
 
 1. Register and enter Free automatically.
 2. Start Course, Guided Project, or Exercise Pack discovery.
-3. Answer contextual questions about goal, background, scope, and preferences; free typing is always available.
+3. Continue a context-aware conversation about goal, background, scope, and preferences; free typing is always available, and only Guided Projects require a Basic/Advanced choice.
 4. Edit the proposed syllabus/project/exercise list and review the deterministic Stone quote.
 5. Finalize, reserve Stones, and resume a persisted background generation job.
-6. For Courses, persist only after every approved module is generated and passes quote-to-delivery validation; partial generation releases the reservation.
+6. For Courses, expose the path after Module 1 and Module 2 are fully generated, validated, checkpointed, and persisted; show setup as 100% ready while later modules continue server-side. Generated modules still unlock only in prerequisite order.
 7. Open a saved path on its overview/progress home, then Start/Resume into the three-panel workspace with modules/files, Code/Output/Terminal, and grounded tutor chat.
 8. Apply or reject structured tutor patches, run/check work, receive optional chat visuals, and preserve progress.
 9. Publish eligible generated paths to Marketplace or clone an immutable template for one Stone.
@@ -39,9 +39,9 @@ Runtime visibility is server-authoritative. Editor support alone is insufficient
 
 ## Current State
 
-The expansion is implemented locally behind the existing flags. Static checks cover 21 technologies × three modes plus 12 valid domain/mode combinations. The 2026-08-01 learning-domain migration is applied; the database still has five enabled and 17 rejected technology manifests, with four domain manifests pending review and no approved domain corpora yet. Source review/evaluation, the Luna cache-write migration, live Stripe/alerts/sign-offs, paid generation QA, and post-deploy QA remain.
+The expansion is implemented locally behind the existing flags. Static checks cover 21 technologies × three modes plus 12 valid domain/mode combinations. All 21 runtime-backed technology manifests are enabled; Julia is approved but hidden pending runtime, and all 22 language corpora score 1.00 relevance with zero leakage. Finalized Courses, Guided Projects, and Exercise Packs use Luna Fast while proposals remain Standard. Proposal counts are normalized before quoting, malformed proposals receive one bounded repair, and larger valid generated Courses or Guided Projects remain intact. Four domain manifests/corpora, the Luna cache-write migration, live Stripe/alerts/sign-offs, paid generation QA, and post-deploy QA remain.
 
-Local dashboard UX now includes an authenticated remaining-Stones widget with corrected stacked Stonecode marks, compact newest-first dated cards with one-line titles, balanced outer content padding, and inline progress, a bounded scrolling card list, synchronized reversible expansion, one contextual Back action plus X close, home-first reopening with the default dashboard IDE preserved until Resume or file selection, and a reversible delayed Marketplace transition. The runtime Terminal uses a legible charcoal stone surface, refined monospace output, and existing progress-green semantic accents. Proposal creation uses the compact `Generate` + Stone mark + quote pattern.
+Local dashboard UX now includes an authenticated remaining-Stones widget with corrected stacked Stonecode marks, compact newest-first dated cards with one-line titles, balanced outer content padding, and inline progress, a bounded scrolling card list, synchronized reversible expansion, one contextual Back action plus X close, home-first reopening with the default dashboard IDE preserved until Resume or file selection, and a reversible delayed Marketplace transition. Discovery opens from learner context rather than fixed copy, persists its structured draft, asks broad language learners to choose a learning mode, and routes missing framework prerequisites without repeating answered questions. Project lessons pair concept/stack/function theory with each feature workshop. Exercise Packs progress from easy to hard, isolate small multi-file workspaces, provide real Output for visual framework tasks, and always open on Code. Exercise cards use animated checklist states, semantic line highlighting, retry-aware feedback, completion confetti, a green Next action, and a module-transition progress bar. Proposal creation and generation loading are overflow-safe.
 
 Current branch: `codex/reactbits-side-rays-bg`.
 

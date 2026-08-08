@@ -55,13 +55,13 @@ const projectProposal = normalizeLearningProposal({
   type: "project",
   technology: "Python",
   outcomes: ["Build a working CLI"],
-  items: Array.from({ length: 7 }, (_, index) => ({
-    title: `Step ${index + 1}`,
-    summary: `Build unit ${index + 1}`,
-    stepCount: 1,
+  items: Array.from({ length: 4 }, (_, index) => ({
+    title: `Feature ${index + 1}`,
+    summary: `Build capability ${index + 1}`,
+    stepCount: 2,
     fileCount: index < 3 ? index + 1 : 3
   })),
-  totalSteps: 7,
+  totalSteps: 8,
   totalFiles: 3
 }, {
   type: "guided_project",
@@ -69,10 +69,59 @@ const projectProposal = normalizeLearningProposal({
   desiredOutcome: "Working task manager",
   language: "Python",
   platform: "terminal",
-  priorKnowledge: "Beginner"
+  priorKnowledge: "Beginner",
+  projectDifficulty: "basic"
 });
 assert.equal(projectProposal.type, "project");
 assert.equal(projectProposal.creditQuote.credits, 10);
+
+const oversizedProjectProposal = normalizeLearningProposal({
+  title: "Build a Rust terminal game",
+  summary: "Learn Rust by building a complete terminal game.",
+  type: "project",
+  technology: "Rust",
+  outcomes: ["Build a playable terminal game"],
+  items: Array.from({ length: 6 }, (_, index) => ({
+    title: `Game feature ${index + 1}`,
+    summary: `Build game capability ${index + 1}`,
+    stepCount: 10,
+    fileCount: 12
+  })),
+  totalSteps: 60,
+  totalFiles: 12
+}, {
+  type: "guided_project",
+  goal: "Learn Rust by making a terminal game",
+  desiredOutcome: "A playable Rust terminal game",
+  language: "Rust",
+  platform: "terminal",
+  priorKnowledge: "Complete beginner",
+  projectDifficulty: "advanced"
+});
+assert.equal(oversizedProjectProposal.totals.steps, 30, "model project estimates must be fitted locally before quoting");
+assert.equal(oversizedProjectProposal.totals.files, 10);
+assert.equal(oversizedProjectProposal.items.reduce((total, item) => total + item.stepCount, 0), 30);
+assert.ok(oversizedProjectProposal.items.every((item) => item.stepCount >= 1));
+assert.equal(oversizedProjectProposal.creditQuote.credits, 15);
+
+const oversizedCourseProposal = normalizeLearningProposal({
+  title: "Rust systems course",
+  summary: "Learn Rust systems programming.",
+  items: Array.from({ length: 16 }, (_, index) => ({
+    title: `Rust module ${index + 1}`,
+    summary: `Learn Rust topic ${index + 1}`,
+    stepCount: 20
+  }))
+}, {
+  type: "course",
+  goal: "Learn Rust systems programming",
+  subject: "Rust",
+  language: "Rust",
+  priorKnowledge: "Complete beginner",
+  supportMode: "standard"
+});
+assert.equal(oversizedCourseProposal.items.length, 12, "extra model outline items must not make proposal creation fail");
+assert.ok(oversizedCourseProposal.totals.steps <= 180);
 
 assert.deepEqual(resolveFeatureFlags({
   FEATURE_CREDITS_V1: "true",
@@ -185,5 +234,7 @@ for (const functionName of [
 assert.match(proposalStore, /rpc\("finalize_stonecode_learning_proposal"/);
 assert.match(generationWorker, /rpc\("claim_stonecode_generation_job"/);
 assert.match(generationWorker, /rpc\("complete_stonecode_generation_job"/);
+assert.match(generationWorker, /supportsProgressiveCourseGeneration\(admin\)/, "course generation must check progressive schema support before using new columns");
+assert.match(generationWorker, /using full-course compatibility generation/, "missing progressive columns must fall back instead of exposing a schema-cache failure");
 
 console.log("production revamp foundation checks passed");

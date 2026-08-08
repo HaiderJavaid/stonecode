@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { AiFileEdit, applyAiFileEdits } from "@/ai/fileEditCommands";
 import { Course, GeneratedExerciseWorkspaceFile, GeneratedLearningContent, buildSyllabusFromGeneratedContent } from "@/data/courses";
-import { requestGeneratedChapter, requestGeneratedProjectMilestone } from "@/services/courseGeneration";
+import { requestGeneratedChapter, requestGeneratedProjectMilestone, requestGenerationJob } from "@/services/courseGeneration";
 import {
   defaultStoredCourseState,
   loadCourseState,
@@ -20,11 +20,13 @@ import {
 import {
   createSupabaseCourse,
   deleteSupabaseCourse,
+  loadSupabaseCourse,
   loadSupabaseCourseState,
   saveSupabaseWorkspaceState
 } from "@/services/supabaseCourseStorage";
 import { ActiveState } from "@/components/stonecode/types";
 import { defaultFilePath } from "@/services/editorLanguages";
+import { resolveCourseLessonSteps } from "@/components/stonecode/lessonData";
 
 const lastOpenCourseStorageKey = "stonecode.lastOpenCourseId.v1";
 
@@ -69,6 +71,9 @@ export function useCourseWorkspace() {
   const activeLeftPanelView = activeCourse
     ? leftPanelViewByCourse[activeCourse.id] ?? (startedCourseIds[activeCourse.id] ? "files" : "course")
     : "files";
+  const progressiveGeneration = activeCourse?.courseContent?.schemaVersion === "course-content/v2"
+    ? activeCourse.courseContent.progressiveGeneration
+    : null;
 
   function getCourseFiles(course: Course, state = storedState) {
     return state.workspaceFilesByCourse[course.id] ?? [];
@@ -146,6 +151,36 @@ export function useCourseWorkspace() {
       isCancelled = true;
     };
   }, [isSupabaseBacked, user]);
+
+  useEffect(() => {
+    if (!isSupabaseBacked || !user || !activeCourse || progressiveGeneration?.status !== "background") return;
+    let cancelled = false;
+    let timer = 0;
+    const refresh = async () => {
+      try {
+        const { job } = await requestGenerationJob(progressiveGeneration.jobId);
+        const refreshedCourse = await loadSupabaseCourse(user, activeCourse.id);
+        if (cancelled || !refreshedCourse) return;
+        setStoredState((current) => ({
+          ...current,
+          coursesById: { ...current.coursesById, [refreshedCourse.id]: refreshedCourse }
+        }));
+        const refreshedProgressive = refreshedCourse.courseContent?.schemaVersion === "course-content/v2"
+          ? refreshedCourse.courseContent.progressiveGeneration
+          : null;
+        if (refreshedProgressive?.status === "background" && job.status !== "failed" && job.status !== "cancelled") {
+          timer = window.setTimeout(refresh, 2500);
+        }
+      } catch {
+        if (!cancelled) timer = window.setTimeout(refresh, 4000);
+      }
+    };
+    timer = window.setTimeout(refresh, 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeCourse, isSupabaseBacked, progressiveGeneration?.jobId, progressiveGeneration?.status, user]);
 
   useEffect(() => {
     if (isSupabaseBacked && !isRemoteLoaded) return;
@@ -369,7 +404,10 @@ export function useCourseWorkspace() {
 
     let selectedIndex = 0;
     setStoredState((current) => {
-      const merged = dedupeWorkspaceFiles(current.workspaceFilesByCourse[course.id] ?? []);
+      const isolateExerciseWorkspace = course.experienceType === "exercise";
+      const merged = isolateExerciseWorkspace
+        ? []
+        : dedupeWorkspaceFiles(current.workspaceFilesByCourse[course.id] ?? []);
       for (const incoming of normalizedFiles) {
         const index = merged.findIndex((file) => file.path === incoming.path);
         if (index < 0) merged.push(incoming);
@@ -377,7 +415,7 @@ export function useCourseWorkspace() {
       }
       selectedIndex = Math.max(merged.findIndex((file) => file.path === normalizedActivePath), 0);
       const derivedFolders = normalizedFiles.flatMap((file) => workspaceFolderPaths(file.path));
-      const currentFolders = current.workspaceFoldersByCourse[course.id] ?? [];
+      const currentFolders = isolateExerciseWorkspace ? [] : current.workspaceFoldersByCourse[course.id] ?? [];
       const folders = [...new Set([...currentFolders.map((folder) => folder.path), ...derivedFolders])]
         .map((path) => ({ path }));
       return {
@@ -719,6 +757,10 @@ function getBaseName(path: string) {
 }
 
 function defaultWorkspacePath(course: Course) {
+  const generatedExercisePath = resolveCourseLessonSteps(course)
+    .find((lesson) => lesson.codeExercise?.filePath)
+    ?.codeExercise?.filePath;
+  if (generatedExercisePath) return generatedExercisePath;
   const language = course.languages[0] ?? course.subject;
   return defaultFilePath(language);
 }

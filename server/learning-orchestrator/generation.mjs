@@ -41,8 +41,8 @@ ${String(invalidOutput ?? "").slice(0, 14000)}
 
 Return a complete replacement JSON document, not a patch or explanation.
 - Obey every count and structure rule in the original request.
-- For guided projects, return exactly one project module containing an introduction theory block, 2-6 feature workshop blocks, and one recap theory block.
-- Every guided-project feature block represents one major deliverable feature and contains 4-10 connected micro-edit steps. Keep 8-30 coding steps across the complete project.
+- For guided projects, return exactly one project module containing introduction theory, then 2-6 repeated feature-theory + feature-workshop pairs, then recap theory.
+- Every feature theory block immediately precedes and teaches its workshop. Every feature workshop represents one major deliverable capability and contains at least 4 connected micro-edit steps. Preserve the requested basic or advanced scope.
 - Keep the complete architecture, continuous project files, and every required workshop field.
 - Return JSON only.`;
 }
@@ -53,11 +53,15 @@ export function buildExerciseProblemBatchPrompt({
   kind,
   count,
   batchIndex = 0,
+  positions = [],
   existingTitles = [],
   retrievedContext = []
 }) {
   const normalized = normalizeLearningBrief(brief);
   const problemKind = kind === "mcq" ? "mcq" : "code";
+  const requestedPositions = Array.from({ length: count }, (_, index) => Number.isInteger(positions[index]) ? positions[index] : index);
+  const difficultyPlan = requestedPositions.map((position, index) => `Problem ${index + 1}: ${targetExerciseDifficulty(normalized, position, normalized.exerciseCount ?? count)}`).join("; ");
+  const visualExercise = isVisualBrowserLearningBrief(normalized);
   const problemShape = problemKind === "mcq"
     ? `{"id":"...","title":"...","summary":"specific scenario","kind":"mcq","difficulty":"Beginner|Intermediate|Advanced","primarySkill":"...","parentLanguage":"...","topicIds":["..."],"blocks":[{"id":"...","kind":"quiz","title":"Topic practice","summary":"...","steps":[{"type":"mcq","prompt":"topic-grounded question","options":["...","...","...","..."],"correctOptionIndex":0,"explanation":"teach why"}]}]}`
     : `{"id":"...","title":"...","summary":"believable scenario and goal","kind":"code","difficulty":"Beginner|Intermediate|Advanced","primarySkill":"...","parentLanguage":"...","topicIds":["..."],"blocks":[{"id":"...","kind":"lab","title":"Independent practice","summary":"...","steps":[{"type":"lab","language":"...","filePath":"main.py","context":"...","prompt":"...","starterCode":"incomplete or broken starter only","acceptanceCriteria":["...","..."],"workspaceView":"code|preview|terminal","requiresPreview":false,"requiresTerminal":true,"workspaceFiles":[{"path":"main.py","content":"same starter code","editable":true}]}]}]}`;
@@ -78,19 +82,27 @@ Rules:
 - Make every problem distinct and directly relevant to ${normalized.subject || normalized.language || normalized.goal} and these topics: ${JSON.stringify(normalized.topics ?? [])}.
 - Do not repeat, paraphrase, or reuse an already-used title or scenario.
 - Difficulty strategy: ${normalized.difficulty ?? "adaptive"}. Motivation: ${normalized.motivation || normalized.goal}.
+- Required progressive difficulty for this batch: ${difficultyPlan}. Match the actual task complexity, not only the label. Beginner problems introduce one small behavior; Advanced problems belong near the end.
 - MCQs are low-stakes topic practice, not learner assessment. Base each question on a concrete code behavior, scenario, or concept from the requested topic. Use four plausible options and teach through the explanation.
-- Coding problems are independent realistic debugging, missing-feature, transformation, validation, or data tasks. Include no solution code.
+- Start the pack with a few short MCQs that activate the exact ideas needed by the first coding lab. Coding problems then become independent realistic debugging, missing-feature, transformation, validation, or data tasks. Include no solution code. The first coding exercises must be short warm-ups with one clear behavior, two or three acceptance checks, and no architecture-heavy setup.
+- Give every coding problem a vivid role-play scenario in context: who the learner is helping, what the app or program is supposed to do, what is currently wrong or missing, and why the visible result matters. Then write a direct mission-style prompt. Make context and prompt together feel like a small real ticket, not a one-line command, while never revealing the solution steps.
+- Keep each exercise workspace isolated and intentionally small: only 2-5 relevant files, at most 80 non-empty lines total for Beginner problems. Never imitate a production repository. Use a language-appropriate comment such as “// ...rest of the app” only when omitted context is genuinely helpful and the runnable preview remains intact.
+- ${visualExercise ? "This is visual browser practice. Every code problem must provide a real working Output preview with connected index.html, stylesheet, and JavaScript source files. Use the approved framework runtime and set requiresPreview true; the learner edits only the focused source file." : "Use Output only for genuinely visual browser tasks; otherwise use the runtime Terminal."}
+- Prompts should be concise but specific. Emphasize the observable goal and important constraints without revealing the implementation steps.
 - Use only approved plain code/browser libraries. React uses plain JavaScript with React.createElement, not JSX or package tooling.
 - Browser problems use real connected HTML/CSS/JavaScript and Output. Console problems use Terminal. Return JSON only.`;
 }
 
-export function normalizeExerciseProblemBatch(value, { brief, kind, count, offset = 0 }) {
+export function normalizeExerciseProblemBatch(value, { brief, kind, count, offset = 0, positions = [] }) {
   const rawProblems = Array.isArray(value?.problems) ? value.problems : [];
   if (!rawProblems.length) throw new Error("Exercise batch returned no problems.");
   const expectedKind = kind === "mcq" ? "mcq" : "code";
   const problems = rawProblems
     .slice(0, count)
-    .map((problem, index) => normalizePracticeProblem(problem, brief, offset + index, expectedKind));
+    .map((problem, index) => {
+      const position = Number.isInteger(positions[index]) ? positions[index] : offset + index;
+      return normalizePracticeProblem(problem, brief, position, expectedKind, targetExerciseDifficulty(brief, position, brief.exerciseCount ?? count));
+    });
   if (problems.some((problem) => problem.kind !== expectedKind)) {
     throw new Error(`Exercise batch must contain only ${expectedKind} problems.`);
   }
@@ -316,6 +328,7 @@ Rules:
 - Return exactly ${count} distinct coding problems.
 - Return exactly ${codingCount} code problems and ${mcqCount} MCQ problems. Do not substitute reflections, workshops, theory, reviews, or projects.
 - Difficulty strategy is ${brief.difficulty ?? "adaptive"}. Every problem must declare Beginner, Intermediate, or Advanced.
+- Order difficulty progressively: easy warm-ups first, intermediate transfer next, and Advanced only near the end. Match actual complexity to the label.
 - Purpose: ${brief.motivation || brief.goal}. Scope: ${brief.practiceScope || "topics"}. Required topics: ${JSON.stringify(brief.topics ?? [])}.
 - Distribute the problems across the confirmed topics. Keep every problem relevant to ${brief.subject || brief.language || brief.goal}.
 - If the learner requested weaknesses and memory is insufficient, make the first two problems diagnostic and set diagnosticCount to 2.
@@ -325,17 +338,22 @@ Rules:
 - Frame every code problem as a believable bug, missing feature, debugging task, data task, or small real-world requirement. State the scenario and acceptance criteria clearly.
 - Starter code must have a purposeful defect or missing behavior. Avoid toy prompts such as merely "write a loop" unless the real scenario genuinely requires it.
 - Do not expose solution code. Starter code may be incomplete or intentionally broken.
-- Visual problems preload a visible scene; terminal problems open Terminal.`;
+- Keep every independent workspace to 2-5 relevant files and a focused excerpt, not a production-sized repository. Use a short “// ...rest of the app” style comment only when omitted context helps without breaking execution.
+- Visual framework problems must provide connected HTML, CSS, and JavaScript with a real working Output preview. Terminal problems provide focused runnable console code. Code remains the initial IDE view for every exercise.`;
 }
 
 function buildGuidedProjectPrompt(brief, assessmentReview, learnerProfile) {
   const projectMode = inferGuidedProjectMode(brief);
+  const scopeContract = brief.projectDifficulty === "advanced"
+    ? "ADVANCED: create 4-6 feature pairs and normally 18-30 coding micro-steps. Teach modular structure, state/data flow, validation, useful edge cases, and failure behavior where the runtime supports them."
+    : "BASIC: create 2-4 feature pairs and normally 8-18 coding micro-steps. Keep the stack small and focus on the essential happy path and core concept.";
   return `Generate one complete Stonecode guided project workshop as strict JSON.
 
 Learning brief: ${JSON.stringify(brief)}
 Assessment review: ${JSON.stringify(assessmentReview ?? {}).slice(0, 1600)}
 Learner memory: ${JSON.stringify(learnerProfile ?? {}).slice(0, 1400)}
 Project mode: ${projectMode}
+Project scope: ${scopeContract}
 Visual policy: browser_output_only
 
 Return:
@@ -346,23 +364,26 @@ Return:
  "workspaceFiles":[{"path":"main.py","content":"","purpose":"learner-built project source","editable":true}],
  "module":{"id":"guided-project","title":"...","summary":"...","blocks":[
    {"id":"project-introduction","kind":"theory","title":"Understand the project","summary":"...","steps":[/* theory, analogy and worked-example steps */]},
+   {"id":"feature-foundation-theory","kind":"theory","title":"Understand the foundation","summary":"concepts used by the next feature","steps":[/* 2-5 clear theory steps */]},
    {"id":"feature-foundation","kind":"workshop","title":"Build the project foundation","summary":"one major feature","steps":[/* 4-10 workshop coding micro-steps */]},
+   {"id":"feature-interaction-theory","kind":"theory","title":"Understand the interaction","summary":"concepts used by the next feature","steps":[/* 2-5 clear theory steps */]},
    {"id":"feature-interaction","kind":"workshop","title":"Add the core interaction","summary":"one major feature","steps":[/* 4-10 workshop coding micro-steps */]},
    {"id":"project-recap","kind":"theory","title":"How the finished project works","summary":"...","steps":[/* theory and summary steps */]}
  ]}
 }
 
 Rules:
-- A guided project is one continuous build split into meaningful feature workshops. Do not create course modules, topics, milestones, labs, quizzes, or independent tests.
-- Return exactly one module. Its ordered blocks are: one introduction theory block, 2 to 6 feature workshop blocks, then one final recap theory block.
+- A guided project is one continuous build split into meaningful taught features. Do not create course modules, topics, milestones, labs, quizzes, or independent tests.
+- Return exactly one module. Its ordered blocks are: one introduction theory block, 2 to 6 repeated feature theory + feature workshop pairs, then one final recap theory block. Never place two workshops together.
 - Each feature workshop represents one major project capability from the approved proposal. Name it after that feature, not "Build the project". Follow proposal items in order and merge only tightly related items.
-- The introduction is orientation, not a lesson or test. Use only 1 to 3 explanation steps total: what the learner will build, why it is useful/where it is used, how the finished parts fit together, and only a narrow refresher proven necessary by the brief or assessment. Combine overlapping ideas.
-- Each feature workshop contains 4 to 10 atomic coding steps. Keep 8 to 30 coding steps across the project. Each coding step returns: type workshop, id, language, filePath, context, prompt, edit, expectedChange, codeExplanation, 2-3 suggestedQuestions, acceptanceCriteria, workspaceView, requiresPreview, and requiresTerminal.
+- The introduction uses 2 to 4 explanation steps: what the learner will build, why it is useful, the tech stack/libraries, the architecture and data flow, and how the finished parts fit together. It is teaching, never a test.
+- Immediately before every workshop, add one feature theory block with 2 to 5 explanation steps. Thoroughly teach the feature's purpose, concepts, relevant function/component/API or library, inputs and outputs, and how its code will connect to the existing project. Use multiple steps when the ideas need separation. A tiny read-only example is allowed, but no learner edit belongs in theory.
+- Each feature workshop contains at least 4 atomic coding steps; 4 to 10 is preferred. Keep 8 to 30 coding steps as the preferred project size, but include additional valid teaching steps when the build needs them. Each coding step returns: type workshop, id, language, filePath, context, prompt, edit, expectedChange, codeExplanation, 2-3 suggestedQuestions, acceptanceCriteria, workspaceView, requiresPreview, and requiresTerminal.
 - In scratch_build mode, source files start blank or with the smallest unavoidable shell. The learner writes the project from the first meaningful code unit. Never preload finished starter logic.
 - In repair_or_feature mode only, preload the existing/broken implementation and its initial visual state before asking for fixes or additions.
 - Every workshop step must change code. Never use a step only to run, inspect, confirm, read, or open an existing starter. Running/previewing is a verification action after the edit, not the edit itself.
 - Continue the exact file state across feature-block boundaries. The first step of a later feature starts from the final state of the preceding feature.
-- Teach in semantic micro-steps. One step may add a tightly related group such as several imports or width/height constants, but must not jump across unrelated concepts. Explain only the new code introduced by that step.
+- Teach in semantic micro-steps. One step may add a tightly related group such as several imports or width/height constants, but must not jump across unrelated concepts. Write codeExplanation as natural teaching prose that explains the new code in context; do not use boilerplate headings such as "Syntax You Need First" or "What this code means".
 - Keep output compact. Put the complete initial project in the top-level workspaceFiles once. Each step uses exactly one deterministic edit: "edit":{"find":"exact text currently in that file","replace":"replacement text"}. For a new file use "edit":{"operation":"create","replace":"complete new file content"}.
 - Every find value must exactly match the file state produced by the preceding steps. Do not repeat starterCode, resultCode, or workspaceFiles inside steps; the server expands edits into those full IDE states.
 - Use only plain source code and approved browser libraries. Never require external engines, native GUI frameworks, server frameworks, package installation, or desktop editors.
@@ -370,7 +391,7 @@ Rules:
 - The final theory block uses only 1 or 2 explanation steps. It summarizes what was built, how the major code parts connect, what the learner now understands, and where the pattern is used. It contains no coding task, quiz, reflection, or exercise.
 - One micro-edit per step. The server expands exact edit continuity and complete workspace files.
 - Visual projects keep a synchronized scene available throughout the build. Terminal projects keep runnable files available, but a run-only action is never its own workshop step.
-- supportMode teaching_heavy means slower explanations and embedded refreshers, not extra tests.
+- Obey the project scope contract above. Basic and advanced must materially differ in capability count, code depth, and edge-case coverage—not merely in adjectives.
 - Generate the complete project now. Return JSON only.`;
 }
 
@@ -405,7 +426,13 @@ function normalizeExerciseSession(value, brief) {
   const rawProblems = Array.isArray(value?.problems) ? value.problems.slice(0, brief.exerciseCount ?? 10) : [];
   if (rawProblems.length !== (brief.exerciseCount ?? 10)) throw new Error("Exercise generation returned the wrong problem count.");
   const { codingCount, mcqCount } = resolveExerciseMixCounts(brief);
-  const problems = rawProblems.map((problem, index) => normalizePracticeProblem(problem, brief, index));
+  const problems = rawProblems.map((problem, index) => normalizePracticeProblem(
+    problem,
+    brief,
+    index,
+    null,
+    targetExerciseDifficulty(brief, index, brief.exerciseCount ?? rawProblems.length)
+  ));
   const actualCodingCount = problems.filter((problem) => problem.kind === "code").length;
   const actualMcqCount = problems.filter((problem) => problem.kind === "mcq").length;
   if (actualCodingCount !== codingCount || actualMcqCount !== mcqCount) {
@@ -427,7 +454,7 @@ function normalizeExerciseSession(value, brief) {
   };
 }
 
-function normalizePracticeProblem(rawProblem, brief, index, expectedKind = null) {
+function normalizePracticeProblem(rawProblem, brief, index, expectedKind = null, forcedDifficulty = null) {
   if (!Array.isArray(rawProblem?.blocks) || rawProblem.blocks.length !== 1 || !Array.isArray(rawProblem.blocks[0]?.steps) || rawProblem.blocks[0].steps.length !== 1) {
     throw new Error("Every practice problem must contain exactly one block and one step.");
   }
@@ -447,6 +474,7 @@ function normalizePracticeProblem(rawProblem, brief, index, expectedKind = null)
   const title = text(rawProblem?.title, `Practice problem ${index + 1}`).slice(0, 120);
   const topicIds = normalizeSkillTopics(rawProblem?.topicIds?.length ? rawProblem.topicIds : [title, ...(brief.topics ?? [])]);
   const step = kind === "mcq" ? normalizePracticeMcq(rawStep) : normalizePracticeCode(rawStep, brief);
+  if (kind === "code" && normalizeExerciseDifficulty(forcedDifficulty) === "Beginner") validateBeginnerExerciseScope(step);
   return {
     id: slug(`${rawProblem?.id || title}-${index + 1}`),
     title,
@@ -462,7 +490,7 @@ function normalizePracticeProblem(rawProblem, brief, index, expectedKind = null)
       steps: [step]
     }],
     kind,
-    difficulty: normalizeExerciseDifficulty(rawProblem?.difficulty || brief.difficulty),
+    difficulty: normalizeExerciseDifficulty(forcedDifficulty || rawProblem?.difficulty || brief.difficulty),
     primarySkill: skill.primarySkill,
     parentLanguage: skill.parentLanguage,
     topicIds,
@@ -487,30 +515,45 @@ function normalizePracticeMcq(step) {
 
 function normalizePracticeCode(step, brief) {
   const language = text(step?.language, selectedTechnology(brief)?.displayName || brief.language || brief.framework || "JavaScript").slice(0, 80);
-  const filePath = text(step?.filePath, defaultPracticeFile(language)).slice(0, 180);
+  const originalFilePath = text(step?.filePath, defaultPracticeFile(language)).slice(0, 180);
+  const visualBrowser = isVisualBrowserLearningBrief(brief);
+  const filePath = normalizeFocusedExerciseFilePath(originalFilePath, brief);
   const prompt = text(step?.prompt, "").slice(0, 900);
   const acceptanceCriteria = uniqueStrings(step?.acceptanceCriteria).slice(0, 5);
   if (!prompt || acceptanceCriteria.length < 2) throw new Error("Practice coding problems require a prompt and at least two acceptance criteria.");
-  const starterCode = typeof step?.starterCode === "string" ? step.starterCode.slice(0, 12000) : "";
+  const context = text(step?.context, `You are helping finish a small ${language} feature for ${brief.motivation || brief.goal}. The starter project runs, but one visible behavior is incomplete.`).slice(0, 700);
+  if (context.length < 140 || prompt.length < 110) {
+    throw new Error("Practice coding problems need a thorough role-play context and a clear mission-style prompt without revealing the solution.");
+  }
+  const starterCode = typeof step?.starterCode === "string" ? step.starterCode.slice(0, 6000) : "";
   const workspaceFiles = Array.isArray(step?.workspaceFiles) && step.workspaceFiles.length
-    ? step.workspaceFiles.slice(0, 20).map((file) => ({
-        path: text(file?.path, filePath).slice(0, 180),
-        content: typeof file?.content === "string" ? file.content.slice(0, 12000) : "",
-        purpose: typeof file?.purpose === "string" ? file.purpose.slice(0, 180) : undefined,
-        editable: file?.editable !== false
-      }))
+    ? step.workspaceFiles.slice(0, 6).map((file) => {
+        const sourcePath = text(file?.path, filePath).slice(0, 180);
+        const path = sourcePath === originalFilePath ? filePath : sourcePath;
+        const content = typeof file?.content === "string"
+          ? file.content.replaceAll(originalFilePath, filePath).slice(0, 6000)
+          : "";
+        return {
+          path,
+          content,
+          purpose: typeof file?.purpose === "string" ? file.purpose.slice(0, 180) : undefined,
+          editable: file?.editable !== false
+        };
+      })
     : [{ path: filePath, content: starterCode, editable: true }];
   const browserRendered = isBrowserRenderedLearningBrief(brief);
-  const resolvedWorkspaceFiles = browserRendered ? ensureBrowserWorkspace(workspaceFiles, brief) : workspaceFiles;
+  const resolvedWorkspaceFiles = browserRendered ? ensureBrowserWorkspace(workspaceFiles, brief, filePath) : workspaceFiles;
   const runnableBrowserWorkspace = browserRendered && hasRunnableBrowserWorkspace(resolvedWorkspaceFiles);
   const technologyId = resolveLearningBriefTechnologyId(brief);
   const technology = findTechnology(technologyId);
-  const requiresPreview = runnableBrowserWorkspace && (Boolean(step?.requiresPreview) || technologyId === "html" || technologyId === "css");
+  if (visualBrowser && !runnableBrowserWorkspace) throw new Error("Visual browser exercises require a connected, runnable Output workspace.");
+  if (visualBrowser) validateVisualFrameworkWorkspace(resolvedWorkspaceFiles, brief);
+  const requiresPreview = runnableBrowserWorkspace && (visualBrowser || Boolean(step?.requiresPreview) || technologyId === "html" || technologyId === "css");
   return {
     type: "lab",
     language,
     filePath,
-    context: text(step?.context, `Independent ${language} practice for ${brief.motivation || brief.goal}.`).slice(0, 700),
+    context,
     prompt,
     starterCode,
     acceptanceCriteria,
@@ -541,11 +584,26 @@ function normalizeGuidedProjectV2(value, brief, assessmentReview) {
   const projectMode = inferGuidedProjectMode(brief);
   const browserProject = isBrowserRenderedGuidedProject(brief);
   const rawModule = value?.module && typeof value.module === "object" ? value.module : null;
-  if (!rawModule || !Array.isArray(rawModule.blocks) || rawModule.blocks.length < 4 || rawModule.blocks.length > 8) {
-    throw new Error("Guided project requires one module with introduction, 2-6 feature blocks, and recap.");
+  if (!rawModule || !Array.isArray(rawModule.blocks) || rawModule.blocks.length < 3) {
+    throw new Error("Guided project requires one module with introduction, taught feature workshops, and recap.");
   }
-  const rawFeatureBlocks = rebalanceGuidedProjectFeatureBlocks(rawModule.blocks.slice(1, -1));
-  const rawBlocks = [rawModule.blocks[0], ...rawFeatureBlocks, rawModule.blocks.at(-1)];
+  const collectedPairs = collectGuidedProjectFeaturePairs(rawModule.blocks.slice(1, -1));
+  if (brief.projectDifficulty && collectedPairs.some((pair) => !pair.theory)) {
+    throw new Error("Every generated guided-project workshop needs a feature theory block immediately before it.");
+  }
+  const collectedWorkshopBlocks = collectedPairs.map((pair) => pair.workshop);
+  const workshopStepCount = (block) => (Array.isArray(block?.steps) ? block.steps : []).filter((step) => step?.type !== "summary").length;
+  const preservesPairs = collectedWorkshopBlocks.length >= 2
+    && collectedWorkshopBlocks.length <= 6
+    && collectedWorkshopBlocks.every((block) => workshopStepCount(block) >= 4)
+    && collectedWorkshopBlocks.reduce((total, block) => total + workshopStepCount(block), 0) >= 8;
+  const rawFeatureBlocks = preservesPairs
+    ? collectedWorkshopBlocks
+    : rebalanceGuidedProjectFeatureBlocks(collectedWorkshopBlocks);
+  const rawFeaturePairs = rawFeatureBlocks.map((workshop, index) => ({
+    workshop,
+    theory: preservesPairs ? collectedPairs[index]?.theory ?? null : null
+  }));
   const firstCodingStep = rawFeatureBlocks.flatMap((block) => Array.isArray(block?.steps) ? block.steps : []).find((step) => step?.type !== "summary");
   const initialWorkspaceFiles = normalizeCompactProjectWorkspaceFiles(value?.workspaceFiles, brief, {
     projectMode,
@@ -554,24 +612,37 @@ function normalizeGuidedProjectV2(value, brief, assessmentReview) {
     preferredLanguage: firstCodingStep?.language
   });
   let currentWorkspaceFiles = initialWorkspaceFiles;
-  const preparedBlocks = rawBlocks.map((block, index) => {
-    const rawSteps = Array.isArray(block?.steps) ? block.steps : [];
-    if (index > 0 && index < rawBlocks.length - 1) {
-      const expanded = expandCompactProjectSteps(rawSteps, currentWorkspaceFiles, brief, {
-        browserProject
-      });
-      currentWorkspaceFiles = expanded.workspaceFiles;
-      return {
-        ...block,
-        kind: "workshop",
-        steps: expanded.steps
-      };
-    }
-    return {
-      ...block,
+  const introduction = rawModule.blocks[0];
+  const preparedBlocks = [{
+    ...introduction,
+    kind: "theory",
+    steps: compactGuidedProjectTheorySteps(introduction?.steps ?? [], "introduction")
+  }];
+  rawFeaturePairs.forEach(({ theory, workshop }, index) => {
+    const featureTheory = theory ?? {};
+    preparedBlocks.push({
+      ...featureTheory,
+      id: featureTheory.id || `${slug(workshop.id || workshop.title)}-theory`,
+      title: featureTheory.title || `Understand ${text(workshop.title, `feature ${index + 1}`)}`,
+      summary: featureTheory.summary || `Learn the ideas used to ${text(workshop.summary, workshop.title)}.`,
       kind: "theory",
-      steps: compactGuidedProjectTheorySteps(rawSteps, index === 0 ? "introduction" : "recap")
-    };
+      steps: compactGuidedProjectTheorySteps(featureTheory.steps ?? [], "feature", workshop)
+    });
+    const expanded = expandCompactProjectSteps(workshop?.steps ?? [], currentWorkspaceFiles, brief, {
+      browserProject
+    });
+    currentWorkspaceFiles = expanded.workspaceFiles;
+    preparedBlocks.push({
+      ...workshop,
+      kind: "workshop",
+      steps: expanded.steps
+    });
+  });
+  const recap = rawModule.blocks.at(-1);
+  preparedBlocks.push({
+    ...recap,
+    kind: "theory",
+    steps: compactGuidedProjectTheorySteps(recap?.steps ?? [], "recap")
   });
   const wrapper = normalizeGeneratedCourseContent({
     schemaVersion: "course-content/v2",
@@ -596,27 +667,38 @@ function normalizeGuidedProjectV2(value, brief, assessmentReview) {
   });
   const module = wrapper.modules[0];
   const blocks = module?.topics?.[0]?.blocks ?? [];
-  const featureBlocks = blocks.slice(1, -1);
+  const middleBlocks = blocks.slice(1, -1);
+  const featureTheoryBlocks = middleBlocks.filter((_, index) => index % 2 === 0);
+  const featureBlocks = middleBlocks.filter((_, index) => index % 2 === 1);
   if (
-    blocks.length < 4 ||
-    blocks.length > 8 ||
+    blocks.length < 6 ||
+    blocks.length > 14 ||
     blocks[0]?.kind !== "theory" ||
+    middleBlocks.length % 2 !== 0 ||
     featureBlocks.length < 2 ||
+    featureTheoryBlocks.some((block) => block.kind !== "theory") ||
     featureBlocks.some((block) => block.kind !== "workshop") ||
     !["theory", "review"].includes(blocks.at(-1)?.kind)
   ) {
-    throw new Error("Guided project blocks must be introduction theory, 2-6 feature workshops, then recap theory.");
+    throw new Error("Guided project blocks must be introduction theory, 2-6 feature theory/workshop pairs, then recap theory.");
   }
   const guidedSteps = featureBlocks.flatMap((block) => block.steps.filter((step) => step.type === "workshop"));
   if (featureBlocks.some((block) => block.steps.filter((step) => step.type === "workshop").length < 4)) {
     throw new Error("Every guided-project feature block requires at least 4 coding micro-steps.");
   }
-  if (guidedSteps.length < 8 || guidedSteps.length > 30) {
-    throw new Error(`Guided project requires 8 to 30 guided coding steps across feature blocks; received ${guidedSteps.length}.`);
+  if (guidedSteps.length < 8) {
+    throw new Error(`Guided project requires at least 8 guided coding steps across feature blocks; received ${guidedSteps.length}.`);
+  }
+  if (brief.projectDifficulty === "basic" && (featureBlocks.length > 4 || guidedSteps.length > 20)) {
+    throw new Error("A basic guided project must stay within 2-4 taught features and no more than 20 coding micro-steps.");
+  }
+  if (brief.projectDifficulty === "advanced" && (featureBlocks.length < 4 || guidedSteps.length < 18)) {
+    throw new Error("An advanced guided project requires 4-6 taught features and at least 18 coding micro-steps.");
   }
   validateScratchProjectFoundation(guidedSteps, brief, projectMode);
-  if (blocks[0].steps.some((step) => ["workshop", "lab", "project"].includes(step.type)) || blocks.at(-1).steps.some((step) => ["workshop", "lab", "project"].includes(step.type))) {
-    throw new Error("Guided project introduction and recap must not contain coding tasks.");
+  const theoryBlocks = [blocks[0], ...featureTheoryBlocks, blocks.at(-1)];
+  if (theoryBlocks.some((block) => block.steps.some((step) => ["workshop", "lab", "project"].includes(step.type)))) {
+    throw new Error("Guided project theory blocks must not contain coding tasks.");
   }
   return {
     schemaVersion: "guided-project-content/v2",
@@ -638,20 +720,50 @@ function normalizeGuidedProjectV2(value, brief, assessmentReview) {
   };
 }
 
+function collectGuidedProjectFeaturePairs(rawBlocks) {
+  const pairs = [];
+  let pendingTheory = [];
+  for (const block of Array.isArray(rawBlocks) ? rawBlocks : []) {
+    if (!block || typeof block !== "object") continue;
+    const hasCodingSteps = (Array.isArray(block.steps) ? block.steps : []).some((step) =>
+      ["workshop", "lab", "project"].includes(step?.type) || step?.edit || typeof step?.resultCode === "string"
+    );
+    if (block.kind === "workshop" || hasCodingSteps) {
+      pairs.push({ theory: mergeGuidedProjectTheoryBlocks(pendingTheory, block), workshop: block });
+      pendingTheory = [];
+    } else {
+      pendingTheory.push(block);
+    }
+  }
+  return pairs;
+}
+
+function mergeGuidedProjectTheoryBlocks(blocks, workshop) {
+  if (!blocks.length) return null;
+  if (blocks.length === 1) return blocks[0];
+  return {
+    ...blocks[0],
+    id: `${slug(workshop?.id || workshop?.title)}-theory`,
+    title: blocks[0].title || `Understand ${text(workshop?.title, "the next feature")}`,
+    summary: blocks.map((block) => text(block.summary, "")).filter(Boolean).join(" ").slice(0, 400),
+    steps: blocks.flatMap((block) => Array.isArray(block.steps) ? block.steps : [])
+  };
+}
+
 function rebalanceGuidedProjectFeatureBlocks(rawBlocks) {
   const sourceBlocks = (Array.isArray(rawBlocks) ? rawBlocks : []).filter((block) => block && typeof block === "object");
-  if (sourceBlocks.length < 2 || sourceBlocks.length > 6) {
-    throw new Error("Guided project requires 2-6 feature workshop blocks.");
+  if (sourceBlocks.length < 1) {
+    throw new Error("Guided project requires feature workshop content.");
   }
   const entries = sourceBlocks.flatMap((block) => (Array.isArray(block.steps) ? block.steps : [])
     .filter((step) => step?.type !== "summary")
     .map((step) => ({ block, step })));
-  if (entries.length < 8 || entries.length > 30) {
-    throw new Error(`Guided project requires 8 to 30 guided coding steps across feature blocks; received ${entries.length}.`);
+  if (entries.length < 8) {
+    throw new Error(`Guided project requires at least 8 guided coding steps across feature blocks; received ${entries.length}.`);
   }
-  const minimumBlocks = Math.max(2, Math.ceil(entries.length / 10));
+  const minimumBlocks = Math.min(6, Math.max(2, Math.ceil(entries.length / 10)));
   const maximumBlocks = Math.min(6, Math.floor(entries.length / 4));
-  const blockCount = Math.min(maximumBlocks, Math.max(minimumBlocks, sourceBlocks.length));
+  const blockCount = Math.min(maximumBlocks, Math.max(minimumBlocks, Math.min(6, sourceBlocks.length)));
   const baseSize = Math.floor(entries.length / blockCount);
   let remainder = entries.length % blockCount;
   let cursor = 0;
@@ -747,8 +859,8 @@ function normalizeCompactProjectWorkspaceFiles(files, brief, { projectMode, pref
 function expandCompactProjectSteps(rawSteps, initialFiles, brief, { browserProject }) {
   const files = new Map(initialFiles.map((file) => [file.path, { ...file }]));
   const codingSteps = rawSteps.filter((step) => step?.type !== "summary");
-  if (codingSteps.length < 4 || codingSteps.length > 10) {
-    throw new Error(`Guided-project feature workshop requires 4 to 10 coding steps; received ${codingSteps.length}.`);
+  if (codingSteps.length < 4) {
+    throw new Error(`Guided-project feature workshop requires at least 4 coding steps; received ${codingSteps.length}.`);
   }
   const expanded = codingSteps.map((step, index) => {
     const language = text(step?.language, selectedTechnology(brief)?.displayName || brief.language || brief.framework || "Python");
@@ -834,19 +946,61 @@ function isBrowserRenderedLearningBrief(brief) {
   return /\b(?:react|vue|svelte|d3|chart\.js|p5\.js)\b/i.test(String(brief?.framework ?? ""));
 }
 
-function ensureBrowserWorkspace(files, brief) {
-  const output = files.map((file) => ({ ...file }));
+function isVisualBrowserLearningBrief(brief) {
+  if (requestedBrowserFrameworkId(brief)) return true;
+  return /\b(?:web(?:site|page| app)?|frontend|front-end|ui|visual|dom|canvas|dashboard|portfolio|form)\b/i.test(
+    [brief?.subject, brief?.goal, brief?.desiredOutcome, brief?.motivation].filter(Boolean).join(" ")
+  );
+}
+
+function requestedBrowserFrameworkId(brief) {
+  const request = [brief?.framework, brief?.language, brief?.subject, brief?.goal, brief?.desiredOutcome]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return browserFrameworkCatalog.find((framework) => request.includes(framework.id))?.id ?? null;
+}
+
+function normalizeFocusedExerciseFilePath(path, brief) {
+  if (requestedBrowserFrameworkId(brief) === "react") {
+    const normalized = /\.(?:js|jsx|ts|tsx)$/i.test(path) ? path.replace(/\.(?:jsx|tsx|ts)$/i, ".js") : "app.js";
+    return normalized.includes("/") ? normalized : `src/${normalized.toLowerCase() === "main.js" ? "app.js" : normalized}`;
+  }
+  return path;
+}
+
+function ensureBrowserWorkspace(files, brief, preferredFilePath = null) {
+  const byPath = new Map();
+  files.forEach((file) => { if (!byPath.has(file.path)) byPath.set(file.path, { ...file }); });
+  const output = [...byPath.values()];
   const technologyId = resolveLearningBriefTechnologyId(brief);
-  const editablePath = findTechnology(technologyId)?.defaultFilePath ?? "main.js";
+  const frameworkId = requestedBrowserFrameworkId(brief);
+  const editablePath = preferredFilePath || findTechnology(technologyId)?.defaultFilePath || "main.js";
   const htmlAlreadyOwnsJavaScript = technologyId === "javascript" && output.some((file) => file.path.toLowerCase() === "index.html");
-  if (!htmlAlreadyOwnsJavaScript && !output.some((file) => file.path === editablePath)) {
+  const hasLearnerScript = output.some((file) => /\.(?:js|mjs)$/i.test(file.path));
+  if ((!htmlAlreadyOwnsJavaScript || frameworkId) && !hasLearnerScript && !output.some((file) => file.path === editablePath)) {
     output.push({ path: editablePath, content: "", purpose: "Main learner source", editable: true });
   }
+  if (frameworkId && !output.some((file) => /\.css$/i.test(file.path))) {
+    output.push({
+      path: "styles/app.css",
+      content: "body { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #f4f4ec; }\n#app { padding: 24px; }",
+      purpose: "Focused preview styling",
+      editable: false
+    });
+  }
+  const localStyles = output.filter((file) => /\.css$/i.test(file.path)).map((file) => file.path);
+  const localScripts = output.filter((file) => /\.(?:js|mjs)$/i.test(file.path)).map((file) => file.path);
+  const frameworkScripts = browserFrameworkCatalog
+    .find((framework) => framework.id === frameworkId)?.assets
+    .filter((asset) => asset.type === "script")
+    .map((asset) => asset.url) ?? [];
   let htmlIndex = output.findIndex((file) => file.path.toLowerCase() === "index.html");
   if (htmlIndex < 0) {
     const dependencies = [
-      output.some((file) => file.path === "styles.css") ? '  <link rel="stylesheet" href="styles.css">' : "",
-      output.some((file) => file.path === "main.js") ? '  <script src="main.js" defer></script>' : ""
+      ...localStyles.map((path) => `  <link rel="stylesheet" href="${path}">`),
+      ...frameworkScripts.map((url) => `  <script src="${url}"></script>`),
+      ...localScripts.map((path) => `  <script src="${path}" defer></script>`)
     ].filter(Boolean).join("\n");
     output.unshift({
       path: "index.html",
@@ -856,7 +1010,17 @@ function ensureBrowserWorkspace(files, brief) {
     });
     htmlIndex = 0;
   }
-  const html = output[htmlIndex];
+  let html = output[htmlIndex];
+  for (const path of localStyles) {
+    if (!html.content.includes(path)) html = { ...html, content: html.content.replace(/<\/head>/i, `  <link rel="stylesheet" href="${path}">\n</head>`) };
+  }
+  for (const url of frameworkScripts) {
+    if (!html.content.includes(url)) html = { ...html, content: html.content.replace(/<\/head>/i, `  <script src="${url}"></script>\n</head>`) };
+  }
+  for (const path of localScripts) {
+    if (!html.content.includes(path)) html = { ...html, content: html.content.replace(/<\/body>/i, `  <script src="${path}"></script>\n</body>`) };
+  }
+  output[htmlIndex] = html;
   if (technologyId === "css" && !/href=["'][^"']*\.css["']/i.test(html.content)) {
     output[htmlIndex] = { ...html, content: html.content.replace(/<\/head>/i, '  <link rel="stylesheet" href="styles.css">\n</head>') };
   }
@@ -872,20 +1036,33 @@ function hasRunnableBrowserWorkspace(files) {
   for (const file of files) {
     const path = String(file?.path ?? "");
     if (path.endsWith(".css") && !html.includes(path)) return false;
-    if (path.endsWith(".js") && !html.includes(path)) return false;
+    if (/\.(?:js|mjs)$/i.test(path) && !html.includes(path)) return false;
   }
   return true;
+}
+
+function validateVisualFrameworkWorkspace(files, brief) {
+  const frameworkId = requestedBrowserFrameworkId(brief);
+  if (frameworkId !== "react") return;
+  const html = files.find((file) => String(file?.path).toLowerCase() === "index.html")?.content ?? "";
+  const source = files.filter((file) => /\.(?:js|mjs)$/i.test(String(file?.path))).map((file) => file.content).join("\n");
+  const reactAssets = browserFrameworkCatalog.find((framework) => framework.id === "react")?.assets ?? [];
+  if (!reactAssets.every((asset) => html.includes(asset.url)) || !/ReactDOM\.(?:createRoot|render)\s*\(/.test(source) || !/React\.createElement\s*\(/.test(source)) {
+    throw new Error("React exercises need the approved React runtime plus starter code that renders a real baseline scene in Output.");
+  }
 }
 
 function selectedTechnology(brief) {
   return findTechnology(resolveLearningBriefTechnologyId(brief));
 }
 
-function compactGuidedProjectTheorySteps(rawSteps, phase) {
-  const limit = phase === "introduction" ? 3 : 2;
+function compactGuidedProjectTheorySteps(rawSteps, phase, workshop = null) {
+  const limit = phase === "introduction" ? 4 : phase === "feature" ? 5 : 2;
   const fallback = phase === "introduction"
-    ? "## Before you build\n\nYou will first orient yourself to the project, its useful outcome, and the few ideas the build depends on."
-    : "## Project recap\n\nReview how the finished parts connect and where you can reuse this pattern.";
+    ? "## Before you build\n\nOrient yourself to the project outcome, stack, architecture, and the ideas the build depends on."
+    : phase === "feature"
+      ? `## Understand ${text(workshop?.title, "this feature")}\n\n${text(workshop?.summary, "Learn what this feature does, how data moves through it, and how the next edits connect to the existing project.")}`
+      : "## Project recap\n\nReview how the finished parts connect and where you can reuse this pattern.";
   const explanations = rawSteps
     .filter((step) => step && ["theory", "analogy", "example", "summary"].includes(step.type))
     .map((step) => text(step.markdown, ""))
@@ -926,6 +1103,27 @@ function inferExerciseStrategy(brief) {
   if (brief.difficulty === "random") return "random";
   if (brief.difficulty === "adaptive") return "adaptive";
   return "topic";
+}
+
+function targetExerciseDifficulty(brief, index, total) {
+  const position = Math.max(0, Number(index) || 0);
+  const count = Math.max(1, Number(total) || 1);
+  const progress = count === 1 ? 0 : position / (count - 1);
+  const requested = String(brief?.difficulty ?? "adaptive").toLowerCase();
+  if (requested === "beginner") return "Beginner";
+  if (requested === "intermediate") return progress < 0.3 ? "Beginner" : "Intermediate";
+  if (requested === "advanced") return progress < 0.2 ? "Beginner" : progress < 0.65 ? "Intermediate" : "Advanced";
+  return progress < 0.4 ? "Beginner" : progress < 0.8 ? "Intermediate" : "Advanced";
+}
+
+function validateBeginnerExerciseScope(step) {
+  if (!step || step.type !== "lab") return;
+  if (step.acceptanceCriteria.length > 3) throw new Error("Beginner coding exercises may use at most three acceptance checks.");
+  const files = Array.isArray(step.workspaceFiles) ? step.workspaceFiles : [];
+  const nonEmptyLines = files.reduce((total, file) => total + String(file?.content ?? "").split("\n").filter((line) => line.trim()).length, 0);
+  if (files.length > 5 || nonEmptyLines > 80) {
+    throw new Error(`Beginner coding exercises need a focused workspace of at most five files and 80 non-empty lines; received ${files.length} files and ${nonEmptyLines} lines.`);
+  }
 }
 
 function ragPromptContext(chunks) {

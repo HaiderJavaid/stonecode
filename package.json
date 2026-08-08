@@ -35,6 +35,7 @@
     "verify:exercise-session": "node --no-warnings scripts/verify-exercise-session.mjs",
     "verify:generated-course-content": "node scripts/verify-generated-course-content.mjs",
     "verify:learning-orchestrator": "node scripts/verify-learning-orchestrator.mjs",
+    "verify:progressive-course-generation": "node scripts/verify-progressive-course-generation.mjs",
     "verify:tutor-flow": "node scripts/verify-tutor-flow.mjs",
     "verify:response-stream": "node scripts/verify-response-stream.mjs",
     "verify:usage-summary": "node scripts/verify-usage-summary.mjs",

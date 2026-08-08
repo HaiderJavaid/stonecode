@@ -8,13 +8,12 @@ export const minimumCourseModuleSteps = 6;
 
 export function buildApprovedCourseOutlineContract(proposal) {
   const items = proposalItems(proposal);
-  const stepCeiling = approvedCourseStepCeiling(proposal);
   const stepFloor = items.reduce((total, item) => total + moduleStepTarget(item), 0);
   return `APPROVED COURSE DELIVERY CONTRACT
 - Return exactly ${items.length} modules, in this exact order.
 - Preserve each approved module title and learning direction.
 - Plan enough theory, guided workshop, reinforcement, and review blocks for every module to contain at least its target learner-step count.
-- The complete generated course must contain at least ${stepFloor} and no more than ${stepCeiling} visible learner steps, staying inside the approved ${Number(proposal?.creditQuote?.credits ?? 0)}-Stone quote band.
+- The complete generated course must contain at least ${stepFloor} visible learner steps. The approved ${Number(proposal?.creditQuote?.credits ?? 0)}-Stone quote is fixed; additional valid teaching steps may be included when they improve the course.
 - Do not merge, remove, or add modules.
 
 Approved modules:
@@ -35,7 +34,7 @@ export function buildApprovedModuleDeliveryContract(proposal, moduleIndex) {
   return `APPROVED MODULE DELIVERY CONTRACT
 - This is module ${moduleIndex + 1} of ${items.length}: "${item.title}".
 - Preserve that exact title and direction: ${item.summary}
-- Return between ${minimum} and ${maximum} visible learner steps across this module.
+- Return at least ${minimum} visible learner steps across this module. ${minimum}-${maximum} is the preferred range, but additional valid teaching steps are allowed.
 - Include at least one substantive guided workshop with connected micro-edits.
 - Return this module only. Do not add, remove, merge, or write another module.`;
 }
@@ -164,21 +163,19 @@ export function assertCourseDeliveryScope(proposal, contentValue) {
   });
 
   const approvedCredits = Number(proposal?.creditQuote?.credits ?? 0);
-  let deliveredQuote;
+  let deliveredQuote = null;
   try {
     deliveredQuote = quoteCreationCredits({ type: "course", moduleCount: content.modules.length, stepCount: actualSteps });
-  } catch (error) {
-    throw scopeError(error instanceof Error ? error.message : "Generated course exceeded the supported course scope.");
+  } catch {
+    // The approved quote stays fixed. Extra valid teaching content is a delivery bonus,
+    // including when it exceeds the largest quoting band.
   }
-  if (deliveredQuote.credits > approvedCredits) {
-    throw scopeError(`Generated course requires the ${deliveredQuote.credits}-Stone band but only ${approvedCredits} Stones were approved.`);
-  }
-
   return {
     modules: content.modules.length,
     steps: actualSteps,
     approvedCredits,
-    deliveredBandCredits: deliveredQuote.credits
+    deliveredBandCredits: deliveredQuote?.credits ?? null,
+    exceedsApprovedBand: !deliveredQuote || deliveredQuote.credits > approvedCredits
   };
 }
 

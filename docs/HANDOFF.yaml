@@ -1,18 +1,22 @@
-date: 2026-08-02
+date: 2026-08-08
 project:
   name: Stonecode
   local_path: /Users/kinghaider/Desktop/Coding/projects/stonecode
   branch: codex/reactbits-side-rays-bg
-  commit: b38dbcb
+  commit: 09ccfbe
 status:
   stage: production_revamp_local_candidate
   deployed: false
+  handoff_confidence: high
+  git_status: clean_after_2026_08_08_checkpoint_commit
+  current_diff_scope: Production expansion, progressive generation, discovery/lesson UX, verification tooling, migration, documentation, and visual audit evidence are included in the 2026-08-08 checkpoint commit.
   foundation_migration_applied: true
   atomic_usage_migration_applied: true
   learning_domain_migration_applied: true
+  progressive_generation_migration_applied: true
   luna_model_configured_locally: true
   netlify_production_model_selector_configured: true
-  summary: Production expansion is implemented locally. The shared/server-authoritative catalog targets 21 runnable technologies plus four new computing domains; Julia remains hidden. Discovery carries domainId, optional technologyId, and multi-select focusAreas while preserving free typing. Generation combines isolated domain/technology RAG, requires runtimes for coding paths, and permits conceptual IT/internet Courses without fake execution. The learning-domain migration is applied, but the database still has five enabled and 17 rejected technologies plus four pending-review domains. Fresh corpus approval, the Luna cache-write migration, live Stripe/alerts/sign-offs, paid 75-path generation QA, and post-deploy QA remain.
+  summary: Production expansion, progressive Course launch, and the assessment/lesson UX repair are implemented locally. Discovery persists accepted answers, resolves spaced TypeScript, explicitly selects a mode for broad language requests, offers experienced learners an Exercise Pack route, and handles framework prerequisites without rushing or repeating. Exercise Packs begin with MCQ warm-ups, progress through compact role-play coding tickets, provide real framework Output, and always open on Code. C++ workspaces now resolve to main.cpp instead of notes.txt, ready modules are all clickable for audit, and language Courses open with child-friendly purpose/use-case orientation. A self-cleaning authenticated Python Guided Project generation passed on 2026-08-08. The progressive schema is applied; its capability check also falls back safely on transient schema errors. Remaining work includes four domain corpora, the Luna cache-write migration, production secrets/live Stripe/alerts/sign-offs, paid 75-path generation QA, and post-deploy QA.
   primary_audience: self-taught beginners
   learning_modes:
     - course
@@ -22,7 +26,7 @@ status:
     - legacy short_course records remain readable and new compact requests normalize to course
     - legacy assessment and generation routes remain as compatibility adapters pending two releases with zero observed calls
 implemented:
-  - OpenAI text requests now default to GPT-5.6 Luna with reasoning effort none; usage economics price Luna input, cached reads, cache writes, and output separately
+  - OpenAI text requests default to GPT-5.6 Luna with reasoning effort none; finalized Course, Guided Project, and Exercise Pack generation/repair calls use Fast mode while proposal generation stays Standard, and usage economics price the actual returned service tier
   - social sharing HTML includes canonical/Open Graph/Twitter large-card metadata and a 1200x630 Stonecode preview asset for WhatsApp, Threads, and X/Twitter
   - dashboard shows the authenticated Stones balance with corrected stacked Stonecode marks; compact lesson cards are newest-first with one-line titles, creation dates, balanced outer content padding and inline progress, an independently scrolling list, and synchronized reversible expand/collapse motion; expanded cards use one contextual Back action plus an X close action
   - the runtime Terminal uses a legible charcoal stone surface with restrained depth, refined monospace output, and the established learning-progress green only for semantic status, prompts, and Run controls
@@ -30,17 +34,27 @@ implemented:
   - saved paths reopen on overview/progress home; left navigation waits for Start/Resume and the Code editor no longer collapses when it is the only surface
   - first Start opens the syllabus view; later Resume opens Files at the last selected file
   - Exercise Packs generate in exact-count code/MCQ batches with per-batch validation and repair instead of one fragile large response
-  - Guided Projects use an introduction, 2-6 feature workshop blocks with connected microsteps across block boundaries, and a recap
+  - Guided Projects require a Basic/Advanced scope choice and use an introduction plus 2-6 feature theory/workshop pairs with connected microsteps across block boundaries, followed by a recap
   - Course MCQs are distinct topic-grounded reinforcement exercises; generic repeated fallback quizzes are no longer synthesized
-  - discovery starts with a proper greeting, accepts project/language/feature/end-goal/lesson-type entry points, asks contextual suggested-answer questions, and gathers goals, experience, depth, and preferences without onboarding knowledge tests or dragging past seven useful clarification questions
+  - Course topics vary inline checks, workshops, bug fixes, and small labs; the validator blocks a repeated three-topic practice cadence and reserves hard labs for the final third
+  - every generated/ready Course module is clickable for audit; only unfinished generation checkpoints remain grey
+  - discovery starts from profile/recent-learning context, accepts project/language/feature/end-goal/lesson-type entry points, asks contextual suggested-answer questions, and gathers only plan-changing details without generic guidance-style or onboarding knowledge-test questions
+  - broad language discovery asks Course versus Guided Project versus Exercise Pack, persists its structured draft across turns, and checks framework prerequisites with a foundation-first recommendation when relevant
+  - Exercise Packs use progressive difficulty, isolated focused workspaces, connected real Output for visual frameworks, and Code as the default surface on every transition
+  - Exercise Packs start with up to two MCQ warm-ups, then mix progressive role-play coding tickets that state the user/client need, missing behavior, and outcome
+  - C++ resolves to main.cpp and repairs stale text-only workspaces on revisit; language introductions explain purpose, common builds, and memorable facts in child-friendly language
+  - Course generation checks progressive schema capability and uses compatible full-course generation while the pending migration columns are unavailable
+  - exercise UI auto-opens an animated grey/spinner/green checklist during grading, keeps failure help beneath execution, highlights without editor comments, celebrates completion, switches to green Next, and shows lesson-card progress between modules
+  - code grading accepts equivalent structure and line placement when output/core concepts pass; MCQ retries can complete but award no XP after the first wrong answer
   - browser API calls share one auth boundary that refreshes near-expiry sessions and retries one server 401; server auth retries transient Supabase lookups and returns stable error codes
   - editable LearningProposalV1 with deterministic quote and asynchronous persisted generation jobs
   - append-only credit ledger, grants, expiry ordering, reservations, settlement, release, retries, and idempotency
   - Free and Pro entitlements, monthly tutor/image limits, daily Judge0 limits, and unlimited browser execution
   - server-side runtime catalog gated by editor, enabled manifest, grading, discovered runtime, and approved RAG
   - 22 isolated versioned technology corpora with provenance, chunks, fixtures, ingestion runs, and evaluation tooling
-  - official documentation ingested for all 22 corpora; every corpus scores 1.00 top-five relevance with zero leakage; Python, JavaScript, TypeScript, HTML, and CSS are provenance-approved/enabled; the remaining 17 are explicitly rejected and disabled for launch
-  - local expansion catalog exposes 21 runnable technologies after approval, adds four domain manifests/corpora, and leaves Julia hidden pending runtime
+  - documentation is ingested and approved for all 22 language corpora; every corpus scores 1.00 top-five relevance with zero leakage; all 21 runtime-backed technology manifests are enabled and Julia is approved_pending_runtime
+  - capability-list questions bypass the model, use the live server-authoritative catalog, preserve retries as non-goal turns, and render long rosters as semantic bullet lists
+  - BASIC provenance now uses the FreeBASIC manual matching the configured Judge0 runtime instead of QB64 material
   - LearningBrief and LearningProposal carry domainId, optional technologyId, and focusAreas; focus-area turns render accessible multi-select cards with free typing
   - RAG retrieval can combine one approved domain corpus with one approved language corpus while preserving language/domain isolation and required provenance
   - guarded capability approval refuses direct enablement unless hash/chunk/license/provenance/relevance/leakage/runtime checks pass
@@ -61,9 +75,13 @@ implemented:
   - discovery responses carry request-turn identity; stale client responses are ignored and server questions/chips are generated from one canonical missing field
   - discovery preserves genuinely contextual AI wording only when its structured question field aligns with the canonical missing field; capability questions return server-authoritative technology and domain rosters instead of becoming a false course goal
   - asynchronous Course/Guided Project/Exercise generation retrieves only the approved isolated corpus and persists source/corpus provenance in generated content
+  - Course generation checkpoints each quality-approved module, settles and opens after the first two modules, appends later modules in the background, and resumes from the first missing module without regenerating approved content
+  - later Course modules require both a ready generation checkpoint and sequential learner progress; active generation uses a compact spinner while unavailable modules stay grey
   - provider retries aggregate every attempt's token usage; generation jobs use heartbeats, stale-job recovery, and a three-attempt ceiling
+  - pre-launch generation retains the three-attempt ceiling; launched background completion receives up to eight recovery attempts while preserving the usable launch package
   - Course quality repair makes one smallest-scope repair, regenerates only the affected module if needed, and permits at most one fresh job retry for remaining validation failures; provider/network retries retain the global three-attempt ceiling
   - Course delivery is quote-bound: proposals allocate at least six learner steps per module, every approved module is generated in a bounded call, and partial or out-of-band Courses fail before persistence and settlement
+  - approved step counts are minimum delivery targets, not hard caps; larger valid generated modules are preserved, scope mismatches no longer restart every previously completed module, and repair progress stays monotonic
   - versioned OpenAI price accounting and a read-only generation-economics report roll proposal plus all generation/repair attempts into each job, then compare API spend with Stones charged and nominal Pro Stone allocation
   - authenticated account data export and typed permanent account deletion cancel all Stripe subscriptions, remove private visuals, and cascade user data
   - fresh foundation installs and the pending 2026-08-01 migration use cascade-safe credit/job ownership edges so reserved generation records cannot block permanent account deletion
@@ -80,7 +98,8 @@ feature_flags:
 pending_before_production:
   - apply 2026-08-01-gpt-5-6-luna-cache-accounting.sql; this workstation has no Supabase management login or database password, so the migration cannot be applied from the repository yet
   - rerun authenticated permanent account deletion against a user with a reserved generation job to verify the applied cascade repair
-  - ingest/review/evaluate four domain corpora; re-review all 22 language corpora; enable 21 technologies and four domains through guarded approval; leave Julia approved_pending_runtime
+  - ingest/review/evaluate four domain corpora and enable them through guarded approval
+  - obtain legal clearance for the recorded Dev.java reference-use terms or replace/re-ingest/re-evaluate that source before deployment
   - run the paid 75-path generation matrix after explicit spend approval; rerun browser Output smoke after deployment
   - copy the configured support inbox to the eventual hosted environment and configure STONECODE_ALERT_WEBHOOK_URL with a real monitored destination
   - activate or switch to a live Stonecode Stripe account, create/verify the live $9 Pro price and production webhook, then replace production Stripe credentials in Netlify
@@ -166,6 +185,29 @@ verification_2026_08_01:
       - 17 previously rejected technology manifests, zero approved domain manifests, and the missing domain RAG schema because the migration/re-approval sequence is intentionally not applied
       - live Stripe secret/HTTPS redirects, monitored alert webhook, legal/security sign-offs, and provider-alert confirmation are not configured
       - the existing hosted social-preview URL still returns HTML; local metadata and the 1200x630 PNG asset are correct but require deployment verification
+verification_2026_08_02:
+  passed:
+    - traced failed Rust job 43c26194: two complete attempts, 19 model calls, 117566 input tokens, 130462 output tokens, approximately $0.176 recorded Standard-tier spend, and final module-9 scope failure at 16 generated steps versus a 13-step ceiling
+    - full-course requests now default to Luna Fast across module generation and every repair/retry while proposals remain Standard; Fast-tier pricing and returned-tier accounting tests pass
+    - larger valid modules now remain intact even when they exceed the approved estimate; no-whole-course scope retry regression tests pass
+    - traced request 8f3c8b7e as a pre-generation Guided Project proposal failure: Luna returned an estimate outside the 6-30-step/10-file quote contract, so no proposal or generation job was persisted
+    - proposal normalization now derives authoritative totals, fits only proposal estimates into quote bands, bounds excess outline items, and performs one Standard-tier repair for malformed output instead of exposing validator text
+    - larger valid Guided Projects preserve all generated coding steps; the 21 runnable technologies and four domain paths pass pathological oversized-proposal contract checks
+verification_2026_08_04:
+  passed:
+    - typecheck, zero-warning lint, production build, learning-orchestrator, tutor-flow, production-foundation, generated-content, progressive-generation, progression, exercise-session, execution-sandbox, response-stream, and usage-summary verifiers
+    - dry launch matrix passes all 63 technology/mode paths and 12 domain/mode paths without external generation spend
+    - rendered desktop and mobile discovery/proposal QA confirms overflow-safe Generate and generation-loading states with no horizontal document overflow
+    - authenticated rendered lesson QA confirms animated checklist success, full-card celebration, wrong-MCQ retry lockout with specific feedback, correct retry with no XP, green completion action, and the cross-module progress bar; its exact temporary user was deleted
+  blocked:
+    - the paid Guided Project generation verifier returned HTTP 402 because the available account lacks creation credits; deterministic project contracts and normalization tests pass
+    - Supabase CLI migration history could not be verified because this checkout is not linked to a project; live generation_jobs and course_progress column reads confirm the progressive schema is active
+verification_2026_08_08:
+  passed:
+    - typecheck, zero-warning lint, production build, production-foundation, learning-orchestrator, progressive-course-generation, generated-course-content, tutor-flow, response-stream, usage-summary, ai-costs, execution-sandbox, launch-matrix, and diff-whitespace checks
+    - dry launch matrix passes all 63 technology/mode paths and 12 domain/mode paths without external generation spend
+  blocked:
+    - the authenticated Guided Project generation verifier returned HTTP 402 because the configured test account has insufficient creation credits; this is an external credit-state blocker, not a failing local code assertion
 rules:
   - do not commit, push, deploy, or apply production migrations without explicit approval
   - preserve the stone theme and three-panel IDE
@@ -187,4 +229,4 @@ stripe_sandbox_2026_07_29:
     - deploy-preview
     - branch-deploy
   note: Local .env and Netlify preview contexts contain the matching test Stripe key, price ID, and webhook signing secret. Do not copy sandbox credentials to Netlify Production.
-next_action: Apply the Luna cache-write migration through an authenticated Supabase path. Configure Netlify Production secrets, live Stripe, alert/support routing, provider alerts, and legal/security sign-offs; review/approve the 22 language and four domain corpora; then use the 2026-08-02 deployment approval. Live 18-language Judge0 certification passes; no deployment has occurred.
+next_action: Finish and approve the four domain corpora, apply the Luna cache-write migration through an authenticated Supabase path, and clear or replace the Dev.java source. Configure Netlify Production secrets, live Stripe, alert/support routing, provider alerts, and legal/security sign-offs; then use the 2026-08-02 deployment approval. The 21-language catalog and live 18-language Judge0 certification pass; no deployment has occurred.

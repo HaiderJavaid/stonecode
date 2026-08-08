@@ -324,6 +324,10 @@ ${error instanceof Error ? error.message : "The tutor request failed."}
       lessonStepByCourse: {
         ...current.lessonStepByCourse,
         [courseId]: lessonIndex
+      },
+      highestLessonStepByCourse: {
+        ...current.highestLessonStepByCourse,
+        [courseId]: Math.max(current.highestLessonStepByCourse[courseId] ?? 0, lessonIndex)
       }
     }));
   }

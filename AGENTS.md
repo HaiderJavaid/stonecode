@@ -45,11 +45,11 @@ The current target UX:
 
 The production revamp and computing-domain expansion are implemented locally behind feature flags. The expansion adds a server-authoritative 21-technology launch catalog, four computing domains, guarded corpus approval, domain-isolated RAG, conceptual course support, focus-area multi-select discovery, and expanded certification scripts. Live starter execution passes all 18 Judge0-backed launch technologies.
 
-Both 2026-07-29 migrations and the 2026-08-01 learning-domain migration are applied, and Judge0 is active. Production data remains at the prior reviewed state: all 22 language corpora are ingested/evaluated; five are approved/enabled and 17 are owner-rejected/disabled; four domain manifests exist but remain pending review. Re-approval requires source/hash/license/attribution review and evaluation; Julia must remain hidden until a runtime exists. The GPT-5.6 Luna cache-write accounting migration, live Stripe configuration, and deployment remain pending.
+Both 2026-07-29 migrations, the 2026-08-01 learning-domain migration, and the 2026-08-02 progressive-generation migration are applied, and Judge0 is active. All 22 language corpora are hash/chunk/license reviewed and score 1.00 relevance with zero leakage. The 21 runtime-backed technology manifests are approved/enabled; Julia is `approved_pending_runtime` and remains hidden. Four domain manifests/corpora remain pending review. The GPT-5.6 Luna cache-write accounting migration, live Stripe configuration, and deployment remain pending.
 
 Current branch: `codex/reactbits-side-rays-bg`.
 
-Next product priority: apply the Luna cache-write migration through an authenticated Supabase path; review/re-ingest/re-evaluate the 22 language and four domain corpora; configure Netlify Production secrets, live Stripe, alerting, and sign-offs; then deploy under the approval granted on 2026-08-02. Run post-deploy billing, Marketplace, metadata, security, load, and rollback QA before user testing.
+Next product priority: finish four domain corpora, apply the Luna cache-write migration through an authenticated Supabase path, and configure Netlify Production secrets, live Stripe, alerting, and sign-offs. Java's Dev.java reference-use terms require legal clearance or a replacement source before deployment. Then deploy under the approval granted on 2026-08-02 and run post-deploy billing, Marketplace, metadata, security, load, and rollback QA.
 
 ## Verification
 

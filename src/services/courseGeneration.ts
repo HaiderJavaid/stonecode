@@ -71,6 +71,17 @@ export type GenerationJob = {
   result_course_id: string | null;
   error_code: string | null;
   error_message: string | null;
+  launch_ready_at?: string | null;
+  background_completed_at?: string | null;
+  background_status?: "waiting" | "generating" | "paused" | "complete";
+  ready_module_count?: number;
+  total_module_count?: number;
+  module_states?: Array<{
+    index: number;
+    id: string;
+    title: string;
+    status: "queued" | "generating" | "ready" | "paused";
+  }>;
 };
 
 export function generationJobFailureMessage(job: GenerationJob) {
@@ -118,6 +129,7 @@ export async function requestGenerationJob(jobId: string): Promise<{ job: Genera
 export async function requestLearningDiscoveryTurn(input: {
   messages: Array<{ role: "assistant" | "user"; content: string }>;
   turn: number;
+  draftBrief?: Partial<LearningBrief> | null;
 }): Promise<{ discovery: LearningDiscoveryTurn; source: "ai" }> {
   return requestLearningJson("/api/learning/discovery-turn", input, "continue learning discovery");
 }

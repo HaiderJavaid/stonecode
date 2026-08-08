@@ -49,15 +49,16 @@ authenticated discovery turn
 -> editable LearningProposalV1 + deterministic quote
 -> credit reservation + generation_jobs row
 -> Netlify background worker
--> validated generated content + persisted course
--> credit settlement
+-> validated Module 1 + Module 2 checkpoints
+-> persisted launch-ready course + credit settlement
+-> remaining validated module checkpoints appended server-side
 
 failure/expiry
 -> release reservation
 -> persisted failed job for safe retry
 ```
 
-The client polls `GET /api/generation-jobs/:id` and resumes pending jobs after refresh. Idempotency keys protect proposal and generation retries.
+The setup client polls `GET /api/generation-jobs/:id` until `launch_ready_at` is present, then opens the Course and clears the setup job. While the Course is open, the workspace polls the same durable job to recover stale work and refresh newly appended modules. Idempotency keys plus per-module JSONB checkpoints prevent duplicate Courses and completed-module regeneration.
 
 ## Credits
 
@@ -67,7 +68,7 @@ Creation quotes are deterministic in `shared/stonecode-product.mjs`; the model c
 
 Generation usage records every provider attempt, including retries and repairs, with the actual model, input/cached/output/reasoning tokens, latency, and a versioned estimated text cost. Job aggregates compare spend with Stones charged and nominal subscription-funded Stone allocation. This is operating telemetry, not learner billing.
 
-Course generation first produces an outline constrained to the exact approved proposal, then generates each module in a separate bounded provider call. The worker validates exact module count, minimum per-module teaching scope, and the final quote band before inserting the Course and settling the reservation. Any incomplete or oversized result fails atomically and releases Stones.
+Course generation first produces an outline constrained to the exact approved proposal, then generates each module in a separate bounded provider call. Every module receives deterministic scope checks, isolated RAG grounding, quality validation, and focused repair before checkpointing. Once the first two modules are durable, the worker inserts the full locked outline, settles the reservation, and continues later modules. A pre-launch failure remains atomic; a post-launch interruption preserves approved modules and resumes at the first missing module.
 
 ## Runtime Capability Flow
 
@@ -86,7 +87,7 @@ learningDomainCatalog
 -> available learning domain
 ```
 
-The expansion target exposes 21 runtime-backed technologies. Julia remains hidden and disabled while its approved corpus may remain ready for a future runtime. The current database keeps the previous 17 rejection states until the fresh review workflow completes.
+The database exposes 21 runtime-backed technologies. Julia remains hidden and disabled with `approved_pending_runtime`; its approved corpus is ready for a future runtime. Capability questions bypass the model and render the server-authoritative roster as a structured bullet list.
 
 Browser Output uses an `allow-scripts` iframe, injected CSP, exact pinned asset URLs, blocked arbitrary remote styles/scripts/imports, and no connect access. React uses plain `React.createElement`; Vue and Svelte have reviewed raw-browser conventions. D3, Chart.js, and p5.js use exact pinned globals.
 
@@ -115,6 +116,8 @@ Authenticated account export returns user-owned application records. Permanent a
 `supabase/migrations/2026-08-01-learning-domains-and-expanded-catalog.sql` adds domain manifests, dual technology/domain corpus scoping, domain leakage fixtures, stricter corpus-gated RLS, and domain-aware vector retrieval. It is applied to the configured Supabase project.
 
 `supabase/migrations/2026-08-01-gpt-5-6-luna-cache-accounting.sql` adds cache-write token fields to usage and generation-job economics. It is prepared locally and has not been applied.
+
+`supabase/migrations/2026-08-02-progressive-course-generation.sql` adds launch/background timestamps, durable generation checkpoints, the launch/finalize RPC split, and monotonic highest-lesson progress for prerequisite module locking. It is prepared locally and has not been applied.
 
 ## Feature Flags
 

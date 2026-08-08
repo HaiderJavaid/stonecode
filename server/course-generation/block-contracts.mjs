@@ -109,6 +109,8 @@ Lab block contract:
 - The lab does not need to immediately follow that workshop. Reviews, quizzes, theory, topic transitions, and other workshops may appear between them.
 - Treat the lab as a small checkpoint exam: less guidance, no new concepts, and a concrete independent result.
 - Reuse the same pattern and concept set taught in that workshop, with a different variant and less guidance.
+- Vary labs among small implementation, debugging, bug-fix, missing-feature, transformation, and output-repair tasks.
+- Early and middle labs should be easy or medium and exercise one or two concepts. A hard or cumulative lab belongs only near the end, after multiple workshops and smaller labs.
 - Include goal/context, starterCode, concrete acceptanceCriteria, and expected visible outcome.
 - Include the complete small workspaceFiles manifest when the lab spans multiple files or folders. Visual bug-fix labs preload a working preview shell plus the bug; terminal labs open the Terminal view.
 - Do not introduce a new concept that was not taught earlier.`;

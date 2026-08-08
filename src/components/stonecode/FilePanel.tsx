@@ -155,9 +155,8 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
   const activeModuleIndex = activePath?.moduleIndex;
   const activeChapterId = activePath?.chapterId;
   const activeBlockId = activePath?.blockId;
-  const lessonIndexBySectionId = new Map(
-    resolveCourseLessonSteps(course).map((lesson, lessonIndex) => [lesson.sectionId, lessonIndex])
-  );
+  const resolvedLessons = resolveCourseLessonSteps(course);
+  const lessonIndexBySectionId = new Map(resolvedLessons.map((lesson, lessonIndex) => [lesson.sectionId, lessonIndex]));
 
   useEffect(() => {
     if (activeModuleIndex === undefined) return;
@@ -206,11 +205,12 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
             onToggleChapter={(chapterId) => setExpandedChapterId(expandedChapterId === chapterId ? null : chapterId)}
           />
         ) : (
-          content.chapters.map((chapter, index) => (
-            <button className={`course-module-node module-title-button${index > 0 ? " is-locked" : ""}${activePath?.moduleIndex === index ? " is-current" : ""}`} disabled={index > 0} key={chapter.id} onClick={() => setSelectedModuleIndex(index)} type="button">
+          content.chapters.map((chapter, index) => {
+            const loaded = chapter.sections.some((section) => section.blocks.length > 0);
+            return <button className={`course-module-node module-title-button${!loaded ? " is-locked" : ""}${activePath?.moduleIndex === index ? " is-current" : ""}`} disabled={!loaded} key={chapter.id} onClick={() => setSelectedModuleIndex(index)} type="button">
               <strong>{chapter.title}</strong>
-            </button>
-          ))
+            </button>;
+          })
         )}
       </div>
     );
@@ -218,6 +218,18 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
 
   const navigableContent = toGeneratedCourseContentV2(content);
   const selectedModule = selectedModuleIndex === null ? null : navigableContent.modules[selectedModuleIndex];
+  const progressiveModules = new Map(
+    (navigableContent.progressiveGeneration?.modules ?? []).map((module) => [module.id, module])
+  );
+  const moduleIsGenerated = (module: (typeof navigableContent.modules)[number]) => {
+    const progressiveModule = progressiveModules.get(module.id);
+    if (progressiveModule) return progressiveModule.status === "ready";
+    return module.topics.some((topic) => topic.blocks.some((block) => block.steps.length > 0));
+  };
+  const moduleIsAccessible = (module: (typeof navigableContent.modules)[number]) => moduleIsGenerated(module);
+  const selectedModuleAccessible = selectedModule && selectedModuleIndex !== null
+    ? moduleIsAccessible(selectedModule)
+    : false;
   return (
     <div className="course-module-tree" aria-label="Course modules">
       {selectedModule ? (
@@ -226,7 +238,7 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
             id: topic.id,
             title: topic.title,
             summary: topic.summary,
-            locked: !selectedModule.unlocked || !topic.unlocked,
+            locked: !selectedModuleAccessible || !topic.blocks.some((block) => block.steps.length > 0),
             blocks: topic.blocks.map((block) => ({
               id: block.id,
               kind: block.kind,
@@ -251,21 +263,29 @@ function CourseModuleTree({ activeLessonIndex, course, onSelectLesson }: { activ
           onToggleChapter={(chapterId) => setExpandedChapterId(expandedChapterId === chapterId ? null : chapterId)}
         />
       ) : (
-        navigableContent.modules.map((module, index) => (
-          <button
-            className={`course-module-node module-title-button${!module.unlocked ? " is-locked" : ""}${activePath?.moduleIndex === index ? " is-current" : ""}`}
-            disabled={!module.unlocked}
-            key={module.id}
-            onClick={() => {
-              setSelectedModuleIndex(index);
-              setExpandedChapterId(null);
-              setExpandedBlockId(null);
-            }}
-            type="button"
-          >
-            <strong>{module.title}</strong>
-          </button>
-        ))
+        navigableContent.modules.map((module, index) => {
+          const accessible = moduleIsAccessible(module);
+          const generationStatus = progressiveModules.get(module.id)?.status;
+          return (
+            <button
+              aria-label={`${module.title}${generationStatus === "generating" ? ", generating" : accessible ? "" : ", locked"}`}
+              className={`course-module-node module-title-button${!accessible ? " is-locked" : ""}${activePath?.moduleIndex === index ? " is-current" : ""}`}
+              disabled={!accessible}
+              key={module.id}
+              onClick={() => {
+                setSelectedModuleIndex(index);
+                setExpandedChapterId(null);
+                setExpandedBlockId(null);
+              }}
+              type="button"
+            >
+              <span className="module-title-row">
+                <strong>{module.title}</strong>
+                {generationStatus === "generating" && <i className="module-generation-spinner" aria-hidden="true" />}
+              </span>
+            </button>
+          );
+        })
       )}
     </div>
   );

@@ -10,7 +10,7 @@
 - [x] Keep legacy `short_course` readable while normalizing new compact requests to Course.
 - [x] Add runtime manifests and dynamic Judge0 discovery for the 22-language catalog.
 - [x] Add isolated, versioned RAG corpus/source/chunk/evaluation records and seed/evaluate scripts for all 22 technologies.
-- [x] Ingest official documentation for all 22 technologies and reach 1.00 top-five fixture relevance with zero cross-language leakage; enable only provenance-approved corpora (five priority technologies currently enabled).
+- [x] Ingest and approve documentation for all 22 technologies and reach 1.00 top-five fixture relevance with zero cross-language leakage; enable all 21 runtime-backed technologies and leave Julia hidden pending runtime.
 - [x] Gate visible technologies on editor, manifest, grading, runtime, provenance, relevance, and leakage checks.
 - [x] Replace regex tutor mutations with strict structured patches plus Apply/Reject/Undo.
 - [x] Add lazy private tutor-chat visuals with SVG-first rendering, image caps, caching, fallbacks, and accessible zoom/pan viewer.
@@ -37,24 +37,34 @@
 - [x] Repair Exercise Pack generation with exact-count code/MCQ batches, strict one-problem normalization, targeted batch retry, and final mix validation.
 - [x] Make first Start open the syllabus, later Resume restore Files/last file, split Guided Projects into feature-sized microstep blocks, and enforce topic-grounded non-assessment MCQs.
 - [x] Canonicalize discovery question/suggestion turns and ignore stale browser responses so chips cannot lag behind the visible question.
-- [x] Preserve contextual discovery wording only when its structured field matches the canonical question; answer capability questions with the five approved launch languages and aligned chips.
+- [x] Preserve contextual discovery wording only when its structured field matches the canonical question; answer capability questions directly from the server-authoritative 21-language catalog using bullet lists and aligned chips.
 - [x] Ground asynchronous generation in the approved language-isolated RAG corpus and persist retrieval provenance.
 - [x] Add retry-aware generation job heartbeats and versioned per-job token/API-cost/Stone economics accounting.
 - [x] Add authenticated account export, typed permanent account deletion with Stripe cancellation, request trace IDs, readiness/liveness endpoints, alert-webhook support, and production security headers.
 - [x] Add actionable support contact/diagnostic IDs, expand beta privacy/terms coverage, and document release/rollback/incident/backup operations.
 - [x] Replace fragile whole-Course quality repair with one smallest-scope repair, one affected-module regeneration, and at most one fresh validation retry; fix false-positive same-block MCQ/exercise grounding checks and keep wording uncertainty advisory.
 - [x] Enforce quote-to-delivery parity: Course proposals normalize to at least six learner steps per module, background generation writes every approved module separately, and persistence/settlement reject partial or out-of-band Courses.
+- [x] Make discovery openings learner-contextual, remove the generic guidance-style branch, require Basic/Advanced only for Guided Projects, vary Course practice cadence, teach project features before workshops, tolerate equivalent code, and add checklist/retry/celebration/module-loading feedback with overflow-safe generation UI.
 
 ## Required Before Production Enablement
 
 - [x] Switch the default OpenAI text model and Netlify Production selector to GPT-5.6 Luna with reasoning effort none; add Luna cache-read/cache-write pricing tests.
+- [x] Use Fast mode for finalized Course, Guided Project, and Exercise Pack generation/repair calls, retain Standard proposal generation, account for actual Fast-tier pricing, preserve larger valid modules, and prevent scope failures from restarting every completed module.
+- [x] Implement two-module progressive Course launch with unchanged per-module quality gates, durable resume checkpoints, setup 100% at launch readiness, background append/refresh, generation-readiness locks, and an active-generation spinner; enable every module after its checkpoint is ready.
+- [x] Persist discovery drafts between turns; fix spaced TypeScript resolution; require mode selection for broad language requests; add relevant experience and framework-foundation routing without rushing or repeating.
+- [x] Make Exercise Packs progressive, isolate focused multi-file workspaces, require real framework Output, highlight important constraints, and reset every lesson transition to Code.
+- [x] Start Exercise Packs with MCQ warm-ups, require substantial role-play coding tickets, repair C++ main.cpp workspace selection, add child-friendly language orientation, and block hard labs before the final third.
+- [x] Fall back to compatible full-course generation when the pending progressive-generation columns are absent, instead of exposing a schema-cache error.
+- [x] Prevent model-produced Course/Project proposal count errors from reaching users: normalize quote totals locally, bound excess outline items, retry malformed proposals once, preserve larger generated Guided Projects, and certify all 21 runnable technologies.
 - [ ] Apply `2026-08-01-gpt-5-6-luna-cache-accounting.sql` through an authenticated Supabase migration path.
+- [x] Apply `2026-08-02-progressive-course-generation.sql`; live PostgREST column reads confirm the progressive schema is active (manually applied 2026-08-08).
 - [x] Implement the 21-technology launch catalog, domain-aware contracts, runtime capabilities, multi-select focus UI, generalized file/runtime surfaces, conceptual Course rules, isolated domain RAG tooling, and 75-path dry certification.
 - [x] Apply `2026-08-01-learning-domains-and-expanded-catalog.sql`; four domain manifests now exist pending review.
 - [x] Repair account-deletion cascade blockers for fresh installs and in the pending 2026-08-01 migration; add regression coverage.
 - [ ] Ingest/review/evaluate all four domain corpora.
 - [ ] After migration, rerun authenticated account deletion with a reserved generation job to verify the cascade repair against Supabase.
-- [ ] Re-open and individually verify hash/chunks/license/attribution for the 17 rejected language sources; re-evaluate all 22 corpora, enable 21 manifests through `approve:learning-capability`, and mark Julia `approved_pending_runtime`.
+- [x] Re-open and individually verify hash/chunks/license/attribution for the 17 rejected language sources; re-evaluate all 22 corpora, enable 21 manifests through `approve:learning-capability`, and mark Julia `approved_pending_runtime`.
+- [ ] Obtain legal clearance for the recorded Dev.java reference-use terms or replace/re-ingest/re-evaluate the Java source before production deployment.
 - [x] Run live 18-language Judge0 runtime smoke; fix exact C/R matching, FreeBASIC syntax, and pin the reviewed R runtime that meets the CPU ceiling.
 - [ ] Rerun JavaScript/HTML/CSS rendered Output smoke after deployment.
 - [ ] Run paid live generation certification for 63 technology paths and 12 valid domain paths after explicit external-spend approval.

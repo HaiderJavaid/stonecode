@@ -21,40 +21,68 @@ const blockingQualityCodes = new Set([
   "mcq_topic_mismatch",
   "mcq_duplicate_prompt",
   "quiz_too_short",
-  "syntax_teaching_missing"
+  "repetitive_topic_cadence",
+  "syntax_teaching_missing",
+  "course_introduction_missing_orientation",
+  "hard_lab_before_final_third"
 ]);
 
-export function validateGeneratedCourseQuality(content, { conceptual = false } = {}) {
+export function validateGeneratedCourseQuality(content, { conceptual = false, moduleIndexOffset = 0, totalModuleCount = content?.modules?.length ?? 1 } = {}) {
   if (!content || content.schemaVersion !== "course-content/v2") return [];
 
   const warnings = [];
   for (const [moduleIndex, module] of (content.modules ?? []).entries()) {
+    const courseModuleIndex = moduleIndex + moduleIndexOffset;
     const practiceState = { workshops: 0, labs: 0, practicalBlocks: 0 };
+    let previousPracticeSignature = null;
+    let repeatedPracticeSignatureCount = 0;
     const hasPracticalBlock = (module.topics ?? []).some((topic) =>
       (topic.blocks ?? []).some((block) => ["workshop", "lab", "project"].includes(block.kind))
     );
-    if (moduleIndex === 0 && !conceptual && !hasPracticalBlock) {
+    if (courseModuleIndex === 0 && !hasSubstantiveCourseIntroduction(module)) {
+      warnings.push(createWarning(
+        "course_introduction_missing_orientation",
+        `modules[${moduleIndex}] needs a friendly first lesson explaining what the subject is, why people use it, what learners can build, an interesting fact or analogy, and the course path in language a 10-year-old can follow.`
+      ));
+    }
+    if (courseModuleIndex === 0 && !conceptual && !hasPracticalBlock) {
       warnings.push(createWarning("loaded_module_missing_practical_block", `modules[${moduleIndex}] has no workshop, lab, or project block.`));
     }
 
     for (const [topicIndex, topic] of (module.topics ?? []).entries()) {
       const topicPath = `modules[${moduleIndex}].topics[${topicIndex}]`;
+      const practiceSignature = (topic.blocks ?? [])
+        .map((block) => block?.kind)
+        .filter((kind) => kind && !["theory", "review"].includes(kind))
+        .join(">");
+      if (practiceSignature && practiceSignature === previousPracticeSignature) {
+        repeatedPracticeSignatureCount += 1;
+      } else {
+        previousPracticeSignature = practiceSignature || null;
+        repeatedPracticeSignatureCount = practiceSignature ? 1 : 0;
+      }
+      if (repeatedPracticeSignatureCount >= 3) {
+        warnings.push(createWarning(
+          "repetitive_topic_cadence",
+          `${topicPath} repeats the ${practiceSignature} practice cadence for ${repeatedPracticeSignatureCount} consecutive topics.`
+        ));
+      }
       const hasTheory = (topic.blocks ?? []).some((block) => block.kind === "theory");
       const hasTeachingTheory = (topic.blocks ?? []).some((block) => block.kind === "theory" && hasTeachingSteps(block));
-      if (moduleIndex === 0 && !hasTheory) {
+      if (courseModuleIndex === 0 && !hasTheory) {
         warnings.push(createWarning("topic_missing_theory", `${topicPath} has no theory block.`));
       }
-      if (moduleIndex === 0 && !hasTeachingTheory) {
+      if (courseModuleIndex === 0 && !hasTeachingTheory) {
         warnings.push(createWarning("topic_missing_theory_teaching", `${topicPath} has no theory block with teaching steps.`));
       }
 
       const firstBlock = (topic.blocks ?? [])[0];
-      if (moduleIndex === 0 && firstBlock && (firstBlock.kind !== "theory" || !hasTeachingSteps(firstBlock))) {
+      if (courseModuleIndex === 0 && firstBlock && (firstBlock.kind !== "theory" || !hasTeachingSteps(firstBlock))) {
         warnings.push(createWarning("topic_starts_without_theory_teaching", `${topicPath} does not start with real theory teaching.`));
       }
 
       const hasInteractiveBlock = (topic.blocks ?? []).some((block) => ["quiz", "workshop", "lab", "project"].includes(block.kind));
-      if (moduleIndex === 0 && !hasInteractiveBlock) {
+      if (courseModuleIndex === 0 && !hasInteractiveBlock) {
         warnings.push(createWarning("topic_missing_interactive_block", `${topicPath} has no quiz, workshop, lab, or project block.`));
       }
 
@@ -62,7 +90,10 @@ export function validateGeneratedCourseQuality(content, { conceptual = false } =
       const topicMcqPrompts = new Set();
       for (const [blockIndex, block] of (topic.blocks ?? []).entries()) {
         const blockPath = `${topicPath}.blocks[${blockIndex}]`;
-        if (moduleIndex === 0) validatePracticeProgression(block, blockPath, warnings, practiceState);
+        if (block?.kind === "lab" && isHardOrCumulativeLab(block) && courseModuleIndex < Math.ceil(Math.max(totalModuleCount, 1) * 2 / 3)) {
+          warnings.push(createWarning("hard_lab_before_final_third", `${blockPath} is a hard or cumulative lab before the final third of the course.`));
+        }
+        if (courseModuleIndex === 0) validatePracticeProgression(block, blockPath, warnings, practiceState);
         validateBlock(block, blockPath, warnings, priorTeaching.join("\n"), `${topic.title ?? ""} ${topic.summary ?? ""}`, topicMcqPrompts);
         for (const step of Array.isArray(block?.steps) ? block.steps : []) {
           if (["theory", "analogy", "example", "summary"].includes(step?.type)) priorTeaching.push(cleanText(step.markdown));
@@ -71,6 +102,24 @@ export function validateGeneratedCourseQuality(content, { conceptual = false } =
     }
   }
   return warnings;
+}
+
+function hasSubstantiveCourseIntroduction(module) {
+  const firstTeachingStep = (module?.topics?.[0]?.blocks ?? [])
+    .find((block) => block?.kind === "theory")
+    ?.steps?.find((step) => ["theory", "analogy", "example"].includes(step?.type));
+  const markdown = cleanText(firstTeachingStep?.markdown);
+  const paragraphs = String(firstTeachingStep?.markdown ?? "").split(/\n\s*\n/).filter((paragraph) => paragraph.trim());
+  const wordCount = markdown.split(/\s+/).filter(Boolean).length;
+  const hasPurposeAndPossibility = /\b(?:used?|useful|build|create|make|game|app|website|robot|system|tool|real[- ]world)\b/i.test(markdown);
+  return paragraphs.length >= 3 && wordCount >= 90 && hasPurposeAndPossibility;
+}
+
+function isHardOrCumulativeLab(block) {
+  const textValue = [block?.title, block?.summary, ...(block?.steps ?? []).flatMap((step) => [step?.context, step?.prompt])]
+    .filter(Boolean)
+    .join(" ");
+  return /\b(?:hard|advanced|comprehensive|cumulative|capstone|final challenge|overall knowledge)\b/i.test(textValue);
 }
 
 export function hasBlockingGeneratedCourseQualityWarnings(warnings) {

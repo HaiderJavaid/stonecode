@@ -64,7 +64,7 @@ Verify on the real deployed origin:
 1. Signup/login/recovery/logout and session expiry.
 2. Discovery from sparse and complete prompts; suggestions match the visible question and finish within seven useful questions.
 3. Course, Guided Project, and Exercise Pack quote, reservation, background generation, refresh/resume, and failure release.
-4. Python, JavaScript, TypeScript, HTML, and CSS execution, grading, and RAG provenance. Confirm the other 17 technologies remain unavailable.
+4. All 21 enabled technologies: 18 Judge0 languages plus JavaScript/HTML/CSS browser execution, grading, and isolated RAG provenance. Confirm Julia remains unavailable.
 5. Tutor patch Apply/Reject/Undo, traversal attempts, visual ownership/cache/fallback, and course/account deletion.
 6. Free and Pro limits, live Stripe checkout, webhook sync, renewal idempotency, portal cancellation, and failed-payment behavior.
 7. Marketplace lifecycle in a separate pass without changing its rollout state during unrelated hardening.

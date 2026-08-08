@@ -1393,7 +1393,15 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 }
 
 .setup-controls {
-  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  grid-template-columns: minmax(88px, 0.72fr) minmax(128px, 1.28fr);
+}
+
+.setup-controls > button {
+  width: 100%;
+  min-width: 0;
+  padding-right: 9px;
+  padding-left: 9px;
+  overflow: hidden;
 }
 
 .setup-controls .is-secondary {
@@ -1407,6 +1415,7 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   align-items: center;
   justify-content: center;
   gap: 8px;
+  white-space: nowrap;
   border-color: rgba(84, 221, 136, 0.54);
   background:
     linear-gradient(145deg, rgba(95, 239, 151, 0.2), rgba(25, 94, 53, 0.22)),
@@ -1415,6 +1424,14 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   box-shadow:
     inset 0 0 0 1px rgba(121, 255, 170, 0.08),
     0 0 22px rgba(55, 211, 111, 0.14);
+}
+
+.setup-controls .setup-stone-action > span {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  color: inherit;
+  font: inherit;
 }
 
 .setup-controls .setup-stone-action:hover,
@@ -1426,15 +1443,30 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 }
 
 .setup-controls .setup-stone-action .stone-stack-mark {
-  width: 26px;
-  height: 24px;
-  flex-basis: 26px;
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+  margin: 0;
 }
+
+.setup-controls .setup-stone-action .stone-stack-mark > .stonecode-logo-mark {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+}
+
+.setup-controls .setup-stone-action .stone-stack-mark > .stonecode-logo-mark:nth-child(1) { left: 0; bottom: 0; }
+.setup-controls .setup-stone-action .stone-stack-mark > .stonecode-logo-mark:nth-child(2) { left: 2px; bottom: 2px; }
+.setup-controls .setup-stone-action .stone-stack-mark > .stonecode-logo-mark:nth-child(3) { left: 4px; bottom: 4px; }
 
 .setup-stone-cost {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .setup-stone-cost strong {
@@ -1478,6 +1510,9 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 }
 
 .course-proposal {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   margin-top: 4px;
   padding: 14px;
   border: 1px solid rgba(106, 183, 137, 0.16);
@@ -1522,9 +1557,11 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 }
 
 .setup-plan-summary dd {
+  min-width: 0;
   margin: 0;
   color: rgba(239, 239, 230, 0.72);
   font: 12px/1.45 Inter, ui-sans-serif, system-ui, sans-serif;
+  overflow-wrap: anywhere;
 }
 
 .setup-plan-summary ul {
@@ -1542,15 +1579,18 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 
 .proposal-loading {
   display: grid;
-  grid-template-columns: 24px 1fr;
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
+  column-gap: 10px;
+  row-gap: 8px;
+  min-height: 58px;
+  flex: 0 0 auto;
   margin-top: 10px;
   padding: 9px 10px;
   border: 1px solid rgba(112, 218, 151, 0.14);
   border-radius: 8px;
   background: rgba(5, 12, 9, 0.42);
+  overflow: hidden;
 }
 
 .proposal-loading i {
@@ -1562,20 +1602,43 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   animation: proposal-spin 760ms linear infinite;
 }
 
-.proposal-loading p {
+.course-setup-card .proposal-loading p {
   display: grid;
   gap: 3px;
   padding: 0;
+  min-width: 0;
+  min-height: 0;
 }
 
 .proposal-loading strong {
   color: rgba(240, 244, 232, 0.82);
   font: 650 10px/1.1 Inter, ui-sans-serif, system-ui, sans-serif;
+  overflow-wrap: anywhere;
 }
 
-.proposal-loading span {
+.course-setup-card .proposal-loading span {
+  display: block;
+  margin: 0;
   color: rgba(229, 229, 220, 0.48);
   font: 9px/1.25 Inter, ui-sans-serif, system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.proposal-loading-track {
+  grid-column: 1 / -1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(112, 218, 151, 0.1);
+}
+
+.proposal-loading-track b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(60, 192, 109, 0.72), rgba(123, 239, 165, 0.92));
+  box-shadow: 0 0 10px rgba(91, 214, 137, 0.24);
+  transition: width 280ms ease;
 }
 
 @keyframes proposal-spin {
@@ -1617,6 +1680,7 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 .learning-proposal-items input,
 .learning-proposal-items textarea {
   width: 100%;
+  min-width: 0;
   border: 1px solid rgba(112, 218, 151, 0.18);
   border-radius: 7px;
   outline: none;
@@ -2036,6 +2100,29 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   box-shadow: inset 3px 0 0 rgba(116, 217, 159, 0.78);
 }
 
+.course-module-node .module-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.course-module-node .module-title-row strong {
+  min-width: 0;
+}
+
+.course-module-node .module-generation-spinner {
+  display: block;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(238, 238, 228, 0.18);
+  border-top-color: rgba(116, 217, 159, 0.82);
+  border-radius: 50%;
+  animation: proposal-spin 760ms linear infinite;
+}
+
 .module-title-button:disabled,
 .module-step-tile:disabled {
   cursor: default;
@@ -2050,6 +2137,12 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 .course-module-node.is-locked,
 .course-module-node li.is-locked {
   opacity: 0.48;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .course-module-node .module-generation-spinner {
+    animation-duration: 1800ms;
+  }
 }
 
 .course-module-node strong,
@@ -2370,16 +2463,23 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 
 .editor-exercise-checklist span {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
   color: rgba(238, 238, 228, 0.58);
   font: 11px/1.35 Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 .editor-exercise-checklist i {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1px solid rgba(238, 238, 228, 0.28);
+  border-radius: 4px;
   color: rgba(238, 238, 228, 0.38);
-  font: 800 9px/1.35 "SF Mono", ui-monospace, monospace;
-  text-transform: uppercase;
+  font: 850 10px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  font-style: normal;
 }
 
 .editor-exercise-checklist span.is-passed {
@@ -2387,7 +2487,21 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 }
 
 .editor-exercise-checklist span.is-passed i {
+  border-color: rgba(107, 224, 154, 0.78);
+  border-radius: 50%;
+  background: rgba(52, 176, 99, 0.28);
   color: rgba(107, 224, 154, 0.9);
+}
+
+.editor-exercise-checklist span.is-checking i {
+  border-color: rgba(116, 217, 159, 0.18);
+  border-top-color: rgba(116, 217, 159, 0.9);
+  border-radius: 50%;
+  animation: checklist-checking-spin 620ms linear infinite;
+}
+
+@keyframes checklist-checking-spin {
+  to { transform: rotate(360deg); }
 }
 
 .file-panel-footer {
@@ -3591,6 +3705,90 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
     0 0 30px rgba(54, 224, 113, 0.12);
 }
 
+.shadow-card.is-active.is-exercise-complete {
+  border-color: rgba(105, 255, 162, 0.78);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(91, 230, 142, 0.18), transparent 36%),
+    linear-gradient(180deg, #061009, #020503 64%, #030704);
+  box-shadow:
+    inset 0 0 18px rgba(82, 237, 139, 0.17),
+    inset 0 0 48px rgba(54, 224, 113, 0.1),
+    0 0 16px rgba(72, 255, 138, 0.3),
+    0 0 42px rgba(54, 224, 113, 0.16);
+}
+
+.shadow-card.is-active.is-exercise-complete .selection-panel.is-exercise-step {
+  background:
+    radial-gradient(circle at 50% 12%, rgba(78, 208, 126, 0.13), transparent 42%),
+    linear-gradient(180deg, rgba(2, 10, 5, 0.98), rgba(1, 4, 2, 1));
+}
+
+.lesson-complete-confetti {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lesson-complete-confetti i {
+  position: absolute;
+  top: 7%;
+  width: 7px;
+  height: 12px;
+  border-radius: 2px;
+  background: #6fe59b;
+  box-shadow: 0 0 7px rgba(103, 236, 153, 0.4);
+  animation: lesson-confetti-fall 1.45s cubic-bezier(0.15, 0.72, 0.28, 1) both;
+}
+
+.lesson-complete-confetti i:nth-child(3n) { background: #f0c85e; }
+.lesson-complete-confetti i:nth-child(3n + 1) { background: #75a8ef; }
+.lesson-complete-confetti i:nth-child(even) { width: 10px; height: 6px; animation-name: lesson-confetti-fall-alt; }
+
+@keyframes lesson-confetti-fall {
+  0% { opacity: 0; transform: translate3d(-12px, -32px, 0) rotate(0deg) scale(0.7); }
+  12% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(22px, 72vh, 0) rotate(620deg) scale(1); }
+}
+
+@keyframes lesson-confetti-fall-alt {
+  0% { opacity: 0; transform: translate3d(14px, -28px, 0) rotate(0deg) scale(0.7); }
+  12% { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(-26px, 68vh, 0) rotate(-540deg) scale(1); }
+}
+
+.module-transition-progress {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 40;
+  height: 4px;
+  overflow: hidden;
+  background: rgba(92, 226, 142, 0.12);
+  pointer-events: none;
+}
+
+.module-transition-progress i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, #3bb96e, #83f0ab);
+  box-shadow: 0 0 13px rgba(83, 232, 139, 0.52);
+  animation: module-transition-fill 650ms ease-out forwards;
+}
+
+@keyframes module-transition-fill {
+  to { transform: scaleX(1); }
+}
+
+.shadow-card.is-module-transitioning .selection-panel {
+  pointer-events: none;
+}
+
 .selection-panel.is-exercise-step {
   contain: layout style;
   background: var(--xp-reflective-fill);
@@ -3884,9 +4082,14 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   .selection-panel.is-exercise-step,
   .shadow-card.is-active.is-exercise-step .card-top::before,
   .selection-panel.is-exercise-step::after,
-  .selection-panel.is-exercise-step::before {
+  .selection-panel.is-exercise-step::before,
+  .lesson-complete-confetti i,
+  .module-transition-progress i,
+  .editor-exercise-checklist span.is-checking i {
     animation: none;
   }
+
+  .module-transition-progress i { transform: scaleX(1); }
 }
 
 .xp-template-button {
@@ -4094,6 +4297,21 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   font-weight: 600;
 }
 
+.learning-callout {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(93, 214, 137, 0.22);
+  border-left: 3px solid rgba(91, 220, 139, 0.82);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(40, 116, 70, 0.16), rgba(16, 35, 25, 0.34));
+  color: rgba(220, 234, 222, 0.72);
+  font: 10px/1.5 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.learning-callout strong {
+  color: rgba(113, 232, 156, 0.94);
+}
+
 .typing-caret {
   display: inline-block;
   width: 5px;
@@ -4207,9 +4425,17 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 
 .lesson-options .option-feedback.is-correct,
 .chat-dock > .option-feedback.is-correct {
-  border-color: rgba(91, 214, 137, 0.14);
-  background: rgba(91, 214, 137, 0.055);
-  color: rgba(157, 228, 183, 0.76);
+  border-color: rgba(91, 214, 137, 0.34);
+  background: rgba(65, 188, 110, 0.13);
+  color: rgba(190, 247, 210, 0.9);
+  box-shadow: inset 0 0 14px rgba(68, 213, 121, 0.06);
+}
+
+.lesson-options .option-feedback.is-checking,
+.chat-dock > .option-feedback.is-checking {
+  border-color: rgba(137, 169, 228, 0.16);
+  background: rgba(93, 124, 184, 0.06);
+  color: rgba(190, 205, 232, 0.72);
 }
 
 .reply-suggestions button {
@@ -4242,6 +4468,12 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
   border-color: rgba(91, 214, 137, 0.14);
   background: rgba(91, 214, 137, 0.055);
   color: rgba(157, 228, 183, 0.78);
+}
+
+.workshop-check-message.is-error {
+  border-color: rgba(231, 104, 92, 0.34);
+  background: rgba(190, 58, 49, 0.12);
+  color: rgba(249, 193, 185, 0.9);
 }
 
 .workshop-check-message > strong {
@@ -4302,6 +4534,17 @@ code .muted { color: rgba(220, 220, 212, 0.31); }
 .lesson-controls button:disabled {
   cursor: not-allowed;
   color: rgba(235, 235, 226, 0.28);
+}
+
+.lesson-controls button.is-complete-action,
+.selection-panel.is-exercise-step .lesson-controls button.is-complete-action {
+  border-color: rgba(103, 235, 151, 0.52);
+  background: linear-gradient(145deg, rgba(61, 192, 109, 0.82), rgba(30, 122, 66, 0.9));
+  color: rgba(243, 255, 247, 0.98);
+  font-weight: 750;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 0 16px rgba(70, 218, 125, 0.2);
 }
 
 .ai-chat-panel .lesson-controls {

@@ -7,7 +7,6 @@ import {
   normalizeGeneratedCourseContent
 } from "../course-generation.mjs";
 import {
-  approvedCourseStepCeiling,
   approvedModuleStepRange,
   assembleCompleteApprovedCourse,
   assertCourseDeliveryScope,
@@ -15,7 +14,6 @@ import {
   countModuleSteps,
   createApprovedCourseSkeleton,
   mergeApprovedGeneratedModule,
-  moduleStepTarget
 } from "./course-delivery.mjs";
 import {
   groupGeneratedCourseWarningsByModule,
@@ -58,6 +56,10 @@ export async function processGenerationJob({ admin, jobId, env = process.env }) 
 
     const providerConfig = resolveTutorProviderConfig(env, proposalRow.proposal?.type === "course" ? "course_structure" : proposalRow.proposal?.type === "exercise" ? "exercise_generation" : "guided_project");
     if (providerConfig.error) throw workerError("provider_unavailable", providerConfig.error);
+    const fullGenerationProviderConfig = {
+      ...providerConfig,
+      serviceTier: resolveCourseGenerationServiceTier(env)
+    };
     const ragContext = await retrieveRagContext({
       admin,
       config: providerConfig,
@@ -71,30 +73,43 @@ export async function processGenerationJob({ admin, jobId, env = process.env }) 
     assertRequiredRagContext({ domainId, technologyId, ragContext });
     const assessmentReview = directReview(brief, proposalRow.proposal);
     let content;
-    if (proposalRow.proposal?.type === "exercise") {
-      content = await generateExerciseContent({ admin, job, providerConfig, brief, proposal: proposalRow.proposal, ragContext });
-    } else if (proposalRow.proposal?.type === "course") {
+    if (proposalRow.proposal?.type === "course" && await supportsProgressiveCourseGeneration(admin)) {
+      return await generateProgressiveCourse({
+        admin,
+        job,
+        env,
+        providerConfig: fullGenerationProviderConfig,
+        brief,
+        proposal: proposalRow.proposal,
+        assessmentReview,
+        ragContext,
+        generationCapability
+      });
+    }
+    if (proposalRow.proposal?.type === "course") {
       content = await generateCompleteCourseContent({
         admin,
         job,
         env,
-        providerConfig,
+        providerConfig: fullGenerationProviderConfig,
         brief,
         proposal: proposalRow.proposal,
         assessmentReview,
         ragContext
       });
+    } else if (proposalRow.proposal?.type === "exercise") {
+      content = await generateExerciseContent({ admin, job, providerConfig: fullGenerationProviderConfig, brief, proposal: proposalRow.proposal, ragContext });
     } else {
       const prompt = generationPrompt({ brief, proposal: proposalRow.proposal, assessmentReview, ragContext });
       const maxTokens = 16000;
-      const result = await requestCourseGenerationJson({ config: providerConfig, prompt, maxTokens });
-      await recordWorkerUsage(admin, job, providerConfig, result, "learning_path_generation");
+      const result = await requestCourseGenerationJson({ config: fullGenerationProviderConfig, prompt, maxTokens });
+      await recordWorkerUsage(admin, job, fullGenerationProviderConfig, result, "learning_path_generation");
       if (!result.ok) throw workerError("generation_failed", result.error ?? "AI generation failed.");
       content = await normalizeAndRepairGeneratedContent({
         admin,
         job,
         env,
-        providerConfig,
+        providerConfig: fullGenerationProviderConfig,
         brief,
         assessmentReview,
         ragContext,
@@ -127,10 +142,12 @@ export async function processGenerationJob({ admin, jobId, env = process.env }) 
     }
     return { status: "succeeded", courseId: course.id };
   } catch (error) {
-    if (canRetryGenerationJob(job, error)) {
+    const launchedJob = await readGenerationLaunch(admin, job.id);
+    if (canRetryGenerationJob({ ...job, launch_ready_at: launchedJob?.launch_ready_at ?? job.launch_ready_at }, error)) {
+      await markProgressiveGenerationInterrupted(admin, launchedJob, "queued").catch(() => null);
       await updateJob(admin, job.id, {
         status: "queued",
-        progress: 5,
+        progress: launchedJob?.launch_ready_at ? 100 : 5,
         error_code: error?.code ?? "generation_attempt_failed",
         error_message: String(error instanceof Error ? error.message : error).slice(0, 1200),
         started_at: null,
@@ -138,18 +155,42 @@ export async function processGenerationJob({ admin, jobId, env = process.env }) 
       });
       return { status: "queued", retry: true, error: error instanceof Error ? error.message : String(error) };
     }
-    await releaseCredits(admin, { userId: job.user_id, reservationId: job.reservation_id }).catch(() => null);
+    if (!launchedJob?.launch_ready_at) {
+      await releaseCredits(admin, { userId: job.user_id, reservationId: job.reservation_id }).catch(() => null);
+    }
+    await markProgressiveGenerationInterrupted(admin, launchedJob, "paused").catch(() => null);
     await updateJob(admin, job.id, {
       status: "failed",
       error_code: error?.code ?? "generation_job_failed",
       error_message: String(error instanceof Error ? error.message : error).slice(0, 1200),
       completed_at: new Date().toISOString()
     });
-    return { status: "failed", error: error instanceof Error ? error.message : String(error) };
+    return {
+      status: "failed",
+      courseId: launchedJob?.result_course_id ?? null,
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 }
 
-export async function generateCompleteCourseContent({
+async function supportsProgressiveCourseGeneration(admin) {
+  const { error } = await admin
+    .from("generation_jobs")
+    .select("generation_state,launch_ready_at")
+    .limit(1);
+  if (!error) return true;
+  if (["PGRST204", "42703"].includes(String(error.code ?? "")) || /generation_state|launch_ready_at|schema cache/i.test(String(error.message ?? ""))) {
+    console.warn("Progressive generation schema is unavailable; using full-course compatibility generation.");
+    return false;
+  }
+  console.warn("Progressive generation schema check failed; using full-course compatibility generation.", {
+    code: error.code ?? "unknown",
+    message: error.message || error.details || "No database error message was returned."
+  });
+  return false;
+}
+
+async function generateProgressiveCourse({
   admin,
   job,
   env,
@@ -158,7 +199,7 @@ export async function generateCompleteCourseContent({
   proposal,
   assessmentReview,
   ragContext,
-  existingModules = []
+  generationCapability
 }) {
   const subject = subjectForLearningBrief(brief);
   const courseBlueprint = courseBlueprintFromProposal(proposal);
@@ -169,30 +210,53 @@ export async function generateCompleteCourseContent({
     courseBlueprint,
     ragSources: ragContext
   });
-  await updateJob(admin, job.id, { progress: 15 });
+  const launchModuleCount = Math.min(2, skeleton.modules.length);
+  const generationProvenance = buildGenerationProvenance(generationCapability, ragContext);
+  let state = restoreProgressiveGenerationState(job.generation_state, { jobId: job.id, skeleton, launchModuleCount });
+  let courseId = job.result_course_id ?? null;
 
-  const modules = [];
-  let generatedStepTotal = 0;
-  const totalStepCeiling = approvedCourseStepCeiling(proposal);
+  await updateJob(admin, job.id, {
+    progress: courseId ? 100 : Math.max(Number(job.progress ?? 0), 15),
+    generation_state: state
+  });
+  if (courseId) {
+    await persistProgressiveCourseSnapshot(admin, {
+      userId: job.user_id,
+      courseId,
+      jobId: job.id,
+      brief,
+      proposal,
+      skeleton,
+      state,
+      generationCapability,
+      generationProvenance
+    });
+  }
+
   for (let moduleIndex = 0; moduleIndex < skeleton.modules.length; moduleIndex += 1) {
-    const existing = existingModules[moduleIndex];
-    const { minimum, maximum: preferredMaximum } = approvedModuleStepRange(proposal, moduleIndex);
-    const remainingMinimum = proposal.items
-      .slice(moduleIndex + 1)
-      .reduce((total, item) => total + moduleStepTarget(item), 0);
-    const hardMaximum = totalStepCeiling - generatedStepTotal - remainingMinimum;
-    if (
-      existing &&
-      String(existing.title ?? "").trim().toLowerCase() === String(proposal.items[moduleIndex]?.title ?? "").trim().toLowerCase() &&
-      countModuleSteps(existing) >= minimum &&
-      countModuleSteps(existing) <= hardMaximum
-    ) {
-      const preserved = mergeApprovedGeneratedModule(skeleton, existing, moduleIndex, proposal);
-      modules.push(preserved);
-      generatedStepTotal += countModuleSteps(preserved);
-      continue;
+    if (state.modules[moduleIndex]?.status === "ready" && state.modules[moduleIndex]?.content) continue;
+    state = updateProgressiveModuleState(state, moduleIndex, { status: "generating", content: null });
+    await updateJob(admin, job.id, {
+      progress: courseId ? 100 : launchProgressBeforeModule(moduleIndex, launchModuleCount),
+      generation_state: state,
+      error_code: null,
+      error_message: null
+    });
+    if (courseId) {
+      await persistProgressiveCourseSnapshot(admin, {
+        userId: job.user_id,
+        courseId,
+        jobId: job.id,
+        brief,
+        proposal,
+        skeleton,
+        state,
+        generationCapability,
+        generationProvenance
+      });
     }
 
+    const { minimum, maximum: preferredMaximum } = approvedModuleStepRange(proposal, moduleIndex);
     const modulePrompt = `${buildAssessmentModuleContentPrompt({
       subject,
       answers: [],
@@ -211,11 +275,148 @@ export async function generateCompleteCourseContent({
       proposal,
       moduleIndex,
       minimum,
-      preferredMaximum,
-      hardMaximum
+      preferredMaximum
+    });
+    const approvedModule = await approveProgressiveCourseModule({
+      admin,
+      job,
+      env,
+      brief,
+      proposal,
+      assessmentReview,
+      ragContext,
+      skeleton,
+      moduleIndex,
+      module: generatedModule
+    });
+    state = updateProgressiveModuleState(state, moduleIndex, { status: "ready", content: approvedModule });
+    await updateJob(admin, job.id, {
+      progress: courseId ? 100 : launchProgressAfterModule(moduleIndex, launchModuleCount),
+      generation_state: state
+    });
+
+    if (!courseId && readyProgressiveModuleCount(state) >= launchModuleCount) {
+      const course = await persistProgressiveCourseSnapshot(admin, {
+        userId: job.user_id,
+        courseId: null,
+        jobId: job.id,
+        brief,
+        proposal,
+        skeleton,
+        state,
+        generationCapability,
+        generationProvenance
+      });
+      courseId = course.id;
+      await launchProgressiveGenerationJob(admin, {
+        userId: job.user_id,
+        jobId: job.id,
+        courseId,
+        reservationId: job.reservation_id
+      });
+    } else if (courseId) {
+      await persistProgressiveCourseSnapshot(admin, {
+        userId: job.user_id,
+        courseId,
+        jobId: job.id,
+        brief,
+        proposal,
+        skeleton,
+        state,
+        generationCapability,
+        generationProvenance
+      });
+    }
+  }
+
+  if (!courseId) throw workerError("course_persistence_failed", "The launch modules were not persisted.");
+  const generatedModules = state.modules.map((entry) => entry.content);
+  let content = assembleCompleteApprovedCourse(skeleton, generatedModules, proposal);
+  content = await repairGeneratedCourseQuality({ admin, job, env, brief, assessmentReview, ragContext, content, reportProgress: false });
+  content = assembleCompleteApprovedCourse(
+    skeleton,
+    content.modules.map((module, moduleIndex) => mergeApprovedGeneratedModule(skeleton, module, moduleIndex, proposal)),
+    proposal
+  );
+  state = completeProgressiveGenerationState(state, content.modules);
+  await updateJob(admin, job.id, { progress: 100, generation_state: state });
+  await persistProgressiveCourseSnapshot(admin, {
+    userId: job.user_id,
+    courseId,
+    jobId: job.id,
+    brief,
+    proposal,
+    skeleton,
+    state,
+    generationCapability,
+    generationProvenance,
+    completeContent: content
+  });
+  await completeProgressiveGenerationJob(admin, { userId: job.user_id, jobId: job.id, courseId });
+  return { status: "succeeded", courseId, launchReady: true };
+}
+
+export async function generateCompleteCourseContent({
+  admin,
+  job,
+  env,
+  providerConfig,
+  brief,
+  proposal,
+  assessmentReview,
+  ragContext,
+  existingModules = []
+}) {
+  const courseProviderConfig = {
+    ...providerConfig,
+    serviceTier: resolveCourseGenerationServiceTier(env)
+  };
+  const subject = subjectForLearningBrief(brief);
+  const courseBlueprint = courseBlueprintFromProposal(proposal);
+  const skeleton = createApprovedCourseSkeleton({
+    proposal,
+    subject,
+    assessmentReview,
+    courseBlueprint,
+    ragSources: ragContext
+  });
+  await updateJob(admin, job.id, { progress: 15 });
+
+  const modules = [];
+  for (let moduleIndex = 0; moduleIndex < skeleton.modules.length; moduleIndex += 1) {
+    const existing = existingModules[moduleIndex];
+    const { minimum, maximum: preferredMaximum } = approvedModuleStepRange(proposal, moduleIndex);
+    if (
+      existing &&
+      String(existing.title ?? "").trim().toLowerCase() === String(proposal.items[moduleIndex]?.title ?? "").trim().toLowerCase() &&
+      countModuleSteps(existing) >= minimum
+    ) {
+      const preserved = mergeApprovedGeneratedModule(skeleton, existing, moduleIndex, proposal);
+      modules.push(preserved);
+      continue;
+    }
+
+    const modulePrompt = `${buildAssessmentModuleContentPrompt({
+      subject,
+      answers: [],
+      assessmentReview,
+      courseOutline: skeleton,
+      courseBlueprint,
+      retrievedContext: ragContext,
+      moduleIndex
+    })}\n\n${buildApprovedModuleDeliveryContract(proposal, moduleIndex)}${conceptualCourseGenerationContract(brief)}`;
+    const generatedModule = await generateApprovedModule({
+      admin,
+      job,
+      providerConfig: courseProviderConfig,
+      prompt: modulePrompt,
+      skeleton,
+      proposal,
+      moduleIndex,
+      minimum,
+      preferredMaximum
     });
     modules.push(generatedModule);
-    generatedStepTotal += countModuleSteps(generatedModule);
     await updateJob(admin, job.id, {
       progress: 15 + Math.round(((moduleIndex + 1) / skeleton.modules.length) * 40)
     });
@@ -228,6 +429,219 @@ export async function generateCompleteCourseContent({
     content.modules.map((module, moduleIndex) => mergeApprovedGeneratedModule(skeleton, module, moduleIndex, proposal)),
     proposal
   );
+}
+
+export function restoreProgressiveGenerationState(value, { jobId, skeleton, launchModuleCount }) {
+  const storedModules = value?.version === "progressive-course-generation/v1" && Array.isArray(value.modules)
+    ? value.modules
+    : [];
+  return {
+    version: "progressive-course-generation/v1",
+    jobId,
+    launchModuleCount,
+    totalModules: skeleton.modules.length,
+    modules: skeleton.modules.map((module, moduleIndex) => {
+      const stored = storedModules[moduleIndex];
+      const content = stored?.content && countModuleSteps(stored.content) > 0 ? stored.content : null;
+      return {
+        index: moduleIndex,
+        id: module.id,
+        title: module.title,
+        summary: module.summary,
+        status: content ? "ready" : "queued",
+        content
+      };
+    })
+  };
+}
+
+export function buildProgressiveCourseContent({ skeleton, state, jobId, completeContent = null }) {
+  const modules = completeContent?.modules ?? skeleton.modules.map((module, moduleIndex) => {
+    const entry = state.modules[moduleIndex];
+    if (entry?.status === "ready" && entry.content) return entry.content;
+    return {
+      ...module,
+      unlocked: false,
+      topics: (module.topics ?? []).map((topic) => ({
+        ...topic,
+        unlocked: false,
+        blocks: (topic.blocks ?? []).map((block) => ({ ...block, steps: [] }))
+      }))
+    };
+  });
+  const readyModuleCount = state.modules.filter((entry) => entry.status === "ready").length;
+  return {
+    ...(completeContent ?? skeleton),
+    modules,
+    generationDepth: completeContent ? "full_course" : "full_structure_first_module",
+    progressiveGeneration: {
+      version: "progressive-course-generation/v1",
+      jobId,
+      launchModuleCount: state.launchModuleCount,
+      totalModules: state.totalModules,
+      readyModuleCount,
+      status: completeContent ? "complete" : "background",
+      modules: state.modules.map(({ index, id, title, summary, status }) => ({ index, id, title, summary, status }))
+    }
+  };
+}
+
+function updateProgressiveModuleState(state, moduleIndex, patch) {
+  return {
+    ...state,
+    modules: state.modules.map((entry, index) => index === moduleIndex ? { ...entry, ...patch } : entry)
+  };
+}
+
+function completeProgressiveGenerationState(state, modules) {
+  return {
+    ...state,
+    modules: state.modules.map((entry, index) => ({ ...entry, status: "ready", content: modules[index] }))
+  };
+}
+
+function readyProgressiveModuleCount(state) {
+  return state.modules.filter((entry) => entry.status === "ready" && entry.content).length;
+}
+
+function launchProgressBeforeModule(moduleIndex, launchModuleCount) {
+  if (moduleIndex >= launchModuleCount) return 100;
+  return 15 + Math.round((moduleIndex / Math.max(launchModuleCount, 1)) * 80);
+}
+
+function launchProgressAfterModule(moduleIndex, launchModuleCount) {
+  if (moduleIndex >= launchModuleCount) return 100;
+  return Math.min(92, 15 + Math.round(((moduleIndex + 1) / Math.max(launchModuleCount, 1)) * 75));
+}
+
+async function approveProgressiveCourseModule({
+  admin,
+  job,
+  env,
+  brief,
+  proposal,
+  assessmentReview,
+  ragContext,
+  skeleton,
+  moduleIndex,
+  module
+}) {
+  const isolatedContent = {
+    ...skeleton,
+    generationDepth: "full_course",
+    modules: [{ ...module, order: 0 }]
+  };
+  const repaired = await repairGeneratedCourseQuality({
+    admin,
+    job,
+    env,
+    brief,
+    assessmentReview,
+    ragContext,
+    content: isolatedContent,
+    reportProgress: false,
+    moduleIndexOffset: moduleIndex,
+    totalModuleCount: skeleton.modules.length
+  });
+  const approved = mergeApprovedGeneratedModule(skeleton, repaired.modules[0], moduleIndex, proposal);
+  const { minimum } = approvedModuleStepRange(proposal, moduleIndex);
+  if (countModuleSteps(approved) < minimum) {
+    throw workerError("generation_scope_mismatch", `Module ${moduleIndex + 1} fell below its approved learner-step count after quality repair.`);
+  }
+  return approved;
+}
+
+async function persistProgressiveCourseSnapshot(admin, {
+  userId,
+  courseId,
+  jobId,
+  brief,
+  proposal,
+  skeleton,
+  state,
+  generationCapability,
+  generationProvenance,
+  completeContent = null
+}) {
+  const progressiveContent = buildProgressiveCourseContent({ skeleton, state, jobId, completeContent });
+  const content = applyLearningBriefMetadata(progressiveContent, brief, generationCapability);
+  const payload = {
+    title: content.title,
+    subject: content.subject,
+    mode: "mixed",
+    checkpoint: proposal.items?.[0]?.title ?? "Start here",
+    description: content.description,
+    required_section_count: Math.max(1, Number(proposal.totals?.modules ?? skeleton.modules.length)),
+    experience_type: "course",
+    course_content: { ...content, learningBrief: brief, generationProvenance },
+    languages: Array.isArray(content.languages) ? content.languages : [],
+    tags: Array.isArray(content.tags) ? content.tags : [],
+    content_generation_state: completeContent ? "full_course" : "first_chapter",
+    updated_at: new Date().toISOString()
+  };
+  if (courseId) {
+    const { data, error } = await admin.from("courses").update(payload).eq("id", courseId).eq("user_id", userId).select("*").single();
+    if (error) throw workerError("course_persistence_failed", error.message);
+    return data;
+  }
+
+  const clientRequestId = `generation-job:${jobId}`;
+  const { data: existing, error: existingError } = await admin
+    .from("courses")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("client_request_id", clientRequestId)
+    .maybeSingle();
+  if (existingError) throw workerError("course_persistence_failed", existingError.message);
+  if (existing) {
+    const { data, error } = await admin.from("courses").update(payload).eq("id", existing.id).eq("user_id", userId).select("*").single();
+    if (error) throw workerError("course_persistence_failed", error.message);
+    return data;
+  }
+
+  const { data, error } = await admin.from("courses").insert({
+    ...payload,
+    user_id: userId,
+    progress: 0,
+    client_request_id: clientRequestId
+  }).select("*").single();
+  if (error) throw workerError("course_persistence_failed", error.message);
+  return data;
+}
+
+async function readGenerationLaunch(admin, jobId) {
+  const { data, error } = await admin
+    .from("generation_jobs")
+    .select("id,user_id,result_course_id,launch_ready_at,generation_state")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (error) return null;
+  return data ?? null;
+}
+
+async function markProgressiveGenerationInterrupted(admin, job, status) {
+  if (!job?.generation_state || job.generation_state.version !== "progressive-course-generation/v1") return;
+  const state = {
+    ...job.generation_state,
+    modules: job.generation_state.modules.map((entry) => entry.status === "generating" ? { ...entry, status } : entry)
+  };
+  await updateJob(admin, job.id, { generation_state: state });
+  if (!job.result_course_id) return;
+  const { data: course, error } = await admin
+    .from("courses")
+    .select("course_content")
+    .eq("id", job.result_course_id)
+    .eq("user_id", job.user_id)
+    .maybeSingle();
+  if (error || !course?.course_content?.progressiveGeneration) return;
+  const progressiveGeneration = {
+    ...course.course_content.progressiveGeneration,
+    modules: state.modules.map(({ index, id, title, summary, status: moduleStatus }) => ({ index, id, title, summary, status: moduleStatus }))
+  };
+  await admin.from("courses").update({
+    course_content: { ...course.course_content, progressiveGeneration },
+    updated_at: new Date().toISOString()
+  }).eq("id", job.result_course_id).eq("user_id", job.user_id);
 }
 
 export async function repairExistingCourseDelivery({ admin, courseId, env = process.env }) {
@@ -312,13 +726,13 @@ export async function repairExistingCourseDelivery({ admin, courseId, env = proc
   return { status: "repaired", courseId, ...assertCourseDeliveryScope(proposal, content) };
 }
 
-async function generateApprovedModule({ admin, job, providerConfig, prompt, skeleton, proposal, moduleIndex, minimum, preferredMaximum, hardMaximum }) {
+async function generateApprovedModule({ admin, job, providerConfig, prompt, skeleton, proposal, moduleIndex, minimum, preferredMaximum }) {
   let previousText = "";
   let previousError = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const requestPrompt = attempt === 0
       ? prompt
-      : `${prompt}\n\nMODULE REPAIR REQUIRED\nThe previous module failed the delivery contract: ${previousError}. Return a complete replacement module with ${minimum}-${preferredMaximum} preferred visible learner steps and never more than ${hardMaximum}. Previous JSON: ${previousText.slice(0, 9000)}`;
+      : `${prompt}\n\nMODULE REPAIR REQUIRED\nThe previous module failed the delivery contract: ${previousError}. Return a complete replacement module with at least ${minimum} visible learner steps; ${minimum}-${preferredMaximum} is the preferred range, but keep additional valid teaching steps when useful. Previous JSON: ${previousText.slice(0, 9000)}`;
     const maxTokens = Math.min(12000, Math.max(7000, preferredMaximum * 900));
     const result = await requestCourseGenerationJson({ config: providerConfig, prompt: requestPrompt, maxTokens });
     await recordWorkerUsage(admin, job, providerConfig, result, attempt === 0 ? "course_module_generation" : "course_module_scope_repair");
@@ -332,8 +746,8 @@ async function generateApprovedModule({ admin, job, providerConfig, prompt, skel
       const extracted = extractGeneratedModuleFromResponse(parseJsonObject(result.text), skeleton.modules[moduleIndex], moduleIndex);
       const module = mergeApprovedGeneratedModule(skeleton, extracted, moduleIndex, proposal);
       const steps = countModuleSteps(module);
-      if (steps < minimum || steps > hardMaximum) {
-        throw new Error(`Module ${moduleIndex + 1} requires at least ${minimum} learner steps and can use at most ${hardMaximum} remaining steps; generated ${steps}.`);
+      if (steps < minimum) {
+        throw new Error(`Module ${moduleIndex + 1} requires at least ${minimum} learner steps; generated ${steps}.`);
       }
       return module;
     } catch (error) {
@@ -345,10 +759,17 @@ async function generateApprovedModule({ admin, job, providerConfig, prompt, skel
 }
 
 export function canRetryGenerationJob(job, error) {
-  if (job?.heartbeat_at === undefined || Number(job?.attempt_count ?? 0) >= 3) return false;
+  const maximumAttempts = job?.launch_ready_at ? 8 : 3;
+  if (job?.heartbeat_at === undefined || Number(job?.attempt_count ?? 0) >= maximumAttempts) return false;
   const code = String(error?.code ?? "");
-  if (["generation_validation_failed", "generation_scope_mismatch"].includes(code) && Number(job?.attempt_count ?? 0) >= 2) return false;
+  if (code === "generation_scope_mismatch" && !job?.launch_ready_at) return false;
+  if (code === "generation_validation_failed" && Number(job?.attempt_count ?? 0) >= (job?.launch_ready_at ? 5 : 2)) return false;
   return /^(?:generation_|exercise_batch_|rag_context_|provider_)/.test(code);
+}
+
+export function resolveCourseGenerationServiceTier(env = process.env) {
+  const configured = String(env.OPENAI_COURSE_GENERATION_SERVICE_TIER ?? "fast").trim().toLowerCase();
+  return ["default", "standard", "off", "false"].includes(configured) ? null : "fast";
 }
 
 async function normalizeAndRepairGeneratedContent({
@@ -392,12 +813,13 @@ async function normalizeAndRepairGeneratedContent({
   return repairGeneratedCourseQuality({ admin, job, env, brief, assessmentReview, ragContext, content });
 }
 
-async function repairGeneratedCourseQuality({ admin, job, env, brief, assessmentReview, ragContext, content }) {
+async function repairGeneratedCourseQuality({ admin, job, env, brief, assessmentReview, ragContext, content, reportProgress = true, moduleIndexOffset = 0, totalModuleCount = content?.modules?.length ?? 1 }) {
   let repairedContent = repairMechanicalWorkshopIssues(content);
-  let qualityWarnings = validateGeneratedCourseQuality(repairedContent, { conceptual: isConceptualLearningBrief(brief) });
+  let qualityWarnings = validateGeneratedCourseQuality(repairedContent, { conceptual: isConceptualLearningBrief(brief), moduleIndexOffset, totalModuleCount });
   if (!hasRepairableGeneratedCourseQualityWarnings(qualityWarnings)) return repairedContent;
 
-  const repairConfig = resolveTutorProviderConfig(env, "course_repair");
+  const resolvedRepairConfig = resolveTutorProviderConfig(env, "course_repair");
+  const repairConfig = { ...resolvedRepairConfig, serviceTier: resolveCourseGenerationServiceTier(env) };
   if (repairConfig.error) throw workerError("provider_unavailable", repairConfig.error);
   const subject = subjectForLearningBrief(brief);
 
@@ -454,8 +876,8 @@ async function repairGeneratedCourseQuality({ admin, job, env, brief, assessment
     } catch (error) {
       throw workerError("generation_repair_failed", error instanceof Error ? error.message : "Repaired course structure was invalid.");
     }
-    qualityWarnings = validateGeneratedCourseQuality(repairedContent, { conceptual: isConceptualLearningBrief(brief) });
-    await updateJob(admin, job.id, { progress: 35 + repairPass * 15 });
+    qualityWarnings = validateGeneratedCourseQuality(repairedContent, { conceptual: isConceptualLearningBrief(brief), moduleIndexOffset, totalModuleCount });
+    if (reportProgress) await updateJob(admin, job.id, { progress: 58 + repairPass * 2 });
   }
 
   let blockingWarnings = getBlockingGeneratedCourseQualityWarnings(qualityWarnings);
@@ -470,9 +892,9 @@ async function repairGeneratedCourseQuality({ admin, job, env, brief, assessment
       content: repairedContent,
       blockingWarnings
     }));
-    qualityWarnings = validateGeneratedCourseQuality(repairedContent, { conceptual: isConceptualLearningBrief(brief) });
+    qualityWarnings = validateGeneratedCourseQuality(repairedContent, { conceptual: isConceptualLearningBrief(brief), moduleIndexOffset, totalModuleCount });
     blockingWarnings = getBlockingGeneratedCourseQualityWarnings(qualityWarnings);
-    await updateJob(admin, job.id, { progress: 60 });
+    if (reportProgress) await updateJob(admin, job.id, { progress: 62 });
   }
 
   if (blockingWarnings.length) {
@@ -576,27 +998,30 @@ Return one complete replacement for this module. Resolve every listed check with
 
 async function generateExerciseContent({ admin, job, providerConfig, brief, proposal, ragContext }) {
   const { codingCount, mcqCount } = resolveExerciseMixCounts(brief);
+  const sequence = buildExerciseKindSequence(codingCount, mcqCount);
   const targets = [
-    { kind: "code", total: codingCount, batchSize: 4 },
-    { kind: "mcq", total: mcqCount, batchSize: 6 }
+    { kind: "code", positions: sequence.flatMap((kind, index) => kind === "code" ? [index] : []), batchSize: 4 },
+    { kind: "mcq", positions: sequence.flatMap((kind, index) => kind === "mcq" ? [index] : []), batchSize: 6 }
   ];
   const problems = [];
   let batchIndex = 0;
   for (const target of targets) {
     let generatedForKind = 0;
     let attempts = 0;
-    while (generatedForKind < target.total) {
+    while (generatedForKind < target.positions.length) {
       attempts += 1;
-      if (attempts > target.total * 2 + 2) {
+      if (attempts > target.positions.length * 2 + 2) {
         throw workerError("exercise_batch_incomplete", `Could not complete the approved ${target.kind} problem count.`);
       }
-      const requestedCount = Math.min(target.batchSize, target.total - generatedForKind);
+      const requestedCount = Math.min(target.batchSize, target.positions.length - generatedForKind);
+      const positions = target.positions.slice(generatedForKind, generatedForKind + requestedCount);
       const prompt = buildExerciseProblemBatchPrompt({
         brief,
         proposal,
         kind: target.kind,
         count: requestedCount,
         batchIndex,
+        positions,
         existingTitles: problems.map((problem) => problem.title),
         retrievedContext: ragContext
       });
@@ -610,7 +1035,7 @@ async function generateExerciseContent({ admin, job, providerConfig, brief, prop
           brief,
           kind: target.kind,
           count: requestedCount,
-          offset: problems.length
+          positions
         });
       } catch (initialError) {
         result = await requestCourseGenerationJson({
@@ -624,7 +1049,7 @@ async function generateExerciseContent({ admin, job, providerConfig, brief, prop
           brief,
           kind: target.kind,
           count: requestedCount,
-          offset: problems.length
+          positions
         });
       }
       problems.push(...batchProblems);
@@ -642,18 +1067,22 @@ async function generateExerciseContent({ admin, job, providerConfig, brief, prop
     tags: ["Practice"],
     strategy: brief.practiceScope === "weaknesses" ? "weakness" : brief.difficulty === "random" ? "random" : brief.difficulty === "adaptive" ? "adaptive" : "topic",
     diagnosticCount: brief.practiceScope === "weaknesses" ? Math.min(2, problems.length) : 0,
-    problems: distributeExerciseKinds(problems)
+    problems: problems.sort((left, right) => left.order - right.order).map((problem, index) => ({ ...problem, order: index }))
   }, { brief });
 }
 
-function distributeExerciseKinds(problems) {
-  const code = problems.filter((problem) => problem.kind === "code");
-  const mcq = problems.filter((problem) => problem.kind === "mcq");
+export function buildExerciseKindSequence(codingCount, mcqCount) {
   const output = [];
-  while (code.length || mcq.length) {
-    if (code.length) output.push(code.shift());
-    if (code.length) output.push(code.shift());
-    if (mcq.length) output.push(mcq.shift());
+  let code = codingCount;
+  let mcq = mcqCount;
+  const openingChecks = Math.min(mcq, 2);
+  for (let index = 0; index < openingChecks; index += 1) {
+    output.push("mcq");
+    mcq -= 1;
+  }
+  while (code || mcq) {
+    if (code) { output.push("code"); code -= 1; }
+    if (mcq) { output.push("mcq"); mcq -= 1; }
   }
   return output;
 }
@@ -665,7 +1094,7 @@ async function recordWorkerUsage(admin, job, config, result, feature) {
   const cachedInputTokens = integerOrNull(result?.usage?.cachedInputTokens) ?? 0;
   const cacheWriteInputTokens = integerOrNull(result?.usage?.cacheWriteTokens) ?? 0;
   const reasoningTokens = integerOrNull(result?.usage?.reasoningTokens) ?? 0;
-  const cost = estimateOpenAiTextCost({ model, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens });
+  const cost = estimateOpenAiTextCost({ model, serviceTier: result?.serviceTier, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens });
   const base = {
     user_id: job.user_id,
     course_id: null,
@@ -715,6 +1144,25 @@ async function completeGenerationJob(admin, { userId, jobId, courseId, reservati
     p_job_id: jobId,
     p_course_id: courseId,
     p_reservation_id: reservationId
+  });
+  if (error) throw workerError("generation_job_completion_failed", error.message);
+}
+
+async function launchProgressiveGenerationJob(admin, { userId, jobId, courseId, reservationId }) {
+  const { error } = await admin.rpc("launch_stonecode_generation_job", {
+    p_user_id: userId,
+    p_job_id: jobId,
+    p_course_id: courseId,
+    p_reservation_id: reservationId
+  });
+  if (error) throw workerError("generation_job_launch_failed", error.message);
+}
+
+async function completeProgressiveGenerationJob(admin, { userId, jobId, courseId }) {
+  const { error } = await admin.rpc("complete_stonecode_progressive_generation_job", {
+    p_user_id: userId,
+    p_job_id: jobId,
+    p_course_id: courseId
   });
   if (error) throw workerError("generation_job_completion_failed", error.message);
 }

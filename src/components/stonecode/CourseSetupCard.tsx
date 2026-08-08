@@ -21,6 +21,7 @@ import {
   rememberPendingGenerationJob
 } from "@/services/courseGeneration";
 import { StoneStackMark } from "@/components/stonecode/StonecodeBrand";
+import { renderMarkdown } from "@/components/stonecode/markdown";
 
 type SetupPhase = "discovery" | "proposal" | "generating";
 type SetupMessage = { role: "assistant" | "user"; content: string; id?: string };
@@ -82,6 +83,7 @@ export function CourseSetupCard({
   const finalizedRef = useRef(false);
   const discoveryStartedRef = useRef(false);
   const discoveryRequestRef = useRef(0);
+  const discoveryDraftRef = useRef<Partial<LearningBrief> | null>(null);
   const proposalSupportRef = useRef<boolean | null>(null);
   const proposalKeyRef = useRef(createRequestKey("proposal"));
   const proposalEditRef = useRef(0);
@@ -146,9 +148,11 @@ export function CourseSetupCard({
     try {
       const result = await setupServices.requestDiscoveryTurn({
         messages: conversation.map(({ role, content }) => ({ role, content })),
-        turn
+        turn,
+        draftBrief: discoveryDraftRef.current
       });
       if (requestNumber !== discoveryRequestRef.current || result.discovery.responseTurn !== turn) return;
+      discoveryDraftRef.current = result.discovery.draftBrief;
       setMessages((current) => [...current, { role: "assistant", content: result.discovery.reply, id: createSetupMessageId() }]);
       setDiscoverySuggestions(result.discovery.suggestions);
       setDiscoverySelectionMode(result.discovery.selectionMode ?? "single");
@@ -274,7 +278,9 @@ export function CourseSetupCard({
           <div className="ai-chat-scroll setup-chat" aria-label="Learning setup conversation" ref={chatScrollRef}>
             {messages.map((message, index) => (
               <div className={`ai-message ${message.role === "assistant" ? "assistant-message ai-response" : "user-message"}`} key={message.id ?? `${message.role}-${index}`}>
-                <p>{message.role === "assistant" && index === typingMessageIndex ? typedContent : message.content}</p>
+                {message.role === "assistant"
+                  ? renderMarkdown(index === typingMessageIndex ? typedContent : message.content)
+                  : <p>{message.content}</p>}
                 {message.role === "assistant" && index === typingMessageIndex && typedContent.length < message.content.length && <span className="typing-caret" />}
               </div>
             ))}
@@ -290,7 +296,8 @@ export function CourseSetupCard({
             {phase === "generating" && (
               <LoadingStatus
                 title={`Creating ${proposal ? proposalTypeLabel(proposal.type).toLowerCase() : learningExperienceLabel(brief?.type ?? "course").toLowerCase()}`}
-                detail={proposal ? `${generationProgress}% complete. You can safely refresh; this job is persisted.` : "Building lessons and exercises."}
+                detail={proposal ? `${generationProgress}% complete · safe to refresh` : "Building lessons and exercises"}
+                progress={generationProgress}
               />
             )}
             {generationError && <p className="setup-error">{generationError}</p>}
@@ -368,6 +375,7 @@ function ProposalReview({ brief, draft, editing, onDraft }: {
         <h3>{brief.subject || brief.framework || brief.language || brief.goal}</h3>
         <dl className="setup-plan-summary">
           <div><dt>Goal</dt><dd>{brief.goal}</dd></div>
+          {brief.projectDifficulty && <div><dt>Build level</dt><dd>{brief.projectDifficulty === "advanced" ? "Advanced project" : "Basic project"}</dd></div>}
           {brief.priorKnowledge && <div><dt>Starting point</dt><dd>{brief.priorKnowledge}</dd></div>}
           {brief.topics?.length ? <div><dt>Topics</dt><dd>{brief.topics.join(", ")}</dd></div> : null}
         </dl>
@@ -387,6 +395,7 @@ function ProposalReview({ brief, draft, editing, onDraft }: {
         <div><dt>Learning area</dt><dd>{domainLabel(draft.domainId ?? brief.domainId)}</dd></div>
         {draft.technologyId && <div><dt>Technology</dt><dd>{draft.technology}</dd></div>}
         {draft.focusAreas?.length ? <div><dt>Focus</dt><dd>{draft.focusAreas.join(", ")}</dd></div> : null}
+        {brief.projectDifficulty && <div><dt>Build level</dt><dd>{brief.projectDifficulty === "advanced" ? "Advanced project" : "Basic project"}</dd></div>}
         <div><dt>Scope</dt><dd>{scopeCopy(draft)}</dd></div>
       </dl>
       <ol className="learning-proposal-items">
@@ -405,8 +414,8 @@ function ProposalReview({ brief, draft, editing, onDraft }: {
   );
 }
 
-function LoadingStatus({ title, detail }: { title: string; detail: string }) {
-  return <div className="proposal-loading" role="status" aria-live="polite"><i aria-hidden="true" /><p><strong>{title}</strong><span>{detail}</span></p></div>;
+function LoadingStatus({ title, detail, progress }: { title: string; detail: string; progress: number }) {
+  return <div className="proposal-loading" role="status" aria-live="polite"><i aria-hidden="true" /><p><strong>{title}</strong><span>{detail}</span></p><div className="proposal-loading-track" aria-hidden="true"><b style={{ width: `${Math.max(4, Math.min(progress, 100))}%` }} /></div></div>;
 }
 
 function TypingIndicator() {
@@ -423,6 +432,10 @@ async function waitForGenerationJob(jobId: string, requestJob: typeof requestGen
   for (let attempt = 0; attempt < 600; attempt += 1) {
     const { job } = await requestJob(jobId);
     onProgress(job.progress ?? 0);
+    if (job.launch_ready_at && job.result_course_id) {
+      onProgress(100);
+      return job;
+    }
     if (job.status === "succeeded") return job;
     if (job.status === "failed" || job.status === "cancelled") throw new Error(generationJobFailureMessage(job));
     await new Promise((resolve) => window.setTimeout(resolve, 1500));

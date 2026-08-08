@@ -73,8 +73,9 @@ export async function requestTutorStream({ config, context, instructions, tools 
   }, defaultRequestTimeoutMs);
 }
 
-export async function requestCourseGenerationJson({ config, prompt, maxTokens = 2200 }) {
+export async function requestCourseGenerationJson({ config, prompt, maxTokens = 2200, serviceTier = config?.serviceTier ?? null }) {
   const instructions = "You generate Stonecode course content. Return valid JSON only. Do not wrap JSON in markdown.";
+  const requestedServiceTier = normalizeServiceTier(serviceTier);
 
   let lastResult = null;
   let tokenBudget = maxTokens;
@@ -92,6 +93,7 @@ export async function requestCourseGenerationJson({ config, prompt, maxTokens = 
         body: JSON.stringify({
           model: config.model,
           ...responseReasoningOptions(config.model),
+          ...(requestedServiceTier ? { service_tier: requestedServiceTier } : {}),
           instructions,
           input: prompt,
           text: {
@@ -109,7 +111,9 @@ export async function requestCourseGenerationJson({ config, prompt, maxTokens = 
         attempts: attempt + 1,
         usage: accumulatedUsage,
         latencyMs: Date.now() - startedAt,
-        model: config.model
+        model: config.model,
+        serviceTier: requestedServiceTier ?? "default",
+        requestedServiceTier
       };
       if (attempt < 2) await retryWait(attempt);
       continue;
@@ -132,7 +136,9 @@ export async function requestCourseGenerationJson({ config, prompt, maxTokens = 
       attempts: attempt + 1,
       usage: accumulatedUsage,
       latencyMs: Date.now() - startedAt,
-      model: payload?.model ?? config.model
+      model: payload?.model ?? config.model,
+      serviceTier: normalizeServiceTier(payload?.service_tier) ?? requestedServiceTier ?? "default",
+      requestedServiceTier
     };
     if (lastResult.ok) return lastResult;
     const retryableIncomplete = response.ok && !isComplete;
@@ -236,6 +242,13 @@ function responseReasoningOptions(model) {
   return String(model ?? "").trim().toLowerCase().startsWith("gpt-5.6")
     ? { reasoning: { effort: "none" } }
     : {};
+}
+
+function normalizeServiceTier(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (["fast", "priority"].includes(normalized)) return normalized;
+  if (normalized === "default") return "default";
+  return null;
 }
 
 function sumNullable(left, right) {

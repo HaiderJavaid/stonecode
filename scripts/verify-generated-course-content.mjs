@@ -563,7 +563,7 @@ globalThis.fetch = async (_url, options) => {
       output_text: '{"partial":true'
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
-  return new Response(JSON.stringify({ status: "completed", output_text: '{"complete":true}' }), {
+  return new Response(JSON.stringify({ status: "completed", service_tier: "priority", output_text: '{"complete":true}' }), {
     status: 200,
     headers: { "Content-Type": "application/json" }
   });
@@ -572,11 +572,20 @@ try {
   const retriedGeneration = await requestCourseGenerationJson({
     config: { apiKey: "test", model: "test-model" },
     prompt: "Return a small JSON object.",
-    maxTokens: 100
+    maxTokens: 100,
+    serviceTier: "fast"
   });
   assert.equal(retriedGeneration.ok, true, "incomplete OpenAI output should retry");
   assert.equal(generationRequests.length, 2, "incomplete OpenAI output should make a second request");
   assert.ok(generationRequests[1].max_output_tokens > generationRequests[0].max_output_tokens, "incomplete output retry should receive a larger token budget");
+  assert.ok(generationRequests.every((request) => request.service_tier === "fast"), "full-course requests should send the Fast service tier across retries");
+  assert.equal(retriedGeneration.serviceTier, "priority", "the actual response service tier should be retained for billing");
+  await requestCourseGenerationJson({
+    config: { apiKey: "test", model: "test-model" },
+    prompt: "Return a Standard-tier proposal JSON object.",
+    maxTokens: 100
+  });
+  assert.equal(generationRequests[2].service_tier, undefined, "proposal requests should remain on the Standard service tier");
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -1031,6 +1040,48 @@ const missingPracticalWarnings = validateGeneratedCourseQuality({
 });
 assert.ok(missingPracticalWarnings.some((warning) => warning.code === "loaded_module_missing_practical_block"), "quality validation should flag loaded modules without practical work");
 assert.ok(hasBlockingGeneratedCourseQualityWarnings(missingPracticalWarnings), "missing practical block warnings should block save without repair");
+
+const courseOrientationMarkdown = `## Welcome to C++
+
+C++ is a language people use when programs need to move quickly and control a computer carefully. It powers games, robots, browsers, simulations, and pieces of operating systems. Learning it is like seeing both the steering wheel and the engine of a car, so you understand what your instructions make the machine do.
+
+During this course you will build small terminal tools, fix tiny bugs, and slowly connect separate ideas into complete programs. You will begin with clear, friendly examples before meeting technical names. One memorable fact is that many famous game engines rely on C++ because it can handle lots of work without slowing the game down.
+
+We start with program structure because every later idea needs a safe place to live. Once you know where a C++ program begins and how one instruction follows another, variables, decisions, loops, and functions feel like adding useful parts to the same little robot.`;
+const finalThirdWarnings = validateGeneratedCourseQuality({
+  schemaVersion: "course-content/v2",
+  modules: Array.from({ length: 7 }, (_, moduleIndex) => ({
+    id: `module-${moduleIndex + 1}`,
+    title: `Module ${moduleIndex + 1}`,
+    summary: "Progressive C++ practice.",
+    topics: [{
+      id: `topic-${moduleIndex + 1}`,
+      title: "C++ practice",
+      summary: "Apply C++ fundamentals in a small program.",
+      blocks: moduleIndex === 0
+        ? [{ id: "intro", kind: "theory", title: "Welcome", summary: "Why C++ matters", steps: [{ type: "theory", markdown: courseOrientationMarkdown }] }]
+        : [{
+            id: `lab-${moduleIndex + 1}`,
+            kind: "lab",
+            title: moduleIndex >= 4 ? "Hard cumulative C++ lab" : "Small C++ lab",
+            summary: "Practice the current skill.",
+            steps: [{ type: "lab", context: "Use the current C++ skill in a focused task.", prompt: "Complete the focused task.", acceptanceCriteria: ["Program works"] }]
+          }]
+    }]
+  }))
+}, { totalModuleCount: 7 });
+assert.ok(finalThirdWarnings.some((warning) => warning.code === "hard_lab_before_final_third" && warning.message.includes("modules[4]")), "quality validation should keep hard labs out of module five in a seven-module course");
+assert.ok(!finalThirdWarnings.some((warning) => warning.code === "hard_lab_before_final_third" && warning.message.includes("modules[5]")), "quality validation should allow hard labs inside the final third");
+const missingOrientationWarnings = validateGeneratedCourseQuality({
+  schemaVersion: "course-content/v2",
+  modules: [{
+    id: "module-1",
+    title: "C++",
+    summary: "C++ basics",
+    topics: [{ id: "topic-1", title: "Start", summary: "Start", blocks: [{ id: "intro", kind: "theory", title: "Start", summary: "Start", steps: [{ type: "theory", markdown: "C++ has variables and functions." }] }] }]
+  }]
+});
+assert.ok(missingOrientationWarnings.some((warning) => warning.code === "course_introduction_missing_orientation"), "quality validation should reject rushed language introductions");
 
 const sanitizedV2 = normalizeGeneratedCourseContent({
   schemaVersion: "course-content/v2",

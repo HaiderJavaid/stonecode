@@ -11,13 +11,14 @@ import {
   resolveExerciseMixCounts,
   resolveLearningPolicy
 } from "../server/learning-orchestrator/contracts.mjs";
-import { canRetryGenerationJob, repairMechanicalWorkshopIssues } from "../server/learning-orchestrator/generation-worker.mjs";
+import { buildExerciseKindSequence, canRetryGenerationJob, repairMechanicalWorkshopIssues, resolveCourseGenerationServiceTier } from "../server/learning-orchestrator/generation-worker.mjs";
 import {
   assertCourseDeliveryScope,
   buildApprovedCourseOutlineContract,
   minimumCourseModuleSteps
 } from "../server/learning-orchestrator/course-delivery.mjs";
 import { normalizeLearningProposal } from "../server/learning-orchestrator/proposals.mjs";
+import { resolveRagTechnologyId } from "../server/rag/technology-corpora.mjs";
 import {
   buildExerciseProblemBatchPrompt,
   buildLearningExperienceRepairPrompt,
@@ -25,17 +26,82 @@ import {
   normalizeGeneratedLearningContent
 } from "../server/learning-orchestrator/generation.mjs";
 
-const firstTurn = normalizeLearningDiscoveryTurn({ reply: "Hello" }, { turn: 0 });
-assert.equal(firstTurn.reply, initialLearningGreeting);
-assert.deepEqual(firstTurn.suggestions, initialLearningSuggestions);
-assert.ok(firstTurn.suggestions.includes("Build a project"));
-assert.ok(firstTurn.suggestions.includes("Learn a language"));
-assert.ok(firstTurn.suggestions.includes("Add a feature"));
-assert.ok(firstTurn.suggestions.includes("Reach an end goal"));
-assert.ok(firstTurn.suggestions.includes("Choose lesson type"));
-assert.equal(maxLearningDiscoveryQuestions, 7);
-assert.match(firstTurn.reply, /what you want to learn or build first/i);
-assert.match(buildLearningDiscoveryPrompt({ turn: 1 }), /questionField/);
+const firstTurn = normalizeLearningDiscoveryTurn({
+  status: "clarifying",
+  reply: "Good to see you, Mina. Want to continue with Python or build something new today?",
+  questionField: "learning_intent",
+  suggestions: ["Continue Python", "Build a small project", "Start something new"]
+}, {
+  turn: 0,
+  learnerContext: { displayName: "Mina", recentLearning: [{ title: "Python foundations", subject: "Python", type: "course" }] }
+});
+assert.match(firstTurn.reply, /Good to see you, Mina/);
+assert.deepEqual(firstTurn.suggestions, ["Continue Python", "Build a small project", "Start something new"]);
+assert.ok(firstTurn.suggestions.some((suggestion) => /build/i.test(suggestion)));
+assert.equal(maxLearningDiscoveryQuestions, 8);
+assert.deepEqual(buildExerciseKindSequence(7, 3), ["mcq", "mcq", "code", "mcq", "code", "code", "code", "code", "code", "code"]);
+const contextualFallback = normalizeLearningDiscoveryTurn({ reply: "Hello" }, {
+  turn: 0,
+  learnerContext: { displayName: "Mina", recentLearning: [{ title: "Python foundations", subject: "Python", type: "course" }] }
+});
+assert.notEqual(contextualFallback.reply, initialLearningGreeting);
+assert.match(contextualFallback.reply, /Mina.*Python foundations/i);
+assert.match(buildLearningDiscoveryPrompt({ turn: 1, learnerContext: { displayName: "Mina" } }), /Learner context/);
+assert.equal(resolveRagTechnologyId("Learn Type script"), "typescript");
+
+const broadTypeScriptRequest = normalizeLearningDiscoveryTurn({
+  status: "ready",
+  reply: "I can plan that course.",
+  brief: { type: "course", goal: "Learn TypeScript", subject: "TypeScript", language: "TypeScript" }
+}, { turn: 1, messages: [{ role: "user", content: "Learn Type script" }], availableTechnologyIds: ["typescript", "javascript"] });
+assert.equal(broadTypeScriptRequest.status, "clarifying");
+assert.equal(broadTypeScriptRequest.questionField, "type");
+assert.deepEqual(broadTypeScriptRequest.suggestions.slice(0, 3), ["Course", "Guided project", "Exercise pack"]);
+
+const persistedTypeScriptRequest = normalizeLearningDiscoveryTurn({
+  status: "clarifying",
+  reply: "What experience do you have?",
+  questionField: "prior_knowledge",
+  brief: { type: "course", priorKnowledge: "Complete beginner" }
+}, {
+  turn: 3,
+  draftBrief: broadTypeScriptRequest.draftBrief,
+  messages: [
+    { role: "user", content: "Learn Type script" },
+    { role: "assistant", content: "Course, guided project, or exercise pack?" },
+    { role: "user", content: "Course" },
+    { role: "assistant", content: "What experience do you have?" },
+    { role: "user", content: "I’m completely new" }
+  ],
+  availableTechnologyIds: ["typescript", "javascript"]
+});
+assert.equal(persistedTypeScriptRequest.questionField, "focus_areas", "answered fields must survive later AI turns instead of repeating");
+assert.equal(persistedTypeScriptRequest.draftBrief.subject, "TypeScript");
+assert.ok(persistedTypeScriptRequest.suggestions.includes("Types and inference"));
+
+const reactPrerequisiteQuestion = normalizeLearningDiscoveryTurn({
+  status: "clarifying",
+  reply: "Ready.",
+  brief: { type: "course", goal: "Learn React", subject: "React", framework: "React", priorKnowledge: "Complete beginner" }
+}, {
+  turn: 2,
+  messages: [{ role: "user", content: "I want a React course" }, { role: "user", content: "I’m completely new" }],
+  availableTechnologyIds: ["javascript"]
+});
+assert.equal(reactPrerequisiteQuestion.questionField, "prerequisite_route");
+assert.match(reactPrerequisiteQuestion.reply, /HTML, CSS and JavaScript fundamentals/i);
+assert.ok(reactPrerequisiteQuestion.suggestions[0].includes("Recommended"));
+
+const explicitReactFoundationPlan = normalizeLearningDiscoveryTurn({
+  status: "ready",
+  reply: "Ready.",
+  brief: { type: "course", goal: "Learn React from scratch", subject: "React", framework: "React", priorKnowledge: "Complete beginner" }
+}, {
+  turn: 1,
+  messages: [{ role: "user", content: "I want a React course from scratch, starting with HTML, CSS and JavaScript" }],
+  availableTechnologyIds: ["javascript"]
+});
+assert.notEqual(explicitReactFoundationPlan.questionField, "prerequisite_route");
 
 const capabilityQuestion = normalizeLearningDiscoveryTurn({
   status: "clarifying",
@@ -49,10 +115,60 @@ const capabilityQuestion = normalizeLearningDiscoveryTurn({
   availableTechnologyIds: ["javascript", "typescript", "python", "html", "css"]
 });
 assert.equal(capabilityQuestion.questionField, "learning_intent");
-assert.match(capabilityQuestion.reply, /JavaScript, TypeScript, Python, HTML, CSS/);
+assert.match(capabilityQuestion.reply, /- JavaScript\n- TypeScript\n- Python\n- HTML\n- CSS/);
 assert.match(capabilityQuestion.reply, /Computer & IT Fundamentals/);
 assert.deepEqual(capabilityQuestion.suggestions, ["JavaScript", "TypeScript", "Python", "HTML", "CSS"]);
 assert.equal(capabilityQuestion.draftBrief, null, "a capability question must not become a course goal");
+
+const terseCapabilityQuestion = normalizeLearningDiscoveryTurn({
+  status: "clarifying",
+  reply: "What result do you want to achieve?",
+  questionField: "goal",
+  brief: { type: "course", goal: "List down all the languages" }
+}, {
+  turn: 1,
+  messages: [{ role: "user", content: "list down all the languages" }],
+  availableTechnologyIds: ["javascript", "typescript", "python", "cpp", "html", "css"]
+});
+assert.equal(terseCapabilityQuestion.questionField, "learning_intent");
+assert.match(terseCapabilityQuestion.reply, /- C\+\+/);
+assert.equal(terseCapabilityQuestion.draftBrief, null);
+
+const repeatedCapabilityQuestion = normalizeLearningDiscoveryTurn({
+  status: "clarifying",
+  reply: "What subject should we focus on?",
+  questionField: "subject",
+  brief: { type: "course", goal: "List languages" }
+}, {
+  turn: 2,
+  messages: [
+    { role: "user", content: "list down all the languages" },
+    { role: "assistant", content: "What result do you want to achieve?" },
+    { role: "user", content: "list down all languages you can teach" }
+  ],
+  availableTechnologyIds: ["javascript", "typescript", "python", "cpp", "html", "css"]
+});
+assert.equal(repeatedCapabilityQuestion.questionField, "learning_intent");
+assert.match(repeatedCapabilityQuestion.reply, /- C\+\+/);
+assert.equal(repeatedCapabilityQuestion.draftBrief, null);
+
+const midConversationCapabilityQuestion = normalizeLearningDiscoveryTurn({
+  status: "clarifying",
+  reply: "What result do you want to achieve?",
+  questionField: "goal",
+  brief: { type: "course", goal: "Build a portfolio" }
+}, {
+  turn: 2,
+  messages: [
+    { role: "user", content: "I want to build something" },
+    { role: "assistant", content: "What would you like to build?" },
+    { role: "user", content: "show me all available languages" }
+  ],
+  availableTechnologyIds: ["javascript", "python", "cpp"]
+});
+assert.equal(midConversationCapabilityQuestion.questionField, "learning_intent");
+assert.match(midConversationCapabilityQuestion.reply, /- C\+\+/);
+assert.equal(midConversationCapabilityQuestion.draftBrief, null);
 
 const alignedDynamicQuestion = normalizeLearningDiscoveryTurn({
   status: "clarifying",
@@ -62,7 +178,12 @@ const alignedDynamicQuestion = normalizeLearningDiscoveryTurn({
   brief: { type: "course", goal: "Learn Python", subject: "Python", language: "Python" }
 }, { turn: 2, messages: [{ role: "user", content: "I want a Python course" }] });
 assert.match(alignedDynamicQuestion.reply, /Python is a great fit/i);
-assert.deepEqual(alignedDynamicQuestion.suggestions, ["I’m completely new", "I know basic syntax", "I’ve built a small script"]);
+assert.deepEqual(alignedDynamicQuestion.suggestions, [
+  "I’m completely new",
+  "I know basic syntax",
+  "I’ve built a small script",
+  "I know this already—give me exercises"
+]);
 
 const misalignedDynamicQuestion = normalizeLearningDiscoveryTurn({
   status: "clarifying",
@@ -90,10 +211,22 @@ assert.equal(
   "worker retries must stop after three attempts"
 );
 assert.equal(
+  canRetryGenerationJob({ heartbeat_at: null, attempt_count: 1 }, { code: "generation_scope_mismatch" }),
+  false,
+  "a module scope mismatch must not restart every completed module"
+);
+assert.equal(
   canRetryGenerationJob({ heartbeat_at: null, attempt_count: 2 }, { code: "generation_scope_mismatch" }),
   false,
   "scope retries must stop before repeatedly regenerating a complete course"
 );
+assert.equal(
+  canRetryGenerationJob({ heartbeat_at: null, attempt_count: 2, launch_ready_at: "2026-08-02T00:00:00.000Z" }, { code: "generation_scope_mismatch" }),
+  true,
+  "a launched checkpointed course may retry only its first missing module"
+);
+assert.equal(resolveCourseGenerationServiceTier({}), "fast");
+assert.equal(resolveCourseGenerationServiceTier({ OPENAI_COURSE_GENERATION_SERVICE_TIER: "default" }), null);
 
 const deliveryBrief = {
   type: "course",
@@ -120,6 +253,33 @@ assert.equal(deliveryProposal.totals.modules, 8);
 assert.equal(deliveryProposal.totals.steps, 8 * minimumCourseModuleSteps);
 assert.equal(deliveryProposal.creditQuote.credits, 15);
 assert.match(buildApprovedCourseOutlineContract(deliveryProposal), /exactly 8 modules/i);
+
+const guidedProjectProposal = normalizeLearningProposal({
+  type: "project",
+  title: "Browser dashboard",
+  summary: "Build a focused interactive dashboard.",
+  technology: "JavaScript",
+  outcomes: ["Build and explain a browser dashboard"],
+  items: Array.from({ length: 4 }, (_, index) => ({
+    title: `Dashboard capability ${index + 1}`,
+    summary: `Build one connected dashboard capability ${index + 1}.`,
+    stepCount: 4,
+    fileCount: 3
+  })),
+  totalSteps: 16,
+  totalFiles: 3
+}, {
+  type: "guided_project",
+  goal: "Build a browser dashboard",
+  desiredOutcome: "A working interactive dashboard",
+  subject: "JavaScript",
+  language: "JavaScript",
+  platform: "web",
+  priorKnowledge: "JavaScript basics",
+  projectDifficulty: "basic"
+});
+assert.equal(guidedProjectProposal.items.length, 4, "valid 2-6 feature proposals must reach project generation");
+assert.equal(guidedProjectProposal.totals.steps, 16);
 
 for (const language of ["JavaScript", "TypeScript", "Python", "HTML", "CSS"]) {
   const proposal = normalizeLearningProposal({
@@ -181,6 +341,18 @@ for (const language of ["JavaScript", "TypeScript", "Python", "HTML", "CSS"]) {
   assert.ok(delivered.steps >= 12 && delivered.steps <= 20);
   assert.equal(delivered.approvedCredits, 5);
   assert.equal(delivered.deliveredBandCredits, 5);
+  assert.equal(delivered.exceedsApprovedBand, false);
+  const expandedContent = structuredClone(content);
+  expandedContent.modules[0].topics[0].blocks[0].steps.push(
+    ...Array.from({ length: 9 }, (_, index) => ({
+      ...expandedContent.modules[0].topics[0].blocks[0].steps.at(-1),
+      id: `${proposal.items[0].id}-bonus-step-${index + 1}`
+    }))
+  );
+  const expandedDelivery = assertCourseDeliveryScope(proposal, expandedContent);
+  assert.equal(expandedDelivery.steps, delivered.steps + 9, "valid generated teaching steps must not be trimmed to the approved estimate");
+  assert.equal(expandedDelivery.deliveredBandCredits, 10);
+  assert.equal(expandedDelivery.exceedsApprovedBand, true);
   assert.throws(
     () => assertCourseDeliveryScope(proposal, { ...content, modules: content.modules.slice(0, 1) }),
     /requires 2 modules/i
@@ -209,8 +381,8 @@ const finalDiscoveryQuestion = normalizeLearningDiscoveryTurn({
   brief: { type: "course", goal: "Learn JavaScript", subject: "JavaScript" }
 }, { turn: maxLearningDiscoveryQuestions - 1, messages: [{ role: "user", content: "I want to learn JavaScript" }] });
 assert.equal(finalDiscoveryQuestion.status, "clarifying");
-assert.match(finalDiscoveryQuestion.reply, /Last thing I need/i);
-assert.ok(finalDiscoveryQuestion.suggestions.includes("I’m completely new"));
+assert.match(finalDiscoveryQuestion.reply, /Last choice/i);
+assert.ok(finalDiscoveryQuestion.suggestions.includes("Course"));
 
 const projectChipOnly = normalizeLearningDiscoveryTurn({
   status: "ready",
@@ -239,7 +411,7 @@ assert.ok(projectChipWithHallucinatedFramework.missingFields.includes("supported
 assert.equal(projectChipWithHallucinatedFramework.reply, "What kind of project or end result should we build?");
 assert.ok(projectChipWithHallucinatedFramework.suggestions.includes("Personal website"));
 
-const vueTranscriptAlignment = normalizeLearningDiscoveryTurn({
+const ignoredGuidanceQuestion = normalizeLearningDiscoveryTurn({
   status: "clarifying",
   reply: "How much guidance would help—step by step, balanced, or faster?",
   suggestions: ["I’m completely new", "I know the basics", "I’ve built something small"],
@@ -248,10 +420,10 @@ const vueTranscriptAlignment = normalizeLearningDiscoveryTurn({
   { role: "user", content: "Teach me Vue" },
   { role: "user", content: "I’m completely new" }
 ] });
-assert.equal(vueTranscriptAlignment.questionField, "guidance");
-assert.match(vueTranscriptAlignment.reply, /How much guidance/i);
-assert.ok(vueTranscriptAlignment.suggestions.includes("Step-by-step guidance"));
-assert.ok(!vueTranscriptAlignment.suggestions.includes("I’m completely new"));
+assert.equal(ignoredGuidanceQuestion.status, "clarifying");
+assert.equal(ignoredGuidanceQuestion.questionField, "type");
+assert.doesNotMatch(ignoredGuidanceQuestion.reply, /guidance|hand-holding/i);
+assert.ok(ignoredGuidanceQuestion.suggestions.includes("Course"));
 
 const completeDespiteClarifyingModel = normalizeLearningDiscoveryTurn({
   status: "clarifying",
@@ -266,9 +438,9 @@ const completeDespiteClarifyingModel = normalizeLearningDiscoveryTurn({
     supportMode: "teaching_heavy"
   }
 }, { turn: 1, messages: [{ role: "user", content: "Teach me Python from scratch step by step" }] });
-assert.equal(completeDespiteClarifyingModel.status, "ready");
-assert.equal(completeDespiteClarifyingModel.questionField, null);
-assert.deepEqual(completeDespiteClarifyingModel.suggestions, []);
+assert.equal(completeDespiteClarifyingModel.status, "clarifying");
+assert.equal(completeDespiteClarifyingModel.questionField, "type");
+assert.ok(completeDespiteClarifyingModel.suggestions.includes("Exercise pack"));
 
 const completeExercise = normalizeLearningDiscoveryTurn({
   status: "ready",
@@ -303,10 +475,26 @@ const vagueProject = normalizeLearningDiscoveryTurn({
   status: "ready",
   reply: "Ready.",
   brief: { type: "guided_project", goal: "Build something" }
-}, { turn: 1 });
+}, { turn: 1, messages: [{ role: "user", content: "Build something" }] });
 assert.equal(vagueProject.status, "clarifying");
-assert.deepEqual(vagueProject.missingFields, ["desiredOutcome", "supported_technology", "prior_knowledge", "guidance"]);
+assert.deepEqual(vagueProject.missingFields, ["desiredOutcome", "project_difficulty", "supported_technology", "prior_knowledge"]);
 assert.ok(vagueProject.suggestions.length >= 2);
+
+const projectDifficultyTurn = normalizeLearningDiscoveryTurn({
+  status: "clarifying",
+  reply: "Would you like a basic or advanced build?",
+  questionField: "project_difficulty",
+  suggestions: ["Basic", "Advanced"],
+  brief: {
+    type: "project",
+    goal: "Build a Python task tracker",
+    desiredOutcome: "A terminal task tracker",
+    language: "Python",
+    priorKnowledge: "Complete beginner"
+  }
+}, { turn: 2, messages: [{ role: "user", content: "I am completely new and want to build a Python terminal task tracker" }] });
+assert.equal(projectDifficultyTurn.questionField, "project_difficulty");
+assert.deepEqual(projectDifficultyTurn.suggestions, ["Basic", "Advanced"]);
 
 const rejectedEngine = normalizeLearningDiscoveryTurn({
   status: "ready",
@@ -337,8 +525,9 @@ const completeCourse = normalizeLearningDiscoveryTurn({
     supportMode: "teaching_heavy"
   }
 }, { turn: 1, messages: [{ role: "user", content: "I’m completely new. Teach me Python step by step through a budgeting CLI project." }] });
-assert.equal(completeCourse.status, "ready");
-assert.deepEqual(completeCourse.missingFields, []);
+assert.equal(completeCourse.status, "clarifying");
+assert.equal(completeCourse.questionField, "type");
+assert.ok(completeCourse.suggestions.includes("Guided project"));
 
 const rejectedLaunchTechnology = normalizeLearningDiscoveryTurn({
   status: "ready",
@@ -407,6 +596,15 @@ const practicalQualityCodes = validateGeneratedCourseQuality(conceptualQualityFi
 const conceptualQualityCodes = validateGeneratedCourseQuality(conceptualQualityFixture, { conceptual: true }).map((warning) => warning.code);
 assert.ok(practicalQualityCodes.includes("loaded_module_missing_practical_block"));
 assert.ok(!conceptualQualityCodes.includes("loaded_module_missing_practical_block"));
+const repeatedCadenceFixture = structuredClone(conceptualQualityFixture);
+repeatedCadenceFixture.modules[0].topics = Array.from({ length: 3 }, (_, index) => ({
+  ...structuredClone(conceptualQualityFixture.modules[0].topics[0]),
+  title: `DNS concept ${index + 1}`
+}));
+assert.ok(
+  validateGeneratedCourseQuality(repeatedCadenceFixture, { conceptual: true }).some((warning) => warning.code === "repetitive_topic_cadence"),
+  "three identical topic practice signatures must trigger cadence repair"
+);
 
 const algorithmNeedsRuntime = normalizeLearningBrief({
   type: "course",
@@ -456,8 +654,8 @@ const practiceProblems = Array.from({ length: 10 }, (_, index) => index < 7
           type: "lab",
           language: "Python",
           filePath: "main.py",
-          context: "Practise loops for interview-style data processing.",
-          prompt: "Write a loop that prints every item.",
+          context: "You are helping a tiny delivery shop prepare its package list before the driver leaves. The list already contains three package numbers, but the display is blank because nobody has written the loop that visits each package yet. The driver needs every number shown so no delivery is forgotten.",
+          prompt: "Complete the delivery-list program by writing a loop that prints every package number. Keep the starter list intact, make the output include all three values, and do not print extra labels that would confuse the driver.",
           starterCode: "items = [1, 2, 3]\n",
           acceptanceCriteria: ["Uses a loop", "Prints every item"],
           workspaceView: "terminal",
@@ -523,6 +721,7 @@ const exerciseBatchPrompt = buildExerciseProblemBatchPrompt({
 assert.match(exerciseBatchPrompt, /exactly 4 coding problems/i);
 assert.match(exerciseBatchPrompt, /exactly one block and exactly one step/i);
 assert.match(exerciseBatchPrompt, /python-loops/i);
+assert.match(exerciseBatchPrompt, /2-5 relevant files/i);
 const normalizedCodeBatch = normalizeExerciseProblemBatch({ problems: practiceProblems.slice(0, 4) }, {
   brief: exerciseBrief,
   kind: "code",
@@ -568,6 +767,64 @@ const normalizedCss = normalizeExerciseProblemBatch({ problems: [cssProblem] }, 
 })[0].blocks[0].steps[0];
 assert.equal(normalizedCss.requiresPreview, true);
 assert.ok(normalizedCss.workspaceFiles.some((file) => file.path === "index.html" && file.content.includes("styles.css")));
+
+const reactExerciseBrief = {
+  type: "exercise",
+  goal: "Practise React UI basics",
+  subject: "React",
+  language: "JavaScript",
+  framework: "React",
+  motivation: "Build interactive web interfaces",
+  practiceScope: "topics",
+  topics: ["components", "events"],
+  exerciseCount: 10,
+  codingPercent: 70,
+  difficulty: "adaptive",
+  priorKnowledge: "JavaScript basics"
+};
+const reactBatchPrompt = buildExerciseProblemBatchPrompt({
+  brief: reactExerciseBrief,
+  proposal: { items: [{ title: "React UI warm-ups", summary: "Practise focused component behaviors." }] },
+  kind: "code",
+  count: 1,
+  positions: [0]
+});
+assert.match(reactBatchPrompt, /Problem 1: Beginner/);
+assert.match(reactBatchPrompt, /real working Output preview/i);
+const reactSource = 'const root = ReactDOM.createRoot(document.getElementById("app"));\nroot.render(React.createElement("button", null, "Add"));';
+const reactProblem = structuredClone(practiceProblems[0]);
+reactProblem.parentLanguage = "JavaScript";
+reactProblem.difficulty = "Advanced";
+reactProblem.blocks[0].steps[0] = {
+  ...reactProblem.blocks[0].steps[0],
+  language: "JavaScript",
+  filePath: "App.jsx",
+  starterCode: reactSource,
+  acceptanceCriteria: ["A button is visible", "The button can receive a click"],
+  requiresPreview: false,
+  requiresTerminal: true,
+  workspaceFiles: [
+    { path: "index.html", content: '<!doctype html><html><head></head><body><main id="app"></main><script src="App.jsx"></script></body></html>', editable: false },
+    { path: "styles.css", content: "button { padding: 0.75rem; }", editable: false },
+    { path: "App.jsx", content: reactSource, editable: true }
+  ]
+};
+const normalizedReactProblem = normalizeExerciseProblemBatch({ problems: [reactProblem] }, {
+  brief: reactExerciseBrief,
+  kind: "code",
+  count: 1,
+  positions: [0]
+})[0];
+const normalizedReactStep = normalizedReactProblem.blocks[0].steps[0];
+assert.equal(normalizedReactProblem.difficulty, "Beginner", "exercise difficulty must follow the approved progressive position");
+assert.equal(normalizedReactStep.filePath, "src/App.js");
+assert.equal(normalizedReactStep.requiresPreview, true);
+assert.equal(normalizedReactStep.requiresTerminal, false);
+assert.ok(normalizedReactStep.workspaceFiles.length <= 5);
+assert.ok(normalizedReactStep.workspaceFiles.some((file) => file.path === "styles.css"));
+assert.ok(normalizedReactStep.workspaceFiles.some((file) => file.path === "src/App.js"));
+assert.match(normalizedReactStep.workspaceFiles.find((file) => file.path === "index.html").content, /react(?:-dom)?\.production\.min\.js/i);
+assert.match(normalizedReactStep.workspaceFiles.find((file) => file.path === "index.html").content, /src\/App\.js/);
 assert.equal(normalizeExerciseProblemBatch({ problems: practiceProblems.slice(0, 5) }, {
   brief: exerciseBrief,
   kind: "code",
@@ -591,7 +848,7 @@ assert.throws(
   /no problems/i
 );
 
-const projectBrief = { type: "guided_project", goal: "Build a browser counter", desiredOutcome: "Interactive counter page", language: "JavaScript", platform: "web", priorKnowledge: "JavaScript basics" };
+const projectBrief = { type: "guided_project", goal: "Build a browser counter", desiredOutcome: "Interactive counter page", language: "JavaScript", platform: "web", priorKnowledge: "JavaScript basics", projectDifficulty: "basic" };
 const browserStates = Array.from({ length: 10 }, (_, index) => `<!doctype html>\n<button id="counter">Count ${index + 1}</button>\n<script>\n  const buildStep = ${index + 1};\n<\/script>\n`);
 const guidedSteps = browserStates.map((resultCode, index) => ({
   id: `project-step-${index + 1}`,
@@ -624,25 +881,29 @@ const project = normalizeGeneratedLearningContent({
     summary: "Understand, build, and review one interactive counter.",
     blocks: [
       { id: "project-introduction", kind: "theory", title: "Understand the project", summary: "Learn the architecture first.", steps: Array.from({ length: 6 }, (_, index) => ({ type: "theory", markdown: `## Orientation ${index + 1}\n\nProject purpose and relevant refresher ${index + 1}.` })) },
+      { id: "project-foundation-theory", kind: "theory", title: "Understand the counter foundation", summary: "Learn the document and state model.", steps: [{ type: "theory", markdown: "## Counter structure\n\nThe button is the visible control, while the stored count is the source of truth that future interaction will update." }, { type: "example", markdown: "## Data flow\n\nA click enters through the event handler, changes the stored count, and then updates the button text." }] },
       { id: "project-foundation", kind: "workshop", title: "Build the counter foundation", summary: "Create the visible counter in micro-steps.", steps: guidedSteps.slice(0, 5) },
+      { id: "project-interaction-theory", kind: "theory", title: "Understand counter interaction", summary: "Learn events and updates before editing.", steps: [{ type: "theory", markdown: "## Event handling\n\nA click listener connects the browser event to one function responsible for changing project state." }, { type: "example", markdown: "## Update path\n\nAfter state changes, the display reads the new value so the interface and data stay synchronized." }] },
       { id: "project-interaction", kind: "workshop", title: "Add counter interaction", summary: "Add the interactive behavior in micro-steps.", steps: guidedSteps.slice(5) },
       { id: "project-recap", kind: "theory", title: "How it works", summary: "Connect the completed code.", steps: Array.from({ length: 5 }, (_, index) => ({ type: "summary", markdown: `## Recap ${index + 1}\n\nFinished-project connection ${index + 1}.` })) }
     ]
   }
 }, { brief: projectBrief, assessmentReview: review });
 assert.equal(project.schemaVersion, "guided-project-content/v2");
-assert.equal(project.module.blocks.length, 4);
+assert.equal(project.module.blocks.length, 6);
 assert.equal(project.module.blocks[0].kind, "theory");
-assert.ok(project.module.blocks[0].steps.length >= 1 && project.module.blocks[0].steps.length <= 3);
-assert.equal(project.module.blocks[1].kind, "workshop");
-assert.equal(project.module.blocks[1].steps.filter((step) => step.type === "workshop").length, 5);
+assert.ok(project.module.blocks[0].steps.length >= 1 && project.module.blocks[0].steps.length <= 4);
+assert.equal(project.module.blocks[1].kind, "theory");
 assert.equal(project.module.blocks[2].kind, "workshop");
 assert.equal(project.module.blocks[2].steps.filter((step) => step.type === "workshop").length, 5);
 assert.equal(project.module.blocks[3].kind, "theory");
-assert.ok(project.module.blocks[3].steps.length >= 1 && project.module.blocks[3].steps.length <= 2);
+assert.equal(project.module.blocks[4].kind, "workshop");
+assert.equal(project.module.blocks[4].steps.filter((step) => step.type === "workshop").length, 5);
+assert.equal(project.module.blocks[5].kind, "theory");
+assert.ok(project.module.blocks[5].steps.length >= 1 && project.module.blocks[5].steps.length <= 2);
 const normalizedBrowserSteps = project.module.blocks.slice(1, -1).flatMap((block) => block.steps.filter((step) => step.type === "workshop"));
 assert.equal(normalizedBrowserSteps[0].starterCode, "");
-assert.equal(project.module.blocks[2].steps.find((step) => step.type === "workshop").starterCode, project.module.blocks[1].steps.filter((step) => step.type === "workshop").at(-1).resultCode);
+assert.equal(project.module.blocks[4].steps.find((step) => step.type === "workshop").starterCode, project.module.blocks[2].steps.filter((step) => step.type === "workshop").at(-1).resultCode);
 assert.ok(normalizedBrowserSteps.every((step) => step.starterCode.trim() !== step.resultCode.trim()));
 assert.ok(normalizedBrowserSteps.every((step) => step.requiresPreview && !step.requiresTerminal));
 assert.ok(normalizedBrowserSteps.every((step) => !step.workspaceFiles.some((file) => file.path === "preview/index.html")));
@@ -650,12 +911,12 @@ const coercedProject = normalizeGeneratedLearningContent({
   ...project,
   module: {
     ...project.module,
-    blocks: project.module.blocks.map((block, index) => index === 1
+    blocks: project.module.blocks.map((block, index) => index === 2
       ? { ...block, kind: "guided_workshop", steps: block.steps.filter((step) => step.type === "workshop").map((step) => ({ ...step, type: "code" })) }
       : block)
   }
 }, { brief: projectBrief, assessmentReview: review });
-assert.equal(coercedProject.module.blocks[1].steps.filter((step) => step.type === "workshop").length, 5);
+assert.equal(coercedProject.module.blocks[2].steps.filter((step) => step.type === "workshop").length, 5);
 const compactSteps = Array.from({ length: 10 }, (_, index) => ({
   id: `compact-${index + 1}`,
   type: "workshop",
@@ -685,13 +946,69 @@ const compactProject = normalizeGeneratedLearningContent({
     summary: "One continuous build.",
     blocks: [
       project.module.blocks[0],
+      project.module.blocks[1],
       { id: "compact-foundation", kind: "workshop", title: "Build the foundation", summary: "Build it.", steps: compactSteps.slice(0, 5) },
+      project.module.blocks[3],
       { id: "compact-feature", kind: "workshop", title: "Add the feature", summary: "Finish it.", steps: compactSteps.slice(5) },
       project.module.blocks.at(-1)
     ]
   }
 }, { brief: { ...projectBrief, goal: "Fix an existing Python project marker", language: "Python", platform: "terminal", desiredOutcome: "Repair the existing marker" }, assessmentReview: review });
-assert.match(compactProject.module.blocks[2].steps.filter((step) => step.type === "workshop").at(-1).resultCode, /step = 10/);
+assert.match(compactProject.module.blocks[4].steps.filter((step) => step.type === "workshop").at(-1).resultCode, /step = 10/);
+const expandedCompactSteps = Array.from({ length: 36 }, (_, index) => ({
+  id: `expanded-${index + 1}`,
+  type: "workshop",
+  language: "Python",
+  filePath: "main.py",
+  context: "Continue the same complete terminal project with one explainable edit.",
+  prompt: `Advance the project marker from ${index} to ${index + 1}.`,
+  edit: { find: `step = ${index}`, replace: `step = ${index + 1}` },
+  expectedChange: `The project marker becomes ${index + 1}.`,
+  codeExplanation: "This advances the current project state.",
+  suggestedQuestions: ["Why this edit?", "What comes next?"],
+  acceptanceCriteria: [`Uses step = ${index + 1}`],
+  workspaceView: "terminal",
+  requiresPreview: false,
+  requiresTerminal: true
+}));
+const expandedProject = normalizeGeneratedLearningContent({
+  schemaVersion: "guided-project-content/v2",
+  title: "Expanded project",
+  subject: "Python",
+  description: "Preserve a larger valid guided project.",
+  languages: ["Python"],
+  workspaceFiles: [{ path: "main.py", content: "step = 0\n" }],
+  module: {
+    id: "guided-project",
+    title: "Expanded project",
+    summary: "One continuous larger build.",
+    blocks: [
+      project.module.blocks[0],
+      ...Array.from({ length: 6 }, (_, index) => ([
+        {
+          id: `expanded-feature-${index + 1}-theory`,
+          kind: "theory",
+          title: `Understand feature ${index + 1}`,
+          summary: `Learn how feature ${index + 1} connects to the project.`,
+          steps: [{ type: "theory", markdown: `## Feature ${index + 1}\n\nUnderstand the state and control flow used by this capability before editing it.` }]
+        },
+        {
+          id: `expanded-feature-${index + 1}`,
+          kind: "workshop",
+          title: `Feature ${index + 1}`,
+          summary: `Build feature ${index + 1}.`,
+          steps: expandedCompactSteps.slice(index * 6, index * 6 + 6)
+        }
+      ])).flat(),
+      project.module.blocks.at(-1)
+    ]
+  }
+}, { brief: { ...projectBrief, goal: "Build a larger Python terminal project", language: "Python", platform: "terminal", desiredOutcome: "A complete larger terminal project", projectDifficulty: "advanced" }, assessmentReview: review });
+assert.equal(
+  expandedProject.module.blocks.slice(1, -1).flatMap((block) => block.steps.filter((step) => step.type === "workshop")).length,
+  36,
+  "larger valid guided projects must not fail or lose teaching steps"
+);
 assert.throws(() => normalizeGeneratedLearningContent({
   schemaVersion: "guided-project-content/v2",
   title: "Incomplete Pygame platformer",
@@ -699,19 +1016,19 @@ assert.throws(() => normalizeGeneratedLearningContent({
   description: "The recap is missing.",
   languages: ["Python"],
   module: { id: "guided-project", title: "Incomplete", blocks: project.module.blocks.slice(0, 2) }
-}, { brief: projectBrief, assessmentReview: review }), /2-6 feature blocks/i);
+}, { brief: projectBrief, assessmentReview: review }), /taught feature workshops/i);
 const rebalancedProject = normalizeGeneratedLearningContent({
   ...project,
-  module: { ...project.module, blocks: [project.module.blocks[0], { ...project.module.blocks[1], steps: project.module.blocks[1].steps.filter((step) => step.type === "workshop").slice(0, 3) }, project.module.blocks[2], project.module.blocks[3]] }
+  module: { ...project.module, blocks: [project.module.blocks[0], project.module.blocks[1], { ...project.module.blocks[2], steps: project.module.blocks[2].steps.filter((step) => step.type === "workshop").slice(0, 3) }, project.module.blocks[3], project.module.blocks[4], project.module.blocks[5]] }
 }, { brief: projectBrief, assessmentReview: review });
 assert.ok(
-  rebalancedProject.module.blocks.slice(1, -1).every((block) => block.steps.filter((step) => step.type === "workshop").length === 4),
+  rebalancedProject.module.blocks.slice(1, -1).filter((block) => block.kind === "workshop").every((block) => block.steps.filter((step) => step.type === "workshop").length === 4),
   "undersized model feature blocks should rebalance without losing ordered microsteps"
 );
 assert.throws(() => normalizeGeneratedLearningContent({
   ...project,
-  module: { ...project.module, blocks: [project.module.blocks[0], { ...project.module.blocks[1], steps: project.module.blocks[1].steps.filter((step) => step.type === "workshop").slice(0, 2) }, project.module.blocks[2], project.module.blocks[3]] }
-}, { brief: projectBrief, assessmentReview: review }), /8 to 30 guided coding steps/i);
+  module: { ...project.module, blocks: [project.module.blocks[0], project.module.blocks[1], { ...project.module.blocks[2], steps: project.module.blocks[2].steps.filter((step) => step.type === "workshop").slice(0, 2) }, project.module.blocks[3], project.module.blocks[4], project.module.blocks[5]] }
+}, { brief: projectBrief, assessmentReview: review }), /at least 8 guided coding steps/i);
 const repairPrompt = buildLearningExperienceRepairPrompt({
   originalPrompt: "Generate a guided project.",
   invalidOutput: '{"module":{"blocks":[]}}',
@@ -719,6 +1036,6 @@ const repairPrompt = buildLearningExperienceRepairPrompt({
 });
 assert.match(repairPrompt, /complete replacement JSON/i);
 assert.match(repairPrompt, /one project module/i);
-assert.match(repairPrompt, /2-6 feature workshop blocks/i);
+assert.match(repairPrompt, /feature-theory \+ feature-workshop pairs/i);
 
 console.log("Learning orchestrator verification passed.");

@@ -52,12 +52,13 @@ import {
   missingLearningBriefFields,
   normalizeLearningBrief,
   normalizeLearningDiscoveryTurn,
+  isLearningCapabilityQuestion,
   resolveLearningBriefDomainId,
   resolveLearningBriefTechnologyId,
   subjectForLearningBrief,
   unsupportedLearningBriefReason
 } from "./learning-orchestrator/contracts.mjs";
-import { buildLearningProposalPrompt, normalizeLearningProposal } from "./learning-orchestrator/proposals.mjs";
+import { buildLearningProposalPrompt, buildLearningProposalRepairPrompt, normalizeLearningProposal } from "./learning-orchestrator/proposals.mjs";
 import {
   countProposalsSince,
   createLearningProposalRecord,
@@ -1106,10 +1107,47 @@ async function handleCreateLearningProposal({ admin, user }, body, response) {
       sendJson(response, 502, { error: result.error ?? "AI learning proposal failed." });
       return;
     }
+    const proposalResults = [result];
     let proposal;
     let persisted;
     try {
       proposal = normalizeLearningProposal(parseJsonObject(result.text), brief);
+    } catch (initialError) {
+      const repair = await requestCourseGenerationJson({
+        config: providerConfig,
+        prompt: buildLearningProposalRepairPrompt({
+          brief,
+          invalidOutput: result.text,
+          validationError: initialError instanceof Error ? initialError.message : "Invalid proposal."
+        }),
+        maxTokens: 2600
+      });
+      proposalResults.push(repair);
+      try {
+        if (!repair.ok) throw new Error(repair.error ?? "Proposal repair failed.", { cause: initialError });
+        proposal = normalizeLearningProposal(parseJsonObject(repair.text), brief);
+      } catch (repairError) {
+        await releaseProposalAllowance(admin, user.id, proposalAllowance).catch(() => null);
+        const failedUsage = summarizeUsage(proposalResults);
+        await recordUsageEvent(admin, {
+          userId: user.id,
+          courseId: null,
+          model: providerConfig.model,
+          status: "failed",
+          feature: "learning_proposal",
+          costCategory: "proposal_free",
+          usage: failedUsage.usage,
+          latencyMs: failedUsage.latencyMs
+        });
+        console.error("Learning proposal normalization failed", repairError instanceof Error ? repairError.message : String(repairError));
+        sendJson(response, 502, {
+          error: "Stonecode could not prepare this learning proposal. Please retry once.",
+          code: "learning_proposal_invalid"
+        });
+        return;
+      }
+    }
+    try {
       persisted = await createLearningProposalRecord(admin, {
         userId: user.id,
         brief,
@@ -1120,6 +1158,7 @@ async function handleCreateLearningProposal({ admin, user }, body, response) {
       await releaseProposalAllowance(admin, user.id, proposalAllowance).catch(() => null);
       throw error;
     }
+    const proposalUsage = summarizeUsage(proposalResults);
     await recordUsageEvent(admin, {
       userId: user.id,
       courseId: null,
@@ -1129,8 +1168,8 @@ async function handleCreateLearningProposal({ admin, user }, body, response) {
       status: "success",
       feature: "learning_proposal",
       costCategory: "proposal_free",
-      usage: result.usage,
-      latencyMs: result.latencyMs
+      usage: proposalUsage.usage,
+      latencyMs: proposalUsage.latencyMs
     });
     if (persisted.idempotent) await releaseProposalAllowance(admin, user.id, proposalAllowance).catch(() => null);
     const proposalsUsed = proposalAllowance.atomic === false
@@ -1206,7 +1245,7 @@ async function handleFinalizeLearningProposal({ admin, user }, proposalId, body,
         throw dispatchError;
       }
     }
-    sendJson(response, finalized.idempotent ? 200 : 202, { job: finalized.job, idempotent: finalized.idempotent });
+    sendJson(response, finalized.idempotent ? 200 : 202, { job: generationJobResponse(finalized.job), idempotent: finalized.idempotent });
   } catch (error) {
     sendDomainError(response, error, "Learning proposal finalization failed.");
   }
@@ -1263,7 +1302,7 @@ async function handleGenerationJobRequest(request, response) {
       return;
     }
     job = await recoverStaleGenerationJob(auth.admin, auth.user.id, job);
-    sendJson(response, 200, { job });
+    sendJson(response, 200, { job: generationJobResponse(job) });
   } catch (error) {
     sendDomainError(response, error, "Generation job lookup failed.");
   }
@@ -1271,23 +1310,45 @@ async function handleGenerationJobRequest(request, response) {
 
 async function recoverStaleGenerationJob(admin, userId, job) {
   if (!job || job.heartbeat_at === undefined) return job;
-  if (job.status === "queued" && Number(job.attempt_count ?? 0) > 0 && Number(job.attempt_count ?? 0) < 3) {
+  const maximumAttempts = job.launch_ready_at ? 8 : 3;
+  if (job.status === "queued" && Number(job.attempt_count ?? 0) > 0 && Number(job.attempt_count ?? 0) < maximumAttempts) {
     await dispatchGenerationJob({ admin, job }).catch((error) => console.error("Generation retry dispatch failed", error instanceof Error ? error.message : error));
     return job;
   }
   const heartbeat = new Date(job.heartbeat_at || job.started_at || job.created_at).getTime();
   if (job.status !== "running" || !Number.isFinite(heartbeat) || Date.now() - heartbeat < 20 * 60_000) return job;
-  if (Number(job.attempt_count ?? 0) >= 3) {
+  if (Number(job.attempt_count ?? 0) >= maximumAttempts) {
     await Promise.all([
-      releaseCredits(admin, { userId, reservationId: job.reservation_id }).catch(() => null),
-      admin.from("generation_jobs").update({ status: "failed", error_code: "generation_job_stale", error_message: "Generation stopped responding after three attempts.", completed_at: new Date().toISOString() }).eq("id", job.id).eq("user_id", userId).eq("status", "running")
+      job.launch_ready_at ? Promise.resolve() : releaseCredits(admin, { userId, reservationId: job.reservation_id }).catch(() => null),
+      admin.from("generation_jobs").update({ status: "failed", error_code: "generation_job_stale", error_message: "Generation stopped responding after repeated recovery attempts.", completed_at: new Date().toISOString() }).eq("id", job.id).eq("user_id", userId).eq("status", "running")
     ]);
-    return { ...job, status: "failed", error_code: "generation_job_stale", error_message: "Generation stopped responding after three attempts." };
+    return { ...job, status: "failed", error_code: "generation_job_stale", error_message: "Generation stopped responding after repeated recovery attempts." };
   }
-  const { data, error } = await admin.from("generation_jobs").update({ status: "queued", progress: 5, started_at: null, error_code: "generation_job_retry", error_message: "Retrying an interrupted generation." }).eq("id", job.id).eq("user_id", userId).eq("status", "running").select("*").maybeSingle();
+  const { data, error } = await admin.from("generation_jobs").update({ status: "queued", progress: job.launch_ready_at ? 100 : 5, started_at: null, error_code: "generation_job_retry", error_message: "Retrying an interrupted generation." }).eq("id", job.id).eq("user_id", userId).eq("status", "running").select("*").maybeSingle();
   if (error || !data) return job;
   await dispatchGenerationJob({ admin, job: data }).catch((dispatchError) => console.error("Stale generation retry dispatch failed", dispatchError instanceof Error ? dispatchError.message : dispatchError));
   return data;
+}
+
+function generationJobResponse(job) {
+  const progressive = job?.generation_state?.version === "progressive-course-generation/v1" ? job.generation_state : null;
+  const moduleStates = Array.isArray(progressive?.modules)
+    ? progressive.modules.map(({ index, id, title, status }) => ({ index, id, title, status }))
+    : [];
+  return {
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    result_course_id: job.result_course_id ?? null,
+    error_code: job.error_code ?? null,
+    error_message: job.error_message ?? null,
+    launch_ready_at: job.launch_ready_at ?? null,
+    background_completed_at: job.background_completed_at ?? null,
+    background_status: job.status === "succeeded" ? "complete" : job.launch_ready_at ? job.status === "failed" ? "paused" : "generating" : "waiting",
+    ready_module_count: moduleStates.filter((module) => module.status === "ready").length,
+    total_module_count: Number(progressive?.totalModules ?? moduleStates.length),
+    module_states: moduleStates
+  };
 }
 
 function proposalResponse(row) {
@@ -1544,11 +1605,20 @@ async function handleLearningDiscoveryTurn({ admin, user }, body, response) {
     sendJson(response, 400, { error: "Learning discovery needs a valid turn number." });
     return;
   }
-  const capabilities = await buildRuntimeCapabilityCatalog({ admin, env: process.env });
+  const [capabilities, learnerContext] = await Promise.all([
+    buildRuntimeCapabilityCatalog({ admin, env: process.env }),
+    readLearningDiscoveryContext(admin, user)
+  ]);
   const availableTechnologyIds = capabilities.technologies.filter((technology) => technology.available).map((technology) => technology.id);
   const availableDomainIds = capabilities.domains.filter((domain) => domain.available).map((domain) => domain.id);
   if (!availableTechnologyIds.length) {
     sendJson(response, 503, { error: "No learning runtimes are currently available. Please try again shortly.", code: "runtime_catalog_unavailable" });
+    return;
+  }
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
+  if (isLearningCapabilityQuestion(latestUserMessage)) {
+    const discovery = normalizeLearningDiscoveryTurn({ status: "clarifying" }, { turn, messages, draftBrief: body?.draftBrief, learnerContext, availableTechnologyIds, availableDomainIds });
+    sendJson(response, 200, { discovery, source: "catalog" });
     return;
   }
   const providerConfig = await resolveUserProviderConfig(admin, user, "learning_discovery");
@@ -1558,7 +1628,7 @@ async function handleLearningDiscoveryTurn({ admin, user }, body, response) {
   }
   const result = await requestCourseGenerationJson({
     config: providerConfig,
-    prompt: buildLearningDiscoveryPrompt({ messages, turn, availableTechnologyIds, availableDomainIds }),
+    prompt: buildLearningDiscoveryPrompt({ messages, turn, learnerContext, availableTechnologyIds, availableDomainIds }),
     maxTokens: 900
   });
   if (!result.ok) {
@@ -1566,13 +1636,39 @@ async function handleLearningDiscoveryTurn({ admin, user }, body, response) {
     return;
   }
   try {
-    const discovery = normalizeLearningDiscoveryTurn(parseJsonObject(result.text), { turn, messages, availableTechnologyIds, availableDomainIds });
+    const discovery = normalizeLearningDiscoveryTurn(parseJsonObject(result.text), { turn, messages, draftBrief: body?.draftBrief, learnerContext, availableTechnologyIds, availableDomainIds });
     await recordUsageEvent(admin, { userId: user.id, courseId: null, model: providerConfig.model, status: "success", feature: "learning_discovery", usage: result.usage, latencyMs: result.latencyMs });
     sendJson(response, 200, { discovery, source: "ai" });
   } catch (error) {
     console.error("Learning discovery validation failed", error instanceof Error ? error.message : error);
     sendJson(response, 502, { error: "AI learning discovery returned invalid content." });
   }
+}
+
+async function readLearningDiscoveryContext(admin, user) {
+  const metadataName = [
+    user?.user_metadata?.display_name,
+    user?.user_metadata?.full_name,
+    user?.user_metadata?.name
+  ].find((value) => typeof value === "string" && value.trim());
+  const [profileResult, coursesResult] = await Promise.all([
+    admin.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
+    admin.from("courses")
+      .select("title,subject,experience_type,updated_at")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(4)
+  ]);
+  if (profileResult.error) console.warn("Learning discovery profile context unavailable", profileResult.error.message);
+  if (coursesResult.error) console.warn("Learning discovery course context unavailable", coursesResult.error.message);
+  return {
+    displayName: profileResult.data?.display_name || metadataName || null,
+    recentLearning: (coursesResult.data ?? []).map((course) => ({
+      title: course.title,
+      subject: course.subject,
+      type: course.experience_type
+    }))
+  };
 }
 
 async function handleLearningGeneration({ admin, user }, body, response) {
@@ -2593,6 +2689,7 @@ async function handleProgressionExercise({ admin, user }, request, response) {
 
   let passed;
   let feedback;
+  let criteriaResults = [];
   if (definition.kind === "chat" && action === "complete") {
     const providerConfig = await resolveUserProviderConfig(admin, user, "reflection_grade");
     if (providerConfig.error) {
@@ -2616,9 +2713,12 @@ async function handleProgressionExercise({ admin, user }, request, response) {
     feedback = grade.feedback;
   } else if (definition.kind === "mcq") {
     passed = action === "complete" && body?.submission?.answerIndex === definition.correctAnswerIndex;
-    feedback = passed ? definition.explanation ?? "Correct." : "Not quite. Review the explanation, then continue.";
+    const explanation = definition.explanation ?? "Review how this choice connects to the topic.";
+    feedback = passed ? `Correct. ${explanation}` : `Not quite. ${explanation} Choose another answer.`;
   } else if (definition.kind === "code") {
     const submittedCode = body?.submission?.code;
+    criteriaResults = evaluateGeneratedCodeCriteria(submittedCode, definition);
+    const baseCodePassed = action === "complete" && hasGeneratedCodeChange(submittedCode, definition);
     const staticPassed = action === "complete" && gradeGeneratedCodeExercise(submittedCode, definition);
     const executionConfig = resolveExecutionConfig(process.env);
     if (action === "complete" && executionConfig.configured) {
@@ -2643,12 +2743,13 @@ async function handleProgressionExercise({ admin, user }, request, response) {
           starterCode: definition.starterCode,
           resultCode: definition.resultCode
         });
-        passed = staticPassed && sandboxGrade.passed;
+        const staticGatePassed = definition.exerciseKind === "workshop" ? baseCodePassed : staticPassed;
+        passed = staticGatePassed && sandboxGrade.passed;
         feedback = passed
-          ? sandboxGrade.feedback
-          : !staticPassed
-            ? "Code ran, but it does not satisfy the generated acceptance criteria yet."
-            : sandboxGrade.feedback;
+          ? `${sandboxGrade.feedback} Equivalent code and different line placement are accepted.`
+          : !sandboxGrade.passed
+            ? sandboxGrade.feedback
+            : generatedCriteriaHint(criteriaResults);
         await recordUsageEvent(admin, { userId: user.id, courseId, eventType: "code_run", feature: "judge0_grading", costCategory: "plan_included", latencyMs: Date.now() - gradingStartedAt, status: "success" });
       } catch (error) {
         if (shouldReleaseJudge0Reservation(error)) await releaseJudge0Allowance(admin, user.id, allowance).catch(() => null);
@@ -2663,7 +2764,7 @@ async function handleProgressionExercise({ admin, user }, request, response) {
       passed = staticPassed;
       feedback = passed
         ? "Editor exercise passed static verification. Configure Judge0 for compile-and-run grading."
-        : "Not enough yet. Update the active IDE file and try again.";
+        : generatedCriteriaHint(criteriaResults);
     }
   } else {
     passed = action === "complete" && gradeDeterministicExercise(source, exerciseKey, body?.submission);
@@ -2686,14 +2787,18 @@ async function handleProgressionExercise({ admin, user }, request, response) {
       sendJson(response, 500, { error: error.message });
       return;
     }
-    sendJson(response, 200, { exercise: { passed: false, feedback } });
+    sendJson(response, 200, { exercise: { passed: false, feedback, criteria: criteriaResults } });
     return;
   }
 
   const dateKey = await readUserDateKey(admin, user.id);
   const plan = source === "independent" || usesPracticeAllowance ? await readUserPlan(admin, user.id) : "pro";
   const dailyLimit = plan === "pro" ? 30 : plan === "basic" ? 10 : 2;
-  const awardDefinition = definition.kind === "code" && await hasFailedExerciseAttempt(admin, user.id, source, existingKey)
+  const hadFailedAttempt = ["code", "mcq"].includes(definition.kind)
+    ? await hasFailedExerciseAttempt(admin, user.id, source, existingKey)
+    : false;
+  const xpEligible = !(definition.kind === "mcq" && hadFailedAttempt);
+  const awardDefinition = definition.kind === "code" && hadFailedAttempt
     ? { ...definition, xp: Math.max(1, Math.ceil(definition.xp / 2)) }
     : definition;
   const awardResult = await awardExerciseCompletion(admin, {
@@ -2705,6 +2810,7 @@ async function handleProgressionExercise({ admin, user }, request, response) {
     definition: awardDefinition,
     dateKey,
     dailyLimit,
+    awardXp: xpEligible,
     usesDailyAllowance: source === "independent" || usesPracticeAllowance
   });
   if (awardResult.error) {
@@ -2723,7 +2829,9 @@ async function handleProgressionExercise({ admin, user }, request, response) {
       passed: true,
       feedback,
       awarded: awardResult.awarded,
-      xp: awardResult.awarded ? awardDefinition.xp : 0
+      xpEligible,
+      xp: awardResult.awarded ? awardDefinition.xp : 0,
+      criteria: criteriaResults.map((criterion) => ({ ...criterion, passed: true }))
     }
   });
 }
@@ -2803,7 +2911,8 @@ async function resolveProgressionExerciseDefinition(admin, source, exerciseKey, 
         acceptanceCriteria: exercise.acceptanceCriteria,
         starterCode: exercise.starterCode,
         resultCode: exercise.resultCode,
-        expectedChange: exercise.expectedChange
+        expectedChange: exercise.expectedChange,
+        exerciseKind: exercise.exerciseKind
       };
     }
   }
@@ -2841,6 +2950,7 @@ function flattenGeneratedExercises(content) {
               return {
                 ...metadata,
                 type: "code",
+                exerciseKind: step.type,
                 keyBase,
                 legacyKeyBase: block.id,
                 prompt: step.prompt,
@@ -2877,13 +2987,34 @@ function matchesGeneratedExerciseKey(exerciseKey, keyBase, legacyKeyBase, type) 
 }
 
 function gradeGeneratedCodeExercise(code, definition = {}) {
+  if (!hasGeneratedCodeChange(code, definition)) return false;
+  const results = evaluateGeneratedCodeCriteria(code, definition);
+  if (!results.length) return true;
+  const requiredPasses = definition.exerciseKind === "workshop" ? 1 : Math.ceil(results.length / 2);
+  return results.filter((criterion) => criterion.passed).length >= requiredPasses;
+}
+
+function hasGeneratedCodeChange(code, definition = {}) {
   const normalizedCode = typeof code === "string" ? code.trim() : "";
   if (normalizedCode.length < 4) return false;
   if (typeof definition.starterCode === "string" && normalizedCode === definition.starterCode.trim()) return false;
   if (!/[=;{}()]|\b(console|return|def|function|const|let|class|static|void|func|fn|print|println|display|select|program|puts|echo)\b/i.test(normalizedCode)) return false;
+  return true;
+}
+
+function evaluateGeneratedCodeCriteria(code, definition = {}) {
+  const normalizedCode = typeof code === "string" ? code.trim() : "";
   const criteria = Array.isArray(definition.acceptanceCriteria) ? definition.acceptanceCriteria : [];
-  if (!criteria.length) return true;
-  return criteria.every((criterion) => gradeCodeCriterion(normalizedCode, criterion));
+  return criteria.map((criterion) => ({
+    label: String(criterion ?? "").trim(),
+    passed: hasGeneratedCodeChange(normalizedCode, definition) && gradeCodeCriterion(normalizedCode, criterion)
+  })).filter((criterion) => criterion.label);
+}
+
+function generatedCriteriaHint(results) {
+  const remaining = (Array.isArray(results) ? results : []).filter((criterion) => !criterion.passed).slice(0, 2);
+  if (!remaining.length) return "Make a meaningful code change, keep the required output, and try again. Line placement and harmless formatting differences are accepted.";
+  return `Your approach is close. Check ${remaining.map((criterion) => `“${criterion.label}”`).join(" and ")}. Keep the required output and core idea; exact line placement is not required.`;
 }
 
 function gradeCodeCriterion(code, criterion) {
@@ -2935,7 +3066,7 @@ async function hasFailedExerciseAttempt(admin, userId, source, exerciseKey) {
     .eq("source", source)
     .eq("exercise_key", exerciseKey)
     .maybeSingle();
-  return data?.status === "failed" || (data?.attempts ?? 0) > 0;
+  return data?.status === "failed";
 }
 
 async function awardExerciseCompletion(admin, {
@@ -2947,16 +3078,28 @@ async function awardExerciseCompletion(admin, {
   definition,
   dateKey,
   dailyLimit,
+  awardXp = true,
   usesDailyAllowance = false
 }) {
-  const { data: existingAward, error: existingError } = await admin.from("xp_ledger")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("source", source)
-    .eq("source_key", awardKey)
-    .maybeSingle();
-  if (existingError) return { awarded: false, status: 500, error: existingError.message };
-  if (existingAward) return { awarded: false, status: 200, error: null };
+  if (!awardXp) {
+    const { data: existingAttempt, error: existingAttemptError } = await admin.from("exercise_attempts")
+      .select("status")
+      .eq("user_id", userId)
+      .eq("source", source)
+      .eq("exercise_key", exerciseKey)
+      .maybeSingle();
+    if (existingAttemptError) return { awarded: false, status: 500, error: existingAttemptError.message };
+    if (existingAttempt?.status === "completed") return { awarded: false, status: 200, error: null };
+  } else {
+    const { data: existingAward, error: existingError } = await admin.from("xp_ledger")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("source", source)
+      .eq("source_key", awardKey)
+      .maybeSingle();
+    if (existingError) return { awarded: false, status: 500, error: existingError.message };
+    if (existingAward) return { awarded: false, status: 200, error: null };
+  }
 
   let dailyState = null;
   if (usesDailyAllowance) {
@@ -2972,23 +3115,25 @@ async function awardExerciseCompletion(admin, {
     }
   }
 
-  const { error: ledgerError } = await admin.from("xp_ledger").insert({
-    user_id: userId,
-    course_id: courseId,
-    source,
-    source_key: awardKey,
-    language: definition.parentLanguage || definition.language,
-    primary_skill: definition.primarySkill || definition.language,
-    parent_language: definition.parentLanguage || definition.language,
-    topic_ids: definition.topicIds ?? [],
-    domain_ids: definition.domainIds ?? [],
-    exercise_kind: definition.kind === "mcq" ? "mcq" : definition.kind === "code" ? "code" : "chat",
-    difficulty: definition.difficulty,
-    xp: definition.xp,
-    earned_on: dateKey
-  });
-  if (ledgerError?.code === "23505") return { awarded: false, status: 200, error: null };
-  if (ledgerError) return { awarded: false, status: 500, error: ledgerError.message };
+  if (awardXp) {
+    const { error: ledgerError } = await admin.from("xp_ledger").insert({
+      user_id: userId,
+      course_id: courseId,
+      source,
+      source_key: awardKey,
+      language: definition.parentLanguage || definition.language,
+      primary_skill: definition.primarySkill || definition.language,
+      parent_language: definition.parentLanguage || definition.language,
+      topic_ids: definition.topicIds ?? [],
+      domain_ids: definition.domainIds ?? [],
+      exercise_kind: definition.kind === "mcq" ? "mcq" : definition.kind === "code" ? "code" : "chat",
+      difficulty: definition.difficulty,
+      xp: definition.xp,
+      earned_on: dateKey
+    });
+    if (ledgerError?.code === "23505") return { awarded: false, status: 200, error: null };
+    if (ledgerError) return { awarded: false, status: 500, error: ledgerError.message };
+  }
 
   const now = new Date().toISOString();
   const writes = [
@@ -3026,8 +3171,8 @@ async function awardExerciseCompletion(admin, {
   }
   const results = await Promise.all(writes);
   const writeError = results.find((result) => result.error)?.error;
-  if (writeError) return { awarded: true, status: 500, error: writeError.message };
-  return { awarded: true, status: 200, error: null };
+  if (writeError) return { awarded: awardXp, status: 500, error: writeError.message };
+  return { awarded: awardXp, status: 200, error: null };
 }
 
 async function isExerciseSessionCourse(admin, userId, courseId) {

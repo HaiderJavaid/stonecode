@@ -45,22 +45,23 @@ const corpusSpecs = [
       "Teach a beginner to build a standard COBOL console record-processing program with DISPLAY and ACCEPT."
     ]
   }),
-  spec("basic", "QB64-PE Wiki", "https://qb64phoenix.com/qb64wiki/index.php/Variable_Types", ["variables, arrays, subroutines, functions, strings, and user-defined types", "IF blocks, SELECT CASE, loops, errors, and console I/O", "plain console programs without native GUI extensions"], {
+  spec("basic", "FreeBASIC Manual", "https://www.freebasic.net/wiki/DocToc", ["variables, arrays, subroutines, functions, strings, and user-defined types", "IF blocks, SELECT CASE, loops, errors, and console I/O", "plain console programs without native GUI extensions"], {
     seedUrls: [
-      "https://qb64phoenix.com/qb64wiki/index.php/Arrays",
-      "https://qb64phoenix.com/qb64wiki/index.php/TYPE",
-      "https://qb64phoenix.com/qb64wiki/index.php/SUB",
-      "https://qb64phoenix.com/qb64wiki/index.php/FUNCTION",
-      "https://qb64phoenix.com/qb64wiki/index.php/IF",
-      "https://qb64phoenix.com/qb64wiki/index.php/SELECT_CASE",
-      "https://qb64phoenix.com/qb64wiki/index.php/FOR...NEXT",
-      "https://qb64phoenix.com/qb64wiki/index.php/INPUT",
-      "https://qb64phoenix.com/qb64wiki/index.php/PRINT"
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgDim",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgType",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgFunction",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgSub",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgIfthen",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgSelectcase",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgFor",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgDo",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgInput",
+      "https://www.freebasic.net/wiki/wikka.php?wakka=KeyPgPrint"
     ],
     evaluationQueries: [
-      "Teach a beginner QB64 variable types, DIM arrays, SUB procedures, FUNCTION procedures, strings, and TYPE records.",
-      "Teach a beginner QB64 IF THEN blocks, SELECT CASE, FOR and DO loops, error handling, INPUT, and PRINT.",
-      "Teach a beginner to write a plain QB64 console program using INPUT, variables, calculations, and PRINT without graphics or GUI extensions."
+      "Teach a beginner FreeBASIC variable types, DIM arrays, SUB procedures, FUNCTION procedures, strings, and TYPE records.",
+      "Teach a beginner FreeBASIC IF THEN blocks, SELECT CASE, FOR and DO loops, error handling, INPUT, and PRINT.",
+      "Teach a beginner to write a plain FreeBASIC console program using INPUT, variables, calculations, and PRINT without graphics or GUI extensions."
     ]
   }),
   spec("html", "MDN HTML", "https://developer.mozilla.org/en-US/docs/Web/HTML", ["documents, elements, attributes, headings, links, lists, and forms", "semantic structure, validation, accessibility, and responsive metadata", "standalone standards-based pages without server dependencies"]),
@@ -77,7 +78,7 @@ export function findTechnologyCorpus(value) {
 export function resolveRagTechnologyId(value) {
   const normalized = ` ${String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9+#.]+/g, " ")} `;
   const aliases = [
-    ["typescript", ["typescript", " ts "]], ["javascript", ["javascript", " js ", "react", "vue", "svelte", "d3", "chart.js", "p5.js"]],
+    ["typescript", ["typescript", "type script", " ts "]], ["javascript", ["javascript", " js ", "react", "vue", "svelte", "d3", "chart.js", "p5.js"]],
     ["csharp", ["c#", "c sharp", "dotnet", ".net"]], ["cpp", ["c++", "cpp"]], ["python", ["python", " py "]],
     ["kotlin", ["kotlin"]], ["fortran", ["fortran"]], ["cobol", ["cobol"]], ["swift", ["swift"]], ["julia", ["julia"]],
     ["ruby", ["ruby"]], ["php", ["php"]], ["java", ["java"]], ["rust", ["rust"]], ["dart", ["dart"]],

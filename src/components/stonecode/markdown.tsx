@@ -28,8 +28,8 @@ export function renderMarkdown(content: string) {
     if (!listItems.length) return;
     blocks.push(
       <ul key={`list-${blocks.length}`}>
-        {listItems.map((item) => (
-          <li key={item}>{renderInlineMarkdown(item)}</li>
+        {listItems.map((item, index) => (
+          <li key={`${index}-${item}`}>{renderInlineMarkdown(item)}</li>
         ))}
       </ul>
     );
@@ -69,6 +69,12 @@ export function renderMarkdown(content: string) {
 
     if (!line.trim()) {
       flushList();
+      return;
+    }
+
+    if (line.startsWith("> ")) {
+      flushList();
+      blocks.push(<aside className="learning-callout" key={`callout-${blocks.length}`}>{renderInlineMarkdown(line.slice(2))}</aside>);
       return;
     }
 

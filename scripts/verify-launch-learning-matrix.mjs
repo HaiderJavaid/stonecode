@@ -6,6 +6,7 @@ import { normalizeGeneratedCourseContent } from "../server/course-generation.mjs
 import { assertCourseDeliveryScope } from "../server/learning-orchestrator/course-delivery.mjs";
 import { normalizeGeneratedLearningContent } from "../server/learning-orchestrator/generation.mjs";
 import { missingLearningBriefFields } from "../server/learning-orchestrator/contracts.mjs";
+import { normalizeLearningProposal } from "../server/learning-orchestrator/proposals.mjs";
 import { findTechnology, launchTechnologyIds, learningDomainCatalog } from "../shared/stonecode-product.mjs";
 
 const modes = ["course", "guided_project", "exercise"];
@@ -23,7 +24,25 @@ const domainMatrix = learningDomainCatalog.filter((domain) => domain.id !== "pro
 );
 const matrix = [...technologyMatrix, ...domainMatrix];
 
-for (const item of matrix) assert.deepEqual(missingLearningBriefFields(item.brief), [], `${item.domainId}/${item.technology?.id ?? "conceptual"}/${item.mode} brief must be complete`);
+for (const item of matrix) {
+  assert.deepEqual(missingLearningBriefFields(item.brief), [], `${item.domainId}/${item.technology?.id ?? "conceptual"}/${item.mode} brief must be complete`);
+  if (item.mode === "guided_project") {
+    const normalizedProposal = normalizeLearningProposal({
+      title: `${item.technology.displayName} project`,
+      summary: item.brief.desiredOutcome,
+      items: Array.from({ length: 6 }, (_, index) => ({
+        title: `Feature ${index + 1}`,
+        summary: `Build feature ${index + 1}`,
+        stepCount: 10,
+        fileCount: 14
+      })),
+      totalSteps: 60,
+      totalFiles: 14
+    }, item.brief);
+    assert.equal(normalizedProposal.totals.steps, 18, `${item.technology.displayName} basic project estimate must stay bounded`);
+    assert.equal(normalizedProposal.totals.files, 10, `${item.technology.displayName} oversized file estimate must normalize`);
+  }
+}
 if (!process.argv.includes("--live")) {
   console.table(matrix.map((item) => ({ domain: item.domainId, technology: item.technology?.displayName ?? "conceptual", mode: item.mode, subject: item.brief.subject })));
   console.log(`Launch matrix contract check passed (${technologyMatrix.length} technology paths + ${domainMatrix.length} domain paths). Paid live generation additionally requires --live --confirm-external-spend.`);
@@ -163,6 +182,7 @@ function briefForTechnology(technology, mode) {
     platform: ["JavaScript", "HTML", "CSS"].includes(language) ? "web" : "terminal",
     desiredOutcome: projectOutcome(language),
     priorKnowledge: "Complete beginner",
+    projectDifficulty: "basic",
     supportMode: "teaching_heavy"
   };
   return {
@@ -207,6 +227,7 @@ function briefForDomain(domain, mode) {
     platform: technology.runtime === "browser" ? "web" : "terminal",
     desiredOutcome: `A runnable tool demonstrating ${domain.focusAreas[0]}`,
     priorKnowledge: "Complete beginner",
+    projectDifficulty: "basic",
     supportMode: "teaching_heavy"
   };
   return {

@@ -200,7 +200,7 @@ export function StonecodePrototype({
       try {
         const { job } = await requestGenerationJob(jobId);
         if (cancelled) return;
-        if (job.status === "succeeded" && job.result_course_id) {
+        if ((job.launch_ready_at || job.status === "succeeded") && job.result_course_id) {
           clearPendingGenerationJob(jobId);
           await openGeneratedCourseRef.current(job.result_course_id);
           return;

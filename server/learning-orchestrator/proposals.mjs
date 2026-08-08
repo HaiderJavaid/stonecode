@@ -11,6 +11,11 @@ export function buildLearningProposalPrompt(briefValue) {
   const type = normalizeProductExperienceType(brief.type);
   const domain = findLearningDomain(resolveLearningBriefDomainId(brief));
   const technology = findTechnology(resolveLearningBriefTechnologyId(brief));
+  const projectScopeRule = brief.projectDifficulty === "basic"
+    ? "This is a BASIC project: keep the approved build to 8-18 coding micro-steps, 2-4 core capabilities, a small stack, and essential happy-path behavior."
+    : brief.projectDifficulty === "advanced"
+      ? "This is an ADVANCED project: use 18-30 coding micro-steps across 4-6 capabilities, including useful state, validation, edge cases, and modular structure supported by the selected runtime."
+      : "Keep project scope within 6-30 coding micro-steps.";
   return `You are Stonecode's learning-path planner. Produce the exact editable proposal the learner will approve before credits are reserved.
 
 Return strict JSON only:
@@ -38,13 +43,23 @@ Rules:
 - type must be ${type}.
 - Domain must remain ${domain?.displayName ?? "Programming"} (${domain?.id ?? "programming"}). ${technology ? `The selected runnable technology is ${technology.displayName} (${technology.id}).` : "This is an approved conceptual Course with no fake runtime."}
 - Course: return 1-12 module items. Give every module 6-20 meaningful learner steps, keep the sum within 180, and make totalSteps equal the sum of item stepCount values. A compact concept still uses type course.
-- Project: return 6-30 ordered build-step items and no more than 10 files.
+- Project: return 2-6 ordered feature/capability items, not one item per pasted code fragment. Give each item 1-10 connected coding micro-steps, make totalSteps equal that exact sum, and use no more than 10 files total. ${projectScopeRule}
 - Exercise: return topic-group items and exactly 5-25 exercises matching the requested count.
 - Use only plain code, approved browser frameworks/libraries, or headless language runtimes. No external engines, native GUI tools, or arbitrary packages.
 - Conceptual Computer/IT or Internet/Web Courses may use theory, examples, quizzes, reviews, and tutor-diagram cues without code execution. Algorithms, data structures, math coding paths, projects, and coding exercises must use the selected runnable technology.
 - Items must be concrete enough that the learner can judge the syllabus before spending credits.
 - Do not generate visuals here. Curriculum generation later decides optional chat visual cues step by step.
 - Do not include duration, schedule, study hours, dates, prices, or credit values.`;
+}
+
+export function buildLearningProposalRepairPrompt({ brief, invalidOutput, validationError }) {
+  return `${buildLearningProposalPrompt(brief)}
+
+PROPOSAL REPAIR REQUIRED
+The previous JSON could not be normalized: ${text(validationError, "invalid proposal", 500)}
+Previous JSON: ${String(invalidOutput ?? "").slice(0, 9000)}
+
+Return one complete replacement proposal. Keep the confirmed learner request, obey the exact item/step/file bounds above, and return JSON only.`;
 }
 
 export function normalizeLearningProposal(value, briefValue) {
@@ -54,7 +69,7 @@ export function normalizeLearningProposal(value, briefValue) {
   const domain = findLearningDomain(domainId);
   const technologyId = resolveLearningBriefTechnologyId(brief);
   const technology = findTechnology(technologyId);
-  const rawItems = Array.isArray(value?.items) ? value.items : [];
+  const rawItems = boundedRawItems(value?.items, type);
   const courseItemStepMaximum = type === "course"
     ? Math.max(6, Math.min(20, Math.floor(180 / Math.max(rawItems.length, 1))))
     : 180;
@@ -64,16 +79,25 @@ export function normalizeLearningProposal(value, briefValue) {
     summary: text(item?.summary, "Focused learning objective.", 320),
     stepCount: type === "course"
       ? integerRange(item?.stepCount, 8, 6, courseItemStepMaximum)
-      : integer(item?.stepCount, type === "project" ? 1 : 0, 180),
+      : type === "project"
+        ? integerRange(item?.stepCount, 1, 1, 10)
+        : integer(item?.stepCount, 0, 180),
     fileCount: integer(item?.fileCount, 0, 10)
   }));
   validateItemCount(type, items.length);
+  if (type === "project") fitProjectStepCounts(items, brief.projectDifficulty === "basic" ? 18 : 30);
 
   const inferredSteps = items.reduce((total, item) => total + item.stepCount, 0);
-  const totalSteps = type === "course"
+  if (type === "project" && brief.projectDifficulty === "basic" && inferredSteps < 8) {
+    throw proposalError("A basic project proposal requires at least 8 coding micro-steps.");
+  }
+  if (type === "project" && brief.projectDifficulty === "advanced" && inferredSteps < 18) {
+    throw proposalError("An advanced project proposal requires at least 18 coding micro-steps.");
+  }
+  const totalSteps = type === "course" || type === "project"
     ? inferredSteps
     : integer(value?.totalSteps, inferredSteps || defaultSteps(type, items.length), 180);
-  const totalFiles = integer(value?.totalFiles, Math.max(0, ...items.map((item) => item.fileCount)), 10);
+  const totalFiles = integerRange(value?.totalFiles, Math.max(0, ...items.map((item) => item.fileCount)), 0, 10);
   const exerciseCount = type === "exercise"
     ? integer(value?.exerciseCount, brief.exerciseCount ?? totalSteps, 25)
     : 0;
@@ -107,8 +131,28 @@ export function normalizeLearningProposal(value, briefValue) {
 }
 
 function validateItemCount(type, count) {
-  const valid = type === "course" ? count >= 1 && count <= 12 : type === "project" ? count >= 6 && count <= 30 : count >= 1 && count <= 12;
+  const valid = type === "course" ? count >= 1 && count <= 12 : type === "project" ? count >= 2 && count <= 6 : count >= 1 && count <= 12;
   if (!valid) throw proposalError(`Invalid ${type} proposal item count.`);
+}
+
+function boundedRawItems(value, type) {
+  const maximum = type === "project" ? 6 : 12;
+  return (Array.isArray(value) ? value : [])
+    .filter((item) => item && typeof item === "object")
+    .slice(0, maximum);
+}
+
+function fitProjectStepCounts(items, maximum) {
+  let total = items.reduce((sum, item) => sum + item.stepCount, 0);
+  while (total > maximum) {
+    const candidate = items
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.stepCount > 1)
+      .sort((left, right) => right.item.stepCount - left.item.stepCount || right.index - left.index)[0];
+    if (!candidate) break;
+    candidate.item.stepCount -= 1;
+    total -= 1;
+  }
 }
 
 function defaultSteps(type, itemCount) {

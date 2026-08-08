@@ -4,7 +4,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, StateEffect, StateField } from "@codemirror/state";
-import { Decoration, DecorationSet, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, WidgetType } from "@codemirror/view";
+import { Decoration, DecorationSet, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import type { EditorDiagnostic } from "@/components/stonecode/types";
 import { loadEditorLanguageExtension } from "@/services/editorLanguages";
@@ -19,19 +19,6 @@ type StoneEditorProps = {
 
 const setEditorDiagnostics = StateEffect.define<EditorDiagnostic[]>();
 
-class DiagnosticCommentWidget extends WidgetType {
-  constructor(private readonly message: string, private readonly filePath?: string) {
-    super();
-  }
-
-  toDOM() {
-    const element = document.createElement("span");
-    element.className = "cm-diagnostic-comment";
-    element.textContent = `  // ${this.filePath ? `${this.filePath} · ` : ""}${this.message}`;
-    return element;
-  }
-}
-
 const editorDiagnosticsField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(value, transaction) {
@@ -41,10 +28,7 @@ const editorDiagnosticsField = StateField.define<DecorationSet>({
       const decorations = effect.value.flatMap((diagnostic) => {
         const lineNumber = Math.max(1, Math.min(diagnostic.line, transaction.state.doc.lines));
         const line = transaction.state.doc.line(lineNumber);
-        return [
-          Decoration.line({ class: "cm-diagnostic-line" }).range(line.from),
-          Decoration.widget({ widget: new DiagnosticCommentWidget(diagnostic.message, diagnostic.filePath), side: 1 }).range(line.to)
-        ];
+        return [Decoration.line({ class: "cm-diagnostic-line" }).range(line.from)];
       });
       value = Decoration.set(decorations, true);
     }
@@ -153,11 +137,6 @@ export function StoneEditor({ filePath, value, onChange, diagnostics = [], readO
         },
         ".cm-diagnostic-line": {
           background: "rgba(215, 92, 92, 0.08)"
-        },
-        ".cm-diagnostic-comment": {
-          color: "rgba(240, 132, 132, 0.9)",
-          fontStyle: "italic",
-          whiteSpace: "pre-wrap"
         },
         ".cm-tooltip": {
           border: "1px solid rgba(255, 255, 255, 0.08)",

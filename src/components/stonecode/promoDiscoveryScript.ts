@@ -1,5 +1,6 @@
 import type { LearningBrief } from "@/data/courses";
 import type { CourseSetupServices } from "@/components/stonecode/CourseSetupCard";
+import type { LearningProposal } from "@/services/courseGeneration";
 
 const browserBrief: LearningBrief = {
   type: "guided_project",
@@ -10,7 +11,32 @@ const browserBrief: LearningBrief = {
   desiredOutcome: "An interactive browser dashboard",
   motivation: "Learn browser programming by building something visual",
   priorKnowledge: "Comfortable with JavaScript variables and loops",
+  projectDifficulty: "advanced",
   topics: ["DOM fundamentals", "Events", "State and rendering"]
+};
+
+const browserProposal: LearningProposal = {
+  id: "promo-browser-dashboard",
+  schemaVersion: "learning-proposal/v1",
+  status: "draft",
+  type: "project",
+  domainId: "programming",
+  technologyId: "javascript",
+  focusAreas: ["DOM fundamentals", "Events", "State and rendering"],
+  title: "Build an interactive browser dashboard",
+  summary: "Create a responsive dashboard with reusable rendering, event-driven controls, validation, and resilient empty states.",
+  technology: "JavaScript",
+  outcomes: ["Build and explain a complete browser dashboard"],
+  items: [
+    { id: "shell", title: "Design the dashboard shell and state model", summary: "Connect semantic markup to a small, explicit application-state model.", stepCount: 5, fileCount: 3 },
+    { id: "rendering", title: "Render reusable metric and activity components", summary: "Turn state into consistent cards and activity rows without duplicating DOM code.", stepCount: 5, fileCount: 3 },
+    { id: "interaction", title: "Add filtering, validation, and resilient empty states", summary: "Handle user actions, invalid input, and edge cases with visible feedback.", stepCount: 5, fileCount: 3 },
+    { id: "finish", title: "Polish and verify the complete dashboard", summary: "Check responsive behavior, state transitions, and the final user flow.", stepCount: 4, fileCount: 3 }
+  ],
+  totals: { modules: 0, steps: 19, files: 3, exercises: 0 },
+  creditQuote: { version: "credit-quote/v1", credits: 15, currency: "stonecode_credit" },
+  quoteId: "promo-quote",
+  brief: browserBrief
 };
 
 async function pause(ms = 260) {
@@ -18,6 +44,17 @@ async function pause(ms = 260) {
 }
 
 export const promoDiscoveryServices: Partial<CourseSetupServices> = {
+  async requestFeatures() {
+    return { features: { learning_proposals_v1: true, credits_v1: true } };
+  },
+  async requestProposal() {
+    await pause();
+    return { proposal: browserProposal };
+  },
+  async finalizeProposal() {
+    await new Promise<never>(() => undefined);
+    throw new Error("unreachable");
+  },
   async requestDiscoveryTurn({ turn }) {
     await pause();
     if (turn === 0) {
@@ -63,6 +100,22 @@ export const promoDiscoveryServices: Partial<CourseSetupServices> = {
           draftBrief: { ...browserBrief, priorKnowledge: undefined },
           missingFields: ["priorKnowledge"],
           questionField: "priorKnowledge",
+          responseTurn: turn,
+          nextAction: "clarify"
+        }
+      };
+    }
+    if (turn === 3) {
+      return {
+        source: "ai",
+        discovery: {
+          status: "clarifying",
+          reply: "Since you already know the basics, should this be a focused basic build or an advanced dashboard with richer state and edge cases?",
+          suggestions: ["Basic", "Advanced"],
+          brief: null,
+          draftBrief: { ...browserBrief, projectDifficulty: undefined },
+          missingFields: ["project_difficulty"],
+          questionField: "project_difficulty",
           responseTurn: turn,
           nextAction: "clarify"
         }

@@ -94,7 +94,7 @@ export function resolveEditorLanguage(pathOrLanguage: string | null | undefined)
   const byKnownExtension = extension ? byExtension.get(extension) : null;
   if (byKnownExtension) return byKnownExtension;
 
-  if (/\bc\+\+\b|cpp|cplusplus/.test(normalized)) return byId.get("cpp")!;
+  if (/c\+\+|\bcpp\b|cplusplus/.test(normalized)) return byId.get("cpp")!;
   if (/c#|csharp|dotnet/.test(normalized)) return byId.get("csharp")!;
   if (/\bjavascript\b|\bjs\b|node/.test(normalized)) return byId.get("javascript")!;
   if (/\btypescript\b|\bts\b/.test(normalized)) return byId.get("typescript")!;

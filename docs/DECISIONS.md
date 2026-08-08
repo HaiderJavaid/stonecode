@@ -12,13 +12,15 @@ New product surfaces inherit the landing page's neutral charcoal, stone, and sil
 
 ## Discovery Before Generation
 
-Setup is conversational discovery, not a knowledge test. It captures goal, relevant experience, desired depth, and preferences through contextual suggestions plus free typing. Knowledge quizzes, coding exercises, labs, and grading belong inside the learning path.
+Setup is conversational discovery, not a knowledge test. Its opening and follow-up wording use available profile, recent-learning, and transcript context instead of a stock reply. It captures goal, relevant experience, desired depth, and preferences through contextual suggestions plus free typing. Knowledge quizzes, coding exercises, labs, and grading belong inside the learning path.
 
 When a new computing domain needs scope selection, discovery may show one screenshot-style multi-select focus-area group. Every other suggestion turn remains single-select, and free typing always remains available.
 
 Before creation, the learner receives an editable concrete proposal and deterministic Stone quote. Finalization reserves Stones, starts a persisted asynchronous job, settles on success, and releases on failure. Internal schemas retain `credit*` names for compatibility; all product UI calls the currency Stones.
 
-Discovery accepts checklist answers in any order. One complete first message goes directly to proposal; incomplete requests receive only contextual missing-field questions, capped at seven assistant discovery turns. The dashboard exposes the server-owned remaining Stone balance.
+Discovery accepts checklist answers in any order and carries a structured draft between turns so accepted answers cannot disappear or repeat. Broad language-learning requests explicitly choose Course, Guided Project, or Exercise Pack. Framework paths check relevant prerequisites and recommend foundations when needed, unless the learner already requested a foundation-first path. One complete first message goes directly to proposal; incomplete requests receive only contextual missing-field questions, capped at eight assistant discovery turns. The dashboard exposes the server-owned remaining Stone balance.
+
+Generic theory-versus-hand-holding questions are removed because they did not materially shape Course output. Basic versus Advanced is required only for Guided Projects and controls feature count, coding-step scope, architecture, validation, and edge cases.
 
 ## Credits And Plans
 
@@ -28,7 +30,7 @@ Tutor replies, grading, execution, and visuals do not spend Stones; plan usage c
 
 Stone quotes remain product prices, not direct token pass-through. Operations separately record actual model/token/retry cost per generation job and compare it with Stones charged and nominal Pro Stone allocation. Model routing or quote changes require measured quality/economics evidence; registration Stones remain a zero-revenue acquisition cost.
 
-A Course quote covers the complete approved Course. Background generation writes modules in bounded calls, but persistence and Stone settlement occur only after every approved module is present, each module has substantive teaching/practice, and the delivered total remains within the quoted band. Partial Courses are never settled.
+A Course quote covers the complete approved Course. Background generation writes and checkpoints modules in bounded calls without reducing content scope. Module 1 and Module 2 must each pass the full RAG, structure, scope, and quality gates before the Course is persisted, setup reports 100% ready, and Stones settle. Remaining modules append server-side from the first missing checkpoint. A pre-launch partial Course is never settled; a post-launch interruption preserves the validated launch package for recovery. Extra valid teaching does not change the approved Stone quote.
 
 ## Technology Scope
 
@@ -50,7 +52,11 @@ Terminal keeps a deep charcoal stone base for code readability. Frosted depth st
 
 Opening a saved learning card lands on its overview/progress home. The left navigation stays closed until Start/Resume, while the center editor remains rendered throughout.
 
-On first Start, the left panel opens the learning-path syllabus. Later Resume opens Files and restores the last selected file. Guided Projects use an introduction, two to six feature workshop blocks with connected microsteps, and a recap. Course MCQs are topic-specific reinforcement exercises, not assessments; repeated generic fallback questions are forbidden.
+On first Start, the left panel opens the learning-path syllabus. Later Resume opens Files and restores the last selected file. Guided Projects pair substantive feature theory immediately before each of two to six connected feature workshops, then end with a recap. Courses vary workshops, inline checks, bug fixes, and small labs instead of repeating theory → MCQ → workshop; hard labs appear only near the end. Course MCQs are topic-specific reinforcement exercises, not assessments; repeated generic fallback questions are forbidden.
+
+Exercise Packs progress from small Beginner warm-ups toward harder synthesis and may alternate code with MCQs. Each coding problem loads an isolated two-to-five-file workspace. Visual framework exercises must provide a real connected Output, while Code remains the default surface on every transition. Exercise checks are forgiving about valid implementation shape and line placement when output and the core concept are correct. Checking animates and opens the shared task checklist; failures explain the problem beneath the execution surface while the editor only highlights the relevant line. Correct work receives green feedback, completion celebration, and a green Next action. A corrected MCQ retry completes without XP.
+
+Course module navigation is prerequisite-ordered. A module is clickable only when its validated content is ready and the learner has completed the previous module. Future modules remain grey; the currently generating module may show a compact circular indicator. Generation internals and developer error state are not exposed as learner-facing status copy.
 
 There is no Whiteboard tab. Optional teaching diagrams/images are lazy tutor-chat attachments. Prefer deterministic SVG for exact diagrams; use AI raster images only when meaningful and within plan caps. A failure falls back to SVG or text and never blocks learning. Browser program output always stays in Output.
 

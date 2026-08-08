@@ -4,7 +4,7 @@ Stonecode has one isolated, versioned corpus for each of 22 technologies and fou
 
 ## Current State
 
-All 22 language corpora were ingested on 2026-07-29 and scored `1.00` with zero cross-language leakage. The current database still has five approved/enabled and 17 owner-rejected/disabled. The 2026-08-01 expansion migration is applied; the four domain corpora remain unapproved. Every rejected source must be freshly reviewed before approval.
+All 22 language corpora are ingested, approved, and score `1.00` with zero cross-language leakage. Twenty-one runtime-backed manifests are enabled; Julia is `approved_pending_runtime` and hidden. BASIC now uses the FreeBASIC manual that matches the configured Judge0 runtime. The four domain corpora remain unapproved. Dev.java is recorded under Oracle's reference-use terms and still requires release legal clearance or replacement before deployment.
 
 ## Review One Technology
 

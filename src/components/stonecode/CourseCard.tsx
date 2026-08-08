@@ -14,12 +14,13 @@ import {
 import { StoneSurface } from "@/components/stonecode/StoneSurface";
 import { buildWorkshopEditorDiagnostics } from "@/services/editorDiagnostics";
 import { normalizeWorkspacePath } from "@/services/workspaceFiles";
-import { learningExperienceLabel } from "@/data/courses";
+import { Course, learningExperienceLabel } from "@/data/courses";
 import { Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 import { loadTutorVisualAsset, requestTutorVisual, TutorVisualAttachmentV1 } from "@/services/tutorVisuals";
 
 const coursePanelRevealStorageKey = "stonecode.coursePanelRevealed.v1";
 const lessonIntroAnimationStorageKey = "stonecode.lessonIntroAnimated.v1";
+type EditorCriterionState = "idle" | "checking" | "passed";
 
 function getLessonIntroAnimationKey(key: string) {
   return `${lessonIntroAnimationStorageKey}:${key}`;
@@ -83,9 +84,11 @@ export function CourseCard({
   const [gradingPassed, setGradingPassed] = useState<boolean | null>(null);
   const [editorExerciseFeedback, setEditorExerciseFeedback] = useState<string | null>(null);
   const [editorExercisePassed, setEditorExercisePassed] = useState(false);
-  const [editorCriteriaStatus, setEditorCriteriaStatus] = useState<Array<{ label: string; passed: boolean }>>([]);
+  const [editorCriteriaStatus, setEditorCriteriaStatus] = useState<Array<{ label: string; status: EditorCriterionState }>>([]);
   const [criteriaCollapsed, setCriteriaCollapsed] = useState(true);
   const [isGrading, setIsGrading] = useState(false);
+  const [showCompletionCelebration, setShowCompletionCelebration] = useState(false);
+  const [isModuleTransitioning, setIsModuleTransitioning] = useState(false);
   const [isGeneratingNextSegment, setIsGeneratingNextSegment] = useState(false);
   const [segmentGenerationError, setSegmentGenerationError] = useState<string | null>(null);
   const [tutorPatchError, setTutorPatchError] = useState<string | null>(null);
@@ -95,6 +98,8 @@ export function CourseCard({
   const [completedExerciseKeys, setCompletedExerciseKeys] = useState<string[]>([]);
   const [isClosing, setIsClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
+  const celebrationTimerRef = useRef<number | null>(null);
+  const moduleTransitionTimerRef = useRef<number | null>(null);
   const { progression, refresh: refreshProgression } = useProgression(active && view === "resume");
   const stableLessonKey = lesson.sectionId ?? `${safeLessonIndex}`;
   const lessonAnimationKey = `${course.id}:${stableLessonKey}:intro`;
@@ -192,18 +197,21 @@ export function CourseCard({
 
   useEffect(() => () => {
     if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    if (celebrationTimerRef.current) window.clearTimeout(celebrationTimerRef.current);
+    if (moduleTransitionTimerRef.current) window.clearTimeout(moduleTransitionTimerRef.current);
   }, []);
 
   useEffect(() => {
     setPanelContentReady(false);
     setSelectedOptionIndex(null);
-    const existingCompletion = completedLessonState;
-    setGradingFeedback(existingCompletion && lesson.kind !== "terminal-exercise" ? "Completed earlier." : null);
-    setGradingPassed(existingCompletion && lesson.kind !== "terminal-exercise" ? true : null);
-    setEditorExerciseFeedback(existingCompletion && lesson.kind === "terminal-exercise" ? "Completed earlier." : null);
-    setEditorExercisePassed(existingCompletion && lesson.kind === "terminal-exercise");
-    setEditorCriteriaStatus(buildInitialCriteriaStatus(lesson.codeExercise?.acceptanceCriteria));
+    setGradingFeedback(null);
+    setGradingPassed(null);
+    setEditorExerciseFeedback(null);
+    setEditorExercisePassed(false);
+    setEditorCriteriaStatus(buildInitialCriteriaStatus(lesson.codeExercise?.acceptanceCriteria, false));
     setCriteriaCollapsed(true);
+    setShowCompletionCelebration(false);
+    setIsModuleTransitioning(false);
     onEditorDiagnosticsChange([]);
     setIntroAnimationDone(readLessonIntroAnimated(lessonAnimationKey));
     if (!active || !view) return;
@@ -217,7 +225,21 @@ export function CourseCard({
       setPanelContentReady(true);
     }, 460);
     return () => window.clearTimeout(timer);
-  }, [active, completedLessonState, course.id, lesson.codeExercise?.acceptanceCriteria, lessonAnimationKey, lesson.kind, onEditorDiagnosticsChange, stableLessonKey, view]);
+  }, [active, course.id, lesson.codeExercise?.acceptanceCriteria, lessonAnimationKey, lesson.kind, onEditorDiagnosticsChange, stableLessonKey, view]);
+
+  useEffect(() => {
+    if (!completedLessonState) return;
+    if (lesson.kind === "terminal-exercise") {
+      setEditorExercisePassed(true);
+      setEditorExerciseFeedback((current) => current ?? "Completed earlier.");
+      setEditorCriteriaStatus((current) => current.length
+        ? current.map((criterion) => ({ ...criterion, status: "passed" }))
+        : buildInitialCriteriaStatus(lesson.codeExercise?.acceptanceCriteria, true));
+      return;
+    }
+    setGradingPassed(true);
+    setGradingFeedback((current) => current ?? "Completed earlier.");
+  }, [completedLessonState, lesson.codeExercise?.acceptanceCriteria, lesson.kind]);
 
   useEffect(() => {
     onEditorDiagnosticsChange([]);
@@ -247,23 +269,30 @@ export function CourseCard({
   useEffect(() => {
     if (!active || view !== "resume" || !panelContentReady || !lesson.codeExercise) return;
     const loadKey = `${course.id}:${stableLessonKey}:${lesson.codeExercise.filePath}`;
-    const workspaceFiles = mergeExerciseWorkspaceFiles(lesson.codeExercise);
+    const exerciseWorkspaceFiles = mergeExerciseWorkspaceFiles(lesson.codeExercise);
+    const hasDeclaredExerciseFile = workspaceFiles.some((file) =>
+      normalizeWorkspacePath(file.path) === normalizeWorkspacePath(lesson.codeExercise?.filePath ?? "")
+    );
     if (loadedCodeExerciseKeysRef.current.has(loadKey) || hasExerciseStarterLoaded(loadKey)) {
-      if (workspaceFiles.length > 1 && !repairedExerciseWorkspaceKeysRef.current.has(loadKey)) {
+      if ((!hasDeclaredExerciseFile || exerciseWorkspaceFiles.length > 1) && !repairedExerciseWorkspaceKeysRef.current.has(loadKey)) {
         repairedExerciseWorkspaceKeysRef.current.add(loadKey);
-        onLoadExerciseWorkspace(workspaceFiles, lesson.codeExercise.filePath, false);
+        if (exerciseWorkspaceFiles.length > 1) {
+          onLoadExerciseWorkspace(exerciseWorkspaceFiles, lesson.codeExercise.filePath, false);
+        } else if (!hasDeclaredExerciseFile) {
+          onLoadExerciseFile(lesson.codeExercise.filePath, lesson.codeExercise.starterCode, false);
+        }
       }
       return;
     }
     loadedCodeExerciseKeysRef.current.add(loadKey);
     const replaceExisting = lesson.codeExercise.exerciseKind !== "workshop" || (lesson.blockStepIndex ?? 0) === 0;
-    if (workspaceFiles.length > 1) {
-      onLoadExerciseWorkspace(workspaceFiles, lesson.codeExercise.filePath, replaceExisting);
+    if (exerciseWorkspaceFiles.length > 1) {
+      onLoadExerciseWorkspace(exerciseWorkspaceFiles, lesson.codeExercise.filePath, replaceExisting);
     } else {
       onLoadExerciseFile(lesson.codeExercise.filePath, lesson.codeExercise.starterCode, replaceExisting);
     }
     markExerciseStarterLoaded(loadKey);
-  }, [active, course.id, lesson.blockStepIndex, lesson.codeExercise, onLoadExerciseFile, onLoadExerciseWorkspace, panelContentReady, stableLessonKey, view]);
+  }, [active, course.id, lesson.blockStepIndex, lesson.codeExercise, onLoadExerciseFile, onLoadExerciseWorkspace, panelContentReady, stableLessonKey, view, workspaceFiles]);
 
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -305,6 +334,7 @@ export function CourseCard({
         : result.feedback ?? "Not quite. Review the correction, then continue.");
       if (result.passed) {
         markLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "chat"));
+        celebrateExerciseCompletion();
         void refreshProgression();
       }
     } catch (caughtError) {
@@ -319,21 +349,50 @@ export function CourseCard({
     onChat(message, lessonIndex);
   }
 
+  function celebrateExerciseCompletion() {
+    if (celebrationTimerRef.current) window.clearTimeout(celebrationTimerRef.current);
+    setShowCompletionCelebration(true);
+    celebrationTimerRef.current = window.setTimeout(() => {
+      setShowCompletionCelebration(false);
+      celebrationTimerRef.current = null;
+    }, 1800);
+  }
+
   function moveLesson(direction: -1 | 1) {
+    if (isModuleTransitioning) return;
+    const targetIndex = Math.min(Math.max(safeLessonIndex + direction, 0), courseLessonSteps.length - 1);
     const targetLesson = courseLessonSteps[safeLessonIndex + direction] ?? null;
-    if (direction === 1 && targetLesson?.moduleId && lesson.moduleId && targetLesson.moduleId !== lesson.moduleId) return;
+    const crossesModule = Boolean(targetLesson?.moduleId && lesson.moduleId && targetLesson.moduleId !== lesson.moduleId);
+    if (
+      direction === 1
+      && targetLesson?.moduleId
+      && lesson.moduleId
+      && crossesModule
+      && !isGeneratedModuleReady(course, targetLesson.moduleId)
+    ) return;
     if (direction === 1) {
       const currentSection = lesson.sectionId
         ? course.syllabus.find((section) => section.id === lesson.sectionId)
         : course.syllabus.find((section) => section.lessonIndex === safeLessonIndex);
       if (currentSection) void completeCourseSection(course.id, currentSection.id);
     }
-    onLessonIndexChange(Math.min(Math.max(safeLessonIndex + direction, 0), courseLessonSteps.length - 1));
+    if (direction === 1 && crossesModule) {
+      setIsModuleTransitioning(true);
+      moduleTransitionTimerRef.current = window.setTimeout(() => {
+        onLessonIndexChange(targetIndex);
+        setIsModuleTransitioning(false);
+        moduleTransitionTimerRef.current = null;
+      }, 650);
+      return;
+    }
+    onLessonIndexChange(targetIndex);
   }
 
   async function gradeMultipleChoice(index: number) {
     setSelectedOptionIndex(index);
     setIsGrading(true);
+    setGradingPassed(null);
+    setGradingFeedback(null);
     try {
       const result = await mutateExerciseProgression({
         action: "complete",
@@ -346,14 +405,18 @@ export function CourseCard({
       setGradingPassed(Boolean(result.passed));
       setGradingFeedback(result.passed
         ? result.awarded
-          ? `Nice. ${lesson.mcqExplanation ?? "That matches the topic."} +${result.xp} XP saved.`
-          : `Nice. ${lesson.mcqExplanation ?? "That matches the topic."} Previously completed; no duplicate XP.`
-        : `${result.feedback ?? "Try another angle."} ${lesson.mcqExplanation ?? "Use the explanation to connect this choice back to the topic."}`);
+          ? `${result.feedback ?? "Correct."} +${result.xp} XP saved.`
+          : result.xpEligible === false
+            ? `${result.feedback ?? "Correct."} No XP after a retry.`
+            : `${result.feedback ?? "Correct."} Previously completed; no duplicate XP.`
+        : result.feedback ?? "Not quite. Review why, then choose another answer.");
       if (result.passed) {
         markLessonExerciseCompleted("course-mcq", getExerciseKey(lesson, "mcq"));
+        celebrateExerciseCompletion();
         void refreshProgression();
       }
     } catch (caughtError) {
+      setGradingPassed(false);
       setGradingFeedback(caughtError instanceof Error ? caughtError.message : "Unable to grade this answer.");
     } finally {
       setIsGrading(false);
@@ -362,11 +425,16 @@ export function CourseCard({
 
   async function submitEditorExercise() {
     const code = exerciseFileContent.trim();
+    setCriteriaCollapsed(false);
     if (!code) {
+      setEditorCriteriaStatus((current) => current.map((criterion) => ({ ...criterion, status: "idle" })));
       setEditorExerciseFeedback("The starter should appear in the middle editor. If it is still empty, go back and reopen this step.");
       return;
     }
     onEditorDiagnosticsChange([]);
+    setEditorExerciseFeedback(null);
+    setEditorExercisePassed(false);
+    setEditorCriteriaStatus((current) => current.map((criterion) => ({ ...criterion, status: "checking" })));
     setIsGrading(true);
     try {
       const result = await mutateExerciseProgression({
@@ -377,7 +445,9 @@ export function CourseCard({
         usesPracticeAllowance: course.experienceType === "exercise",
         submission: { code, prompt: lesson.codeExercise?.prompt }
       });
-      setEditorCriteriaStatus(evaluateAcceptanceCriteria(code, lesson.codeExercise?.acceptanceCriteria ?? [], Boolean(result.passed)));
+      setEditorCriteriaStatus(result.criteria?.length
+        ? result.criteria.map((criterion) => ({ label: criterion.label, status: criterion.passed ? "passed" : "idle" }))
+        : evaluateAcceptanceCriteria(code, lesson.codeExercise?.acceptanceCriteria ?? [], Boolean(result.passed)));
       setEditorExercisePassed(Boolean(result.passed));
       setEditorExerciseFeedback(result.passed
         ? result.awarded
@@ -389,9 +459,12 @@ export function CourseCard({
       }
       if (result.passed) {
         markLessonExerciseCompleted("course-chat", getExerciseKey(lesson, "code"));
+        celebrateExerciseCompletion();
         void refreshProgression();
       }
     } catch (caughtError) {
+      setEditorExercisePassed(false);
+      setEditorCriteriaStatus((current) => current.map((criterion) => ({ ...criterion, status: "idle" })));
       setEditorExerciseFeedback(caughtError instanceof Error ? caughtError.message : "Unable to grade editor code.");
     } finally {
       setIsGrading(false);
@@ -412,6 +485,8 @@ export function CourseCard({
   const selectedOption = selectedOptionIndex === null ? null : lesson.options?.[selectedOptionIndex] ?? null;
   const nextLesson = courseLessonSteps[safeLessonIndex + 1] ?? null;
   const nextCrossesModule = Boolean(nextLesson?.moduleId && lesson.moduleId && nextLesson.moduleId !== lesson.moduleId);
+  const nextGeneratedModuleReady = !nextCrossesModule || Boolean(nextLesson?.moduleId && isGeneratedModuleReady(course, nextLesson.moduleId));
+  const awaitingNextGeneratedModule = !nextLesson && hasPendingGeneratedModules(course);
   const projectMilestones = course.courseContent?.schemaVersion === "guided-project-content/v1" ? course.courseContent.milestones : null;
   const nextProjectMilestoneIndex = projectMilestones && lesson.moduleId
     ? projectMilestones.findIndex((milestone, index) => index > projectMilestones.findIndex((item) => item.id === lesson.moduleId) && !milestone.unlocked)
@@ -426,14 +501,18 @@ export function CourseCard({
   const lessonIntroReady = !isLessonIntroTyping;
   const currentExerciseCompleted = getCompletedLessonState();
   const editorExerciseComplete = editorExercisePassed || currentExerciseCompleted;
-  const nextDisabled = isLessonIntroTyping || isGrading || isGeneratingNextSegment || (
+  const isExerciseLesson = ["multiple-choice", "chat-exercise", "terminal-exercise"].includes(lesson.kind);
+  const exerciseComplete = lesson.kind === "terminal-exercise"
+    ? editorExerciseComplete
+    : currentExerciseCompleted || gradingPassed === true;
+  const nextDisabled = isLessonIntroTyping || isGrading || isGeneratingNextSegment || isModuleTransitioning || awaitingNextGeneratedModule || (
     lesson.kind === "terminal-exercise"
-      ? editorExerciseComplete && nextCrossesModule && !canGenerateNextProjectMilestone
-      : (nextCrossesModule && !canGenerateNextProjectMilestone) || (
+      ? editorExerciseComplete && nextCrossesModule && !canGenerateNextProjectMilestone && !nextGeneratedModuleReady
+      : (nextCrossesModule && !canGenerateNextProjectMilestone && !nextGeneratedModuleReady) || (
         lesson.kind === "multiple-choice"
-          ? gradingPassed === null && !currentExerciseCompleted
+          ? !exerciseComplete
           : lesson.kind === "chat-exercise"
-            ? gradingPassed === null && !currentExerciseCompleted
+            ? !exerciseComplete
             : false
       )
   );
@@ -445,6 +524,9 @@ export function CourseCard({
     isClosing ? "is-closing" : "",
     active && (view === "resume" || view === "exercises") ? "has-chat-canvas" : "",
     active && view === "resume" && hasLessonXp ? "is-exercise-step" : "",
+    active && view === "resume" && isExerciseLesson && exerciseComplete ? "is-exercise-complete" : "",
+    showCompletionCelebration ? "is-completion-celebrating" : "",
+    isModuleTransitioning ? "is-module-transitioning" : "",
     hidden ? "is-hidden" : "",
     hidden ? `is-${hiddenDirection}` : ""
   ]
@@ -497,6 +579,18 @@ export function CourseCard({
       role={active ? "region" : "button"}
       tabIndex={hidden ? -1 : 0}
     >
+      {showCompletionCelebration && (
+        <div className="lesson-complete-confetti" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, index) => (
+            <i key={index} style={{ left: `${4 + (index * 17) % 92}%`, animationDelay: `${(index % 6) * 55}ms` }} />
+          ))}
+        </div>
+      )}
+      {isModuleTransitioning && (
+        <div className="module-transition-progress" aria-label="Loading next module" role="progressbar">
+          <i />
+        </div>
+      )}
       <div className="card-top">
         <div><span className={`experience-type-badge is-${course.experienceType}`}>{learningExperienceLabel(course.experienceType)}</span><h2>{course.title}</h2><small className="card-created-at">{formatCourseCreatedAt(course)}</small></div>
         <div className="card-actions">
@@ -591,7 +685,7 @@ export function CourseCard({
                           selectedOptionIndex === index && gradingPassed === false ? "is-incorrect" : ""
                         ].filter(Boolean).join(" ")}
                         key={option.label}
-                        disabled={isGrading}
+                        disabled={isGrading || exerciseComplete}
                         onClick={() => void gradeMultipleChoice(index)}
                         type="button"
                       >
@@ -600,7 +694,7 @@ export function CourseCard({
                       </button>
                     ))}
                     {selectedOption && (
-                      <p className={`option-feedback${gradingPassed ? " is-correct" : ""}`}>
+                      <p className={`option-feedback${gradingPassed === true ? " is-correct" : gradingPassed === false ? " is-incorrect" : " is-checking"}`}>
                         {gradingFeedback ?? (isGrading ? "Checking answer..." : "Choose an answer to continue.")}
                       </p>
                     )}
@@ -641,13 +735,11 @@ export function CourseCard({
                   </div>
                 ))}
                 {tutorPatchError && <div className="ai-message assistant-message workshop-check-message"><strong>Patch not applied</strong><p>{tutorPatchError}</p></div>}
-                {lesson.codeExercise && (isGrading || editorExerciseFeedback || lesson.codeExercise.requiresPreview || lesson.codeExercise.requiresTerminal) && (
-                  <div className={`ai-message assistant-message workshop-check-message${editorExerciseComplete ? " is-correct" : ""}`} aria-live="polite">
-                    <strong>{lesson.codeExercise.filePath} · {isGrading ? "checking" : editorExerciseFeedback ? "check result" : "workspace note"}</strong>
+                {lesson.codeExercise && (isGrading || Boolean(editorExerciseFeedback && !editorExerciseComplete)) && (
+                  <div className={`ai-message assistant-message workshop-check-message${!isGrading ? " is-error" : ""}`} aria-live="polite">
+                    <strong>{lesson.codeExercise.filePath} · {isGrading ? "checking" : "needs another look"}</strong>
                     {isGrading && <p>Checking the current editor code against this step.</p>}
                     {!isGrading && editorExerciseFeedback && <p>{editorExerciseFeedback}</p>}
-                    {lesson.codeExercise.requiresPreview && <p>Use Output to inspect the real browser result for this step.</p>}
-                    {lesson.codeExercise.requiresTerminal && <p>Use Terminal to run {lesson.codeExercise.filePath} and inspect its output.</p>}
                   </div>
                 )}
                 {segmentGenerationError && <div className="ai-message assistant-message workshop-check-message"><strong>Milestone generation</strong><p>{segmentGenerationError}</p></div>}
@@ -665,7 +757,7 @@ export function CourseCard({
                     </div>
                   </>
                 )}
-                {lesson.kind === "chat-exercise" && lessonIntroReady && (
+                {lesson.kind === "chat-exercise" && lessonIntroReady && !exerciseComplete && (
                   <form className="chat-compose written-exercise-form is-entering" onSubmit={handleWrittenExerciseSubmit}>
                     <textarea
                       aria-label="Written exercise answer"
@@ -684,7 +776,7 @@ export function CourseCard({
                   </form>
                 )}
                 {lesson.kind === "chat-exercise" && gradingFeedback && (
-                  <p className={`option-feedback${gradingPassed ? " is-correct" : ""}`}>{gradingFeedback}</p>
+                  <p className={`option-feedback${gradingPassed === true ? " is-correct" : gradingPassed === false ? " is-incorrect" : ""}`}>{gradingFeedback}</p>
                 )}
                 {lesson.codeExercise && (
                   <>
@@ -703,8 +795,8 @@ export function CourseCard({
                       <div className="checklist-content">
                         <strong>MVP checklist</strong>
                         {editorCriteriaStatus.map((criterion) => (
-                          <span className={criterion.passed ? "is-passed" : ""} key={criterion.label}>
-                            <i aria-hidden="true">{criterion.passed ? "ok" : "-"}</i>
+                          <span className={`is-${criterion.status}`} key={criterion.label}>
+                            <i aria-hidden="true">{criterion.status === "passed" ? "✓" : ""}</i>
                             {criterion.label}
                           </span>
                         ))}
@@ -755,23 +847,25 @@ export function CourseCard({
                   </form>
                 )}
                 <div className="lesson-controls">
-                  <button disabled={safeLessonIndex === 0} onClick={() => moveLesson(-1)} type="button">Prev</button>
+                  <button disabled={safeLessonIndex === 0 || isModuleTransitioning} onClick={() => moveLesson(-1)} type="button">Prev</button>
                   <button
-                    className={nextStartsNewChapter ? "next-chapter-button" : ""}
+                    className={[nextStartsNewChapter ? "next-chapter-button" : "", isExerciseLesson && exerciseComplete ? "is-complete-action" : ""].filter(Boolean).join(" ")}
                     disabled={nextDisabled}
                     onClick={canGenerateNextProjectMilestone ? () => void generateNextProjectMilestone() : lesson.codeExercise ? handleEditorExercisePrimaryAction : () => moveLesson(1)}
                     type="button"
                   >
                     {isGeneratingNextSegment
                       ? "Generating milestone..."
+                      : awaitingNextGeneratedModule
+                        ? "Module complete"
                       : canGenerateNextProjectMilestone
                         ? "Generate next milestone"
+                        : isExerciseLesson && exerciseComplete
+                          ? nextCrossesModule ? "Module complete" : "Next"
                         : lesson.codeExercise
                       ? isGrading
                         ? "Checking..."
-                        : editorExerciseComplete
-                          ? nextCrossesModule ? "Module complete" : "Next section"
-                          : "Check"
+                        : "Check"
                       : getNextButtonLabel({ nextCrossesModule, nextLesson, nextStartsNewBlock, nextStartsNewChapter })}
                   </button>
                 </div>
@@ -945,14 +1039,14 @@ function mergeExerciseWorkspaceFiles(exercise: LessonCodeExercise) {
   return [...byPath.values()];
 }
 
-function buildInitialCriteriaStatus(criteria: string[] | undefined) {
-  return (criteria ?? []).map((label) => ({ label, passed: false }));
+function buildInitialCriteriaStatus(criteria: string[] | undefined, completed = false) {
+  return (criteria ?? []).map((label) => ({ label, status: completed ? "passed" as const : "idle" as const }));
 }
 
 function evaluateAcceptanceCriteria(code: string, criteria: string[], forcePassed: boolean) {
   return criteria.map((label) => ({
     label,
-    passed: forcePassed || evaluateSingleCriterion(code, label)
+    status: forcePassed || evaluateSingleCriterion(code, label) ? "passed" as const : "idle" as const
   }));
 }
 
@@ -1017,6 +1111,24 @@ function getExerciseKey(lesson: ReturnType<typeof resolveCourseLessonSteps>[numb
   if (!lesson.sectionId && type === "chat") return "explain-edge-cases";
   if (lesson.blockId && typeof lesson.blockStepIndex === "number") return `${lesson.blockId}:${lesson.blockStepIndex}:${type}`;
   return `${lesson.sectionId ?? lesson.title}:${type}`;
+}
+
+function isGeneratedModuleReady(course: Course, moduleId: string) {
+  const content = course.courseContent;
+  if (!content || content.schemaVersion === "course-content/v1") return false;
+  if (content.schemaVersion !== "course-content/v2") return true;
+  const progressiveModule = content.progressiveGeneration?.modules.find((module) => module.id === moduleId);
+  if (progressiveModule) return progressiveModule.status === "ready";
+  return Boolean(content.modules.find((module) => module.id === moduleId)?.unlocked);
+}
+
+function hasPendingGeneratedModules(course: Course) {
+  const content = course.courseContent;
+  return Boolean(
+    content?.schemaVersion === "course-content/v2"
+    && content.progressiveGeneration?.status === "background"
+    && content.progressiveGeneration.readyModuleCount < content.progressiveGeneration.totalModules
+  );
 }
 
 function getCoursePanelRevealKey(courseId: string, view: string) {

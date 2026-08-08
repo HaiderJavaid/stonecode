@@ -23,6 +23,7 @@ export type StoredCourseState = {
   workspaceFoldersByCourse: Record<string, WorkspaceFolder[]>;
   lessonViewByCourse: Record<string, "resume" | "progress" | "exercises" | null>;
   lessonStepByCourse: Record<string, number>;
+  highestLessonStepByCourse: Record<string, number>;
 };
 
 export const defaultStoredCourseState: StoredCourseState = {
@@ -35,7 +36,8 @@ export const defaultStoredCourseState: StoredCourseState = {
   workspaceFilesByCourse: {},
   workspaceFoldersByCourse: {},
   lessonViewByCourse: {},
-  lessonStepByCourse: {}
+  lessonStepByCourse: {},
+  highestLessonStepByCourse: {}
 };
 
 const STORAGE_KEY = "stonecode.courseState.v1";
@@ -63,7 +65,8 @@ export function loadCourseState(): StoredCourseState {
       workspaceFilesByCourse: parsed.workspaceFilesByCourse ?? {},
       workspaceFoldersByCourse: parsed.workspaceFoldersByCourse ?? {},
       lessonViewByCourse: parsed.lessonViewByCourse ?? {},
-      lessonStepByCourse: parsed.lessonStepByCourse ?? {}
+      lessonStepByCourse: parsed.lessonStepByCourse ?? {},
+      highestLessonStepByCourse: parsed.highestLessonStepByCourse ?? parsed.lessonStepByCourse ?? {}
     };
   } catch {
     return defaultStoredCourseState;

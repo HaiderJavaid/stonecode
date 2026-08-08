@@ -15,13 +15,13 @@
 
 Stonecode is an IDE-first AI computing tutor for self-taught beginners. New learning starts as Course, Guided Project, or Exercise Pack. Legacy `short_course` data remains readable but new compact learning generates as Course.
 
-Discovery asks about the learner's goal, background, depth, and preferences. It does not test knowledge. The learner edits a concrete proposal and sees its deterministic Stone quote before creation. Finalization reserves Stones and queues a persisted background generation job. Courses generate every approved module through bounded module calls and settle only after the delivered structure matches the proposal and quote band.
+Discovery asks about the learner's goal, background, depth, and preferences. It does not test knowledge. The learner edits a concrete proposal and sees its deterministic Stone quote before creation. Finalization reserves Stones and queues a persisted background generation job. Courses open once two fully validated launch modules are durable; setup then reports 100% ready while later approved modules continue from server checkpoints. Navigation remains sequential, and finished modules are never regenerated on recovery.
 
 The center workspace exposes only Code, Output, and Terminal. Browser results stay in Output. Console/Judge0 results stay in Terminal. Optional teaching diagrams/images appear inside tutor chat and open in an accessible enlarged viewer; there is no Whiteboard tab.
 
 Free starts with 10 permanent registration Stones, one active path, 50 tutor replies/month, 5 AI images/month, and 20 Judge0 actions/day. Pro is $9/month with 100 expiring Stones/billing cycle, 10 active paths, 500 tutor replies/month, 50 AI images/month, and 100 Judge0 actions/day. Browser runs are unlimited. Stonecode does not accept user-supplied OpenAI keys.
 
-The launch target is 21 runnable technologies; Julia remains hidden because the configured Judge0 lacks it. Programming is joined by Computer/IT Fundamentals, Internet/Web Fundamentals, Algorithms & Data Structures, and Math for Programmers. Availability remains server-authoritative and requires matching manifests plus approved isolated RAG; technology paths additionally require editor, grading, and runtime checks. The 17 previously rejected technology sources remain disabled in the current database until individually re-reviewed, re-evaluated, and approved.
+The launch catalog now enables 21 runnable technologies; Julia remains hidden because the configured Judge0 lacks it. All 22 language corpora are reviewed and score 1.00 relevance with zero leakage. Programming is joined by Computer/IT Fundamentals, Internet/Web Fundamentals, Algorithms & Data Structures, and Math for Programmers; those four domain corpora remain pending review. Availability is server-authoritative and requires matching manifests plus approved isolated RAG, editor, grading, and runtime checks.
 
 Marketplace publishing creates immutable versioned snapshots. Owners may unpublish separately from deleting their private source. Cloning costs one Stone.
 
@@ -56,7 +56,7 @@ Additional verifier scripts are listed in `package.json`. `verify:supabase` and 
 
 The local candidate is implemented but not deployed. Before enabling flags:
 
-1. Apply the 2026-08-01 Luna accounting migration; ingest/review/evaluate four domains and re-review all 22 language corpora. Enable 21 technology manifests, four domain manifests, and leave Julia disabled with approved-corpus provenance. The learning-domain schema migration is already applied.
+1. Apply the 2026-08-01 Luna accounting migration; ingest/review/evaluate four domains and enable their manifests. The 21 runnable technologies are enabled and Julia is approved but hidden pending runtime. Obtain legal clearance for the recorded Dev.java terms or replace that Java source.
 2. Replace test billing credentials with live Stripe values, production webhook/portal URLs, support/alert routing, and legal/security/provider-alert sign-offs.
 3. Run production-like local certification, including the paid 75-path live generation matrix only after explicit spend approval.
 4. Obtain separate commit/push/deploy approval and deploy directly to Netlify Production.

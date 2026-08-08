@@ -85,22 +85,14 @@ export function CourseWorkspace({
     if (activeLesson?.codeExercise?.requiresTerminal || activeLesson?.codeExercise?.workspaceView === "terminal") views.push("terminal");
     return views;
   }, [activeLesson, dynamicSurfacesEnabled]);
-  const recommendedView = useMemo<WorkspaceView>(() => {
-    if (!dynamicSurfacesEnabled) return "code";
-    if (activeLesson?.codeExercise?.workspaceView === "preview") return "output";
-    if (activeLesson?.codeExercise?.workspaceView === "terminal") return "terminal";
-    if (activeLesson?.codeExercise?.requiresPreview) return "output";
-    if (activeLesson?.codeExercise?.requiresTerminal) return "terminal";
-    return "code";
-  }, [activeLesson, dynamicSurfacesEnabled]);
   const preview = useMemo(
     () => buildEditorPreview(activeFiles, selectedFile),
     [activeFiles, selectedFile]
   );
 
   useEffect(() => {
-    setEditorMode(recommendedView);
-  }, [activeCourse?.id, activeLessonIndex, recommendedView]);
+    setEditorMode("code");
+  }, [activeCourse?.id, activeLessonIndex]);
 
   return (
     <>

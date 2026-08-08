@@ -37,6 +37,8 @@ export type LearningBrief = {
   desiredOutcome?: string;
   motivation?: string;
   priorKnowledge?: string;
+  prerequisiteDecision?: "foundation_first" | "continue_target";
+  projectDifficulty?: "basic" | "advanced";
   practiceScope?: "all" | "topics" | "weaknesses" | "random";
   topics?: string[];
   difficulty?: "beginner" | "intermediate" | "advanced" | "adaptive" | "random";
@@ -151,7 +153,24 @@ export type GeneratedCourseContentV2 = {
   assessmentReview: GeneratedAssessmentReview;
   courseBlueprint?: GeneratedCourseBlueprint;
   ragSources?: GeneratedCourseRagSource[];
+  progressiveGeneration?: ProgressiveCourseGeneration;
   modules: GeneratedCourseModule[];
+};
+
+export type ProgressiveCourseGeneration = {
+  version: "progressive-course-generation/v1";
+  jobId: string;
+  launchModuleCount: number;
+  totalModules: number;
+  readyModuleCount: number;
+  status: "background" | "complete";
+  modules: Array<{
+    index: number;
+    id: string;
+    title: string;
+    summary: string;
+    status: "queued" | "generating" | "ready" | "paused";
+  }>;
 };
 
 export type GeneratedAssessmentReview = {

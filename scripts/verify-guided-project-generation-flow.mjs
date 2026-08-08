@@ -6,6 +6,7 @@ import { normalizeGeneratedLearningContent } from "../server/learning-orchestrat
 
 loadLocalEnv();
 const baseUrl = argumentValue("--base-url") ?? "http://127.0.0.1:5174";
+const targetLanguage = (argumentValue("--language") ?? "javascript").toLowerCase();
 const target = new URL(baseUrl);
 if (!isLoopback(target.hostname) && !process.argv.includes("--allow-remote")) throw new Error("Remote guided-project checks require --allow-remote.");
 for (const key of ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
@@ -34,23 +35,34 @@ try {
   const token = signedIn.session?.access_token;
   assert.ok(token);
 
-  const brief = {
-    type: "guided_project",
-    goal: "Build a browser Pomodoro timer with start, pause, reset, and status feedback",
-    subject: "JavaScript browser timers",
-    language: "JavaScript",
-    platform: "web",
-    desiredOutcome: "A working browser Pomodoro timer with visible controls and status",
-    priorKnowledge: "I know basic variables and functions but have not built a timer",
-    supportMode: "teaching_heavy"
-  };
+  const brief = targetLanguage === "python"
+    ? {
+        type: "guided_project",
+        goal: "Build a terminal habit tracker that can add habits, list them, mark one complete, and show a daily summary",
+        subject: "Python fundamentals and terminal applications",
+        language: "Python",
+        platform: "terminal",
+        desiredOutcome: "A working Python habit tracker with clear commands and friendly status feedback",
+        priorKnowledge: "I know basic variables and functions but have not built a complete Python project",
+        projectDifficulty: "basic"
+      }
+    : {
+        type: "guided_project",
+        goal: "Build a browser Pomodoro timer with start, pause, reset, and status feedback",
+        subject: "JavaScript browser timers",
+        language: "JavaScript",
+        platform: "web",
+        desiredOutcome: "A working browser Pomodoro timer with visible controls and status",
+        priorKnowledge: "I know basic variables and functions but have not built a timer",
+        projectDifficulty: "basic"
+      };
   const proposalResult = await apiJson("/api/learning/proposals", token, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ brief, idempotencyKey: `guided-project-proposal:${suffix}` })
   });
   assert.equal(proposalResult.proposal.type, "project");
-  assert.ok(proposalResult.proposal.creditQuote.credits <= 10);
+  assert.ok(proposalResult.proposal.creditQuote.credits <= 15);
   const finalized = await apiJson(`/api/learning/proposals/${proposalResult.proposal.id}/finalize`, token, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -70,15 +82,19 @@ try {
   assert.equal(course.experience_type, "guided_project");
   const content = normalizeGeneratedLearningContent(course.course_content, { brief });
   const blocks = content.module.blocks;
-  const features = blocks.slice(1, -1);
-  assert.ok(blocks.length >= 4 && blocks.length <= 8);
+  const featureSequence = blocks.slice(1, -1);
+  const featureTheoryBlocks = featureSequence.filter((_, index) => index % 2 === 0);
+  const features = featureSequence.filter((_, index) => index % 2 === 1);
+  assert.ok(blocks.length >= 6 && blocks.length <= 14);
   assert.equal(blocks[0].kind, "theory");
   assert.equal(blocks.at(-1).kind, "theory");
+  assert.equal(featureSequence.length % 2, 0);
   assert.ok(features.length >= 2 && features.length <= 6);
+  assert.ok(featureTheoryBlocks.every((block) => block.kind === "theory"));
   assert.ok(features.every((block) => block.kind === "workshop"));
   assert.ok(features.every((block) => block.steps.filter((step) => step.type === "workshop").length >= 4));
   const codingSteps = features.flatMap((block) => block.steps.filter((step) => step.type === "workshop"));
-  assert.ok(codingSteps.length >= 8 && codingSteps.length <= 30);
+  assert.ok(codingSteps.length >= 8);
   for (let index = 1; index < codingSteps.length; index += 1) {
     assert.equal(codingSteps[index].starterCode, codingSteps[index - 1].resultCode);
   }
@@ -86,6 +102,7 @@ try {
     passed: true,
     jobId: job.id,
     courseId: course.id,
+    language: brief.language,
     featureBlocks: features.length,
     codingSteps: codingSteps.length
   }, null, 2));

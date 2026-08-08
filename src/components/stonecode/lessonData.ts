@@ -284,7 +284,7 @@ function renderGeneratedCourseStep(blockTitle: string, blockSummary: string, ste
     const greeting = moduleIndex === 0 && topicIndex === 0 && blockIndex === 0 && stepIndex === 0
       ? experienceType === "guided_project"
         ? `## Before you build\n\nThis quick project orientation shows what you are making, why it is useful, and how the finished parts fit together. It refreshes only the ideas needed for **${topicTitle}**; it is not a lesson test.\n\n`
-        : `## ${courseSubject}\n\nThis course builds your understanding of ${courseSubject} through clear mental models, small examples, guided workshops, and later independent projects. We begin with **${topicTitle}** because it supplies the foundation the rest of the course will reuse.\n\n`
+        : friendlyCourseWelcome(courseSubject, topicTitle)
       : blockIndex === 0 && stepIndex === 0
         ? `## ${topicTitle}\n\nThis chapter focuses on **${topicTitle}** and how it supports the larger goal of learning ${courseSubject}. ${cleanLearnerText(blockSummary)} We will build the mental model first, then connect it to a small code example before practice.\n\n`
         : "";
@@ -296,20 +296,39 @@ function renderGeneratedCourseStep(blockTitle: string, blockSummary: string, ste
     const contextText = normalizeExerciseContextForDisplay(step.context, step.language);
     const context = contextText && (step.type !== "workshop" || stepIndex === 0) ? `\n\n${contextText}` : "";
     const buildHeading = step.type === "workshop" && stepIndex === 0 ? `## ${blockTitle}` : step.type === "workshop" ? "" : "## What you are solving";
+    const focus = step.type !== "workshop" && step.acceptanceCriteria?.[0]
+      ? `\n\n> **Important:** ${cleanLearnerText(step.acceptanceCriteria[0])}. Decide the implementation yourself; use the visible behavior as your guide.`
+      : "";
     const tutorial = step.type === "workshop"
       ? renderCompactWorkshopStep(step as GeneratedWorkshopStep, stepIndex)
-      : `\n\n## Task\n\n${cleanLearnerText(step.prompt)}${buildSyntaxReminder(step.language, step.starterCode)}`;
+      : `\n\n## Task\n\n${cleanLearnerText(step.prompt)}${focus}`;
     const viewNote = step.requiresPreview
-      ? "\n\n## Output check\n\nThe Output tab opens for this browser step. Compare the page before and after your edit."
-      : step.requiresTerminal
-        ? "\n\n## Terminal check\n\nThe Terminal tab opens for this step. Run the active file and inspect its output."
-        : "";
+      ? "\n\n## Output check\n\nOpen the Output tab when you want to compare the real page before and after your edit. Code stays selected so you remain in control of when to preview it."
+      : "";
     const projectNote = step.workspaceFiles && step.workspaceFiles.length > 1
       ? `\n\n## Project files\n\nThis step uses ${step.workspaceFiles.map((file) => `\`${file.path}\``).join(", ")}. The tutor can reason across all of them.`
       : "";
     return `${buildHeading}${context}${tutorial}${viewNote}${projectNote}`;
   }
   return `## ${blockTitle}\n\n${blockSummary}`;
+}
+
+function friendlyCourseWelcome(courseSubject: string, topicTitle: string) {
+  const normalized = courseSubject.toLowerCase();
+  const purpose = normalized.includes("c++")
+    ? "C++ powers things that need speed and control: games and game engines, browsers, robots, simulations, and parts of operating systems. It is like learning how to drive while also seeing what the engine is doing."
+    : normalized.includes("python")
+      ? "Python is used for automation, websites, data, science, and AI. Its code reads almost like plain instructions, so you can make useful tools without fighting lots of punctuation first."
+      : normalized.includes("javascript") || normalized.includes("typescript")
+        ? `${courseSubject} helps turn websites from posters into things people can click, play with, and use. It can power forms, dashboards, games, and full applications in the browser.`
+        : normalized.includes("java")
+          ? "Java is used for large applications, business systems, tools, and many Android projects. It teaches you to organize instructions carefully so bigger programs stay understandable."
+          : normalized.includes("rust")
+            ? "Rust is built for fast software that also protects you from many memory mistakes. People use it for command-line tools, game technology, browsers, and systems software."
+            : normalized.includes("sql")
+              ? "SQL lets you ask databases questions and change stored information. Apps use it to find users, orders, scores, messages, and nearly every other kind of organized record."
+              : `${courseSubject} is a way to give a computer small, exact instructions and combine them into useful tools, apps, games, or automated jobs.`;
+  return `## Welcome to ${courseSubject}\n\n${purpose}\n\nImagine teaching a very fast robot: it follows exactly what you say, not what you meant. We will learn how to give that robot clear instructions, test what happened, and fix mistakes without panic.\n\nWe begin with **${topicTitle}** because it is the foundation every later idea will reuse. You do not need to know the technical words yet—we will add them only after the simple idea makes sense.\n\n`;
 }
 
 export function stepsForGeneratedBlock(block: GeneratedCourseLearningBlock): GeneratedCourseStep[] {
@@ -356,9 +375,8 @@ function renderCompactWorkshopStep(
     ? `\n\n## Type this\n\n\`\`\`${markdownLanguage(step.language)}\n${code}\n\`\`\``
     : "";
   const explanation = cleanLearnerText(step.codeExplanation || explainWorkshopCodeChange(code, step.language, step.expectedChange));
-  const explanationSection = explanation ? `\n\n## What this code means\n\n${explanation}` : "";
-  const starterSyntax = stepIndex === 0 ? buildSyntaxReminder(step.language, step.starterCode) : "";
-  return `\n\n## Step ${stepIndex + 1}\n\n${normalizeWorkshopPromptForDisplay(step.prompt, step.language)}${starterSyntax}${codeSection}${explanationSection}`;
+  const explanationSection = explanation ? `\n\n${explanation}` : "";
+  return `\n\n## Step ${stepIndex + 1}\n\n${normalizeWorkshopPromptForDisplay(step.prompt, step.language)}${codeSection}${explanationSection}`;
 }
 
 function extractWorkshopCodeChange(starterCode: string, resultCode: string) {
@@ -542,70 +560,6 @@ function outputCallForLanguage(language: string) {
   if (label === "basic") return "PRINT";
   if (label === "sql") return "SELECT";
   return "console.log";
-}
-
-function buildSyntaxReminder(language: string, starterCode: string) {
-  const notes = languageSyntaxNotes(language, starterCode);
-  if (!notes.length) return "";
-  return `\n\n## Syntax you need first\n\n${notes.map((note) => `- ${note}`).join("\n")}`;
-}
-
-function languageSyntaxNotes(language: string, starterCode: string) {
-  const label = language.toLowerCase();
-  if (label === "java") {
-    return [
-      "`public class Main` names the container for this Java program and matches the `Main.java` file.",
-      "`public static void main(String[] args)` is the method Java runs first.",
-      "`System.out.println(...)` prints visible output.",
-      "Parentheses `(...)` hold input for a method call.",
-      "Curly braces `{ ... }` mark where a class or method starts and ends.",
-      "A semicolon `;` ends one Java instruction."
-    ];
-  }
-  if (label === "python") {
-    return [
-      "`print(...)` shows visible output.",
-      "Parentheses `(...)` hold input for a function call.",
-      "`def` creates a named function.",
-      "Indentation shows which lines belong inside a block."
-    ];
-  }
-  if (label === "c++") {
-    return [
-      "`#include <iostream>` loads console input/output tools.",
-      "`int main()` is where a C++ program starts.",
-      "`std::cout` prints visible output.",
-      "Curly braces `{ ... }` mark a block of code.",
-      "A semicolon `;` ends one C++ instruction."
-    ];
-  }
-  if (label === "c#") {
-    return [
-      "`using System;` imports the basic console tools.",
-      "`class Program` is a container for this small C# program.",
-      "`static void Main()` is where this beginner console program starts running.",
-      "`Console.WriteLine(...)` prints visible output.",
-      "Parentheses `(...)` hold input for a method call.",
-      "Curly braces `{ ... }` mark where a class or method starts and ends.",
-      "A semicolon `;` ends one C# instruction."
-    ];
-  }
-  if (label === "javascript" || label === "typescript") {
-    return [
-      "`console.log(...)` prints visible output.",
-      "Quotes mark text values.",
-      "Parentheses `(...)` pass input into a function call.",
-      "Curly braces `{ ... }` group code that belongs together."
-    ];
-  }
-  if (starterCode.trim()) {
-    return [
-      "Read one line at a time before editing.",
-      "Find the line that produces visible output.",
-      "Change the smallest piece needed for this step."
-    ];
-  }
-  return [];
 }
 
 function cleanLearnerText(value: string) {

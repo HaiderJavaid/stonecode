@@ -26,6 +26,7 @@ type SupabaseCourseDraft = Pick<Course, "id" | "title" | "subject" | "mode" | "c
 };
 
 let chatMessageMetadataSupported: boolean | null = null;
+let courseProgressHighestLessonSupported: boolean | null = null;
 
 export async function loadSupabaseCourseState(user: User): Promise<StoredCourseState> {
   const client = requireSupabase();
@@ -60,7 +61,8 @@ export async function loadSupabaseCourseState(user: User): Promise<StoredCourseS
     workspaceFilesByCourse: {},
     workspaceFoldersByCourse: {},
     lessonViewByCourse: {},
-    lessonStepByCourse: {}
+    lessonStepByCourse: {},
+    highestLessonStepByCourse: {}
   };
 
   fileRows.forEach((file) => {
@@ -94,6 +96,7 @@ export async function loadSupabaseCourseState(user: User): Promise<StoredCourseS
 
   progressRows.forEach((progress) => {
     state.lessonStepByCourse[progress.course_id] = progress.lesson_index;
+    state.highestLessonStepByCourse[progress.course_id] = Math.max(progress.highest_lesson_index ?? 0, progress.lesson_index);
     state.lessonViewByCourse[progress.course_id] = progress.lesson_view;
     const files = state.workspaceFilesByCourse[progress.course_id] ?? [];
     const selectedIndex = files.findIndex((file) => file.path === progress.selected_file_path);
@@ -137,6 +140,7 @@ export async function saveSupabaseWorkspaceState(state: StoredCourseState): Prom
       syncWorkspaceFolders(courseId, state.workspaceFoldersByCourse[courseId] ?? []),
       upsertCourseProgress(courseId, {
         lessonIndex: state.lessonStepByCourse[courseId] ?? 0,
+        highestLessonIndex: Math.max(state.highestLessonStepByCourse[courseId] ?? 0, state.lessonStepByCourse[courseId] ?? 0),
         lessonView: normalizePersistedLessonView(state.lessonViewByCourse[courseId] ?? null),
         selectedFilePath: (state.workspaceFilesByCourse[courseId] ?? [])[state.selectedFilesByCourse[courseId] ?? 0]?.path ?? null
       })
@@ -338,19 +342,41 @@ export async function upsertCourseProgress(
   courseId: string,
   progress: {
     lessonIndex: number;
+    highestLessonIndex: number;
     lessonView: CourseProgressRecord["lesson_view"];
     selectedFilePath: string | null;
   }
 ): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client.from("course_progress").upsert({
+  const payload = {
     course_id: courseId,
     lesson_index: progress.lessonIndex,
+    highest_lesson_index: Math.max(progress.highestLessonIndex, progress.lessonIndex),
     lesson_view: progress.lessonView,
     selected_file_path: progress.selectedFilePath,
     updated_at: new Date().toISOString()
-  });
+  };
+  const { highest_lesson_index: _highestLessonIndex, ...legacyPayload } = payload;
+  if (courseProgressHighestLessonSupported === false) {
+    const { error } = await client.from("course_progress").upsert(legacyPayload);
+    if (error) throw error;
+    return;
+  }
+  let { error } = await client.from("course_progress").upsert(payload);
+  if (error && /highest_lesson_index|schema cache|PGRST204/i.test(`${error.message} ${error.code ?? ""}`)) {
+    courseProgressHighestLessonSupported = false;
+    ({ error } = await client.from("course_progress").upsert(legacyPayload));
+  } else if (!error) {
+    courseProgressHighestLessonSupported = true;
+  }
   if (error) throw error;
+}
+
+export async function loadSupabaseCourse(_user: User, courseId: string): Promise<Course | null> {
+  const client = requireSupabase();
+  const { data, error } = await client.from("courses").select("*").eq("id", courseId).eq("status", "active").maybeSingle();
+  if (error) throw error;
+  return data ? courseRecordToCourse(data as CourseRecord) : null;
 }
 
 async function ensureUserProfile(user: User): Promise<void> {
